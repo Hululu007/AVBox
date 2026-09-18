@@ -6,6 +6,7 @@ import com.github.tvbox.osc.bean.Movie
 import com.github.tvbox.osc.ui.activity.PartitionListActivity
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.KV
+import com.github.tvbox.osc.util.SourceIndexFlags
 
 enum class SourceCardPolicy(val label: String) {
     SEARCH("搜索"),
@@ -26,29 +27,40 @@ sealed interface VodCardTarget {
 
 object VodCardPolicy {
     private const val VALUE_DETAIL = "detail"
+    private const val VALUE_SEARCH = "search"
 
     private fun readMap(): HashMap<String, String> =
         KV.get(HawkConfig.SOURCE_CARD_POLICY, HashMap<String, String>())
 
     fun policyOf(sourceKey: String?): SourceCardPolicy {
         if (sourceKey.isNullOrEmpty()) return SourceCardPolicy.SEARCH
-        return if (readMap()[sourceKey] == VALUE_DETAIL) SourceCardPolicy.DETAIL else SourceCardPolicy.SEARCH
+        when (readMap()[sourceKey]) {
+            VALUE_DETAIL -> return SourceCardPolicy.DETAIL
+            VALUE_SEARCH -> return SourceCardPolicy.SEARCH
+        }
+        return if (SourceIndexFlags.isIndexSource(sourceKey)) SourceCardPolicy.SEARCH else SourceCardPolicy.DETAIL
     }
 
     fun setPolicy(sourceKey: String?, policy: SourceCardPolicy) {
         if (sourceKey.isNullOrEmpty()) return
         val map = readMap()
-        if (policy == SourceCardPolicy.DETAIL) map[sourceKey] = VALUE_DETAIL else map.remove(sourceKey)
+        map[sourceKey] = if (policy == SourceCardPolicy.DETAIL) VALUE_DETAIL else VALUE_SEARCH
         KV.put(HawkConfig.SOURCE_CARD_POLICY, map)
     }
 }
 
 internal fun Movie.Video.isFolderCard(): Boolean = tag == "folder"
 
+internal fun Movie.Video.hasOpenableDetailId(): Boolean {
+    val value = id.orEmpty()
+    return value.isNotEmpty() && !value.startsWith("msearch:")
+}
+
 fun resolveVodCardTarget(video: Movie.Video): VodCardTarget = when {
     !video.action.isNullOrEmpty() -> VodCardTarget.Action(video)
     video.isFolderCard() -> VodCardTarget.Folder(video)
-    VodCardPolicy.policyOf(video.sourceKey) == SourceCardPolicy.DETAIL -> VodCardTarget.Detail(video)
+    VodCardPolicy.policyOf(video.sourceKey) == SourceCardPolicy.DETAIL && video.hasOpenableDetailId() ->
+        VodCardTarget.Detail(video)
     else -> VodCardTarget.Search(video.name.orEmpty())
 }
 

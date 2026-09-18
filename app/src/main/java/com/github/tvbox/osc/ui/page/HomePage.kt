@@ -86,6 +86,7 @@ import com.github.tvbox.osc.ui.components.AppTopBarScaffold
 import com.github.tvbox.osc.ui.components.LoadStateBox
 import com.github.tvbox.osc.ui.components.LocalSheetDismiss
 import com.github.tvbox.osc.ui.components.PressableCard
+import com.github.tvbox.osc.ui.components.SearchSettingsSheet
 import com.github.tvbox.osc.ui.components.SettingsCard
 import com.github.tvbox.osc.ui.components.SettingsCardPosition
 import com.github.tvbox.osc.ui.components.SettingsGroup
@@ -126,6 +127,7 @@ fun HomePage(vm: HomeViewModel, bottomPadding: Dp = 0.dp) {
     }
 
     var showSourceSheet by remember { mutableStateOf(false) }
+    var showSearchSettings by remember { mutableStateOf(false) }
     var policyTick by remember { mutableStateOf(0) }
 
     AppTopBarScaffold(
@@ -180,6 +182,20 @@ fun HomePage(vm: HomeViewModel, bottomPadding: Dp = 0.dp) {
             }
         },
         actions = {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .glassTopBarSurface(CircleShape, MaterialTheme.colorScheme.surfaceBright)
+                    .clickable { showSearchSettings = true },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_more_vert),
+                    contentDescription = "搜索设置",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
             Box(
                 modifier = Modifier
                     .size(40.dp)
@@ -346,7 +362,7 @@ fun HomePage(vm: HomeViewModel, bottomPadding: Dp = 0.dp) {
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
             ) {
                 item {
-                    SettingsGroup(title = "卡片点击状态:进入搜索 / 进入详情(点右侧标记切换)") {
+                    SettingsGroup(title = "卡片点击状态:进入搜索 / 进入详情(按源自动判断,点标记可手动改)") {
                         sources.forEachIndexed { index, bean ->
                             val selected = bean.key == currentSource?.key
                             val policy = remember(bean.key, policyTick) { VodCardPolicy.policyOf(bean.key) }
@@ -401,6 +417,10 @@ fun HomePage(vm: HomeViewModel, bottomPadding: Dp = 0.dp) {
                 }
             }
         }
+    }
+
+    if (showSearchSettings) {
+        SearchSettingsSheet(onDismiss = { showSearchSettings = false })
     }
 
     VodCardMenu(vodMenu)

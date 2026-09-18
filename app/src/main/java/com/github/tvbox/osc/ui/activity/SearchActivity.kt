@@ -91,6 +91,7 @@ import com.github.tvbox.osc.ui.page.ManageActionIcon
 import com.github.tvbox.osc.ui.page.openVodCardOrDetail
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.SearchHelper
+import com.github.tvbox.osc.util.SearchSettings
 import com.github.tvbox.osc.util.HistoryHelper
 import com.github.tvbox.osc.util.UA
 import com.lzy.okgo.OkGo
@@ -145,6 +146,8 @@ class SearchViewModel : ViewModel() {
     val results = MutableStateFlow<List<SourceResult>>(emptyList())
     val running = MutableStateFlow(false)
     val searchedTitle = MutableStateFlow("")
+    val exactMatch = MutableStateFlow(false)
+    val sitesEmpty = MutableStateFlow(false)
 
     val hotSearch = MutableStateFlow<List<String>>(emptyList())
 
@@ -187,9 +190,10 @@ class SearchViewModel : ViewModel() {
 
         @JvmStatic
         fun loadCheckedSources() {
-            val api = KV.get(HawkConfig.API_URL, "")
-            checkedSources = SearchHelper.getSourcesForSearch()
-            checkedSourcesApiUrl = api
+            checkedSources = SearchSettings.currentSelection()?.let { selection ->
+                HashMap<String, String>().apply { selection.forEach { put(it, "1") } }
+            } ?: SearchHelper.getSources()
+            checkedSourcesApiUrl = KV.get(HawkConfig.API_URL, "")
         }
 
         @JvmStatic
@@ -306,6 +310,7 @@ class SearchViewModel : ViewModel() {
         val myToken = token
         val tokenStr = myToken.toString()
         searchedTitle.value = t
+        exactMatch.value = SearchSettings.isExactMatchEnabled()
         HistoryHelper.setSearchHistory(t)
         clearSuggest()
         try {
@@ -326,6 +331,7 @@ class SearchViewModel : ViewModel() {
             .filter { it.isSearchable() && (checked == null || checked.containsKey(it.key)) }
             .sortedBy { it.key != home.key }
         results.value = sources.map { SourceResult(it.key, it.name.orEmpty(), ResultState.Pending, emptyList()) }
+        sitesEmpty.value = sources.isEmpty()
         if (sources.isEmpty()) {
             running.value = false
             return
@@ -367,6 +373,7 @@ class SearchViewModel : ViewModel() {
         if (results.value.none { it.sourceKey == sourceKey }) return
         pendingSources.remove(sourceKey)?.complete(Unit)
         val videos = data.movie?.videoList.orEmpty()
+            .filter { !exactMatch.value || SearchSettings.isExactMatch(it.name, searchedTitle.value) }
             .sortedByDescending { it.name?.trim() == searchedTitle.value }
         updateResult(sourceKey, videos)
     }
@@ -397,6 +404,8 @@ fun SearchScreen(vm: SearchViewModel = viewModel()) {
     var selectedSource by remember { mutableStateOf<String?>(null) }
     var history by remember { mutableStateOf(KV.get(HawkConfig.SEARCH_HISTORY, ArrayList<String>())) }
     val searchedTitle by vm.searchedTitle.collectAsState()
+    val exactMatch by vm.exactMatch.collectAsState()
+    val sitesEmpty by vm.sitesEmpty.collectAsState()
     val vodMenu = rememberVodCardMenuState()
 
     LaunchedEffect(Unit) {
@@ -466,7 +475,17 @@ fun SearchScreen(vm: SearchViewModel = viewModel()) {
             }
         },
     ) { topPad, _ ->
-        if (results.isEmpty() && !running) {
+        if (results.isEmpty() && !running && sitesEmpty) {
+            LoadStateBox(
+                state = LoadState.Empty,
+                emptyText = "未选择搜索站点，请到首页「搜索设置」里勾选",
+                errorText = "",
+                retryText = "",
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = topPad),
+            )
+        } else if (results.isEmpty() && !running) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -630,7 +649,11 @@ fun SearchScreen(vm: SearchViewModel = viewModel()) {
             if (done.isEmpty() && !running) {
                 LoadStateBox(
                     state = LoadState.Empty,
-                    emptyText = "「${searchedTitle}」暂无搜索结果",
+                    emptyText = if (exactMatch) {
+                        "未找到与「${searchedTitle}」完全一致的结果"
+                    } else {
+                        "「${searchedTitle}」暂无搜索结果"
+                    },
                     errorText = "",
                     retryText = "",
                     modifier = Modifier
