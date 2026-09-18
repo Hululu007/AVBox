@@ -65,6 +65,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.bean.Movie
@@ -79,6 +81,7 @@ import com.github.tvbox.osc.ui.components.VodCardMenu
 import com.github.tvbox.osc.ui.components.rememberVodCardMenuState
 import com.github.tvbox.osc.ui.page.openVodCardOrDetail
 import com.github.tvbox.osc.ui.player.PlayerTipBridge
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -106,6 +109,24 @@ fun DetailScreen(activity: DetailActivity, vm: DetailViewModel) {
 
     LaunchedEffect(container, playSignal) {
         if (playSignal > 0) activity.playCurrent()
+    }
+
+    var musicWatch by remember { mutableStateOf(false) }
+    var musicArmed by remember { mutableStateOf(false) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { musicWatch = true }
+    LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { musicWatch = false }
+    LaunchedEffect(playSignal) {
+        if (playSignal > 0) musicArmed = true
+    }
+    LaunchedEffect(musicWatch, musicArmed) {
+        if (!musicWatch || !musicArmed) return@LaunchedEffect
+        while (true) {
+            delay(300)
+            if (!activity.musicPlaybackDetected()) continue
+            if (!activity.handOffToMusicPlayer()) continue
+            musicArmed = false
+            return@LaunchedEffect
+        }
     }
 
     LaunchedEffect(full) {
@@ -248,6 +269,14 @@ private fun DetailContent(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
                     )
+                    IconButton(onClick = { activity.openMusicPlayer() }) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_detail_music_player),
+                            contentDescription = "进入音乐播放器",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
                     IconButton(onClick = { activity.playContainer?.showCast() }) {
                         Icon(
                             painter = painterResource(R.drawable.ic_detail_cast),

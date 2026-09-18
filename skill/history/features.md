@@ -1229,3 +1229,38 @@ P1 最后两组。至此**调度层(会话/取流/解析/嗅探/重试/换线/�
 - **需求(用户)**:配置管理页在没有添加源时,页面中间也要显示空状态图标 —— 即首页引导态 / 历史 / 收藏页那个 `R.drawable.ic_empty_record`。
 - **改动(`ui/page/ConfigManagePage.kt`,2 处)**:①点播段空态 `LoadStateBox` 补 `emptyIconRes = R.drawable.ic_empty_record`(原先只有「暂无订阅」文字);②直播段原设计"永不为空"(首项 = 合成的「跟随点播源」卡)⇒ 直播源为空时在跟随卡**下方**追加 `item(key = "Live#empty")`:`LoadStateBox`「暂无直播源」+ 同款图标,`fillMaxWidth().height(220.dp)` 居中 —— **追加而不是替换**,保住"未配直播源时仍可开启跟随"的能力。
 - **验证**:`compileDebugKotlin` exit 0;待真机确认(删空点播源 → 页面中间出现图标 + 「暂无订阅」;直播段同理)。**未提交**。
+
+## 音乐播放页底部胶囊改版(2026-09-19)
+
+- **需求(用户)**:①底部三个控件"设计得不好、按压也没有动效",参照 `示例文件/PixelPlayer-master` 做出一模一样的效果;②未选中态也要是"子弹形"(不要 8dp 方角);③配色不要照抄参考项目 —— 胶囊 `surfaceContainer`、段容器 `surfaceBright`;④宽度改成"和三个播放控件等宽或偏小一点点";⑤在收藏与选集之间插入一个投屏控件;⑥内部卡片改成**分段式圆角**(最左段朝外两侧大圆角、最右段朝外两侧大圆角、中间全小圆角)。
+- **改动**:`ui/music/MusicPlayerScreen.kt` —— 重写 `MusicBottomActions` + `BottomActionItem`(按压 `scale 0.94` + `spring(0.45, StiffnessMediumLow)` + 涟漪;选中态 `animateColorAsState` 250ms 渐变到 `primary`/`tertiary` 实心 + 对应 on 色图标)、新增 `segmentShape(index, count)`;播放控件尺寸抽成 `SkipButtonSize`/`PlayButtonWidth`/`PlayButtonHeight`/`SkipToPlayGap`/`PlayToSkipGap` 常量并派生 `PlaybackControlsWidth`(254dp),**胶囊与播放控件共用同一组常量**,改一边必须核对另一边。`MusicPlayerState.kt` 加 `castSheet`;`MusicPlayerActivity.kt` 加 `showCast()` + `onCast` 回调;投屏面板复用 `CastSheet`(自带 Dialog,挂在音乐页自己的 Compose 树里)。选集 sheet 加 `rememberLazyListState()` + 弹出即 `scrollToItem(queueIndex)`(无动画;状态在 `if (queueVisible)` 内 `remember`,关闭即销毁,不残留滚动位置)。
+- **关键决策**:①段形**不做**"未选中 8dp → 选中胶囊"的半径动画 —— 用户要求未选中也是子弹形,故统一分段式圆角;②"大圆角"用 `CornerSize(percent = 50)` 而不是写死 dp,段高变化时自动跟随(段高 50dp → 25dp,与 66dp 容器内缩 8dp 后同心);③按压手感对齐项目已有的 `CapsuleSegmentedButton`(0.94 + 弹簧),不引入第三套手感。
+- **验证**:`:app:compileDebugKotlin` / `:app:installDebug`(V2425A-16)通过;真机截图确认(用户反馈后连改四轮:方角 → 子弹形、配色、宽度、投屏段、分段圆角)。**未提交**。
+
+## 详情页新增「进入音乐播放器」入口(2026-09-19)
+
+- **需求(用户)**:①竖屏详情页投屏控件旁增加一个控件,图标取 `.tubiao/进入音乐播放器.svg`,点击进音乐播放页;②与投屏控件调换位置(顺序 = 音乐播放器 → 投屏 → 收藏);③**影视内容**从音乐页返回时不要退到上级页面,要留在竖屏详情页。
+- **改动**:①新 `res/drawable/ic_detail_music_player.xml`(转换规则同 `ic_detail_cast.xml`/`ic_music_queue.xml`:`viewBox="0 -960 960 960"` → viewport 960×960 + `<group android:translateY="960">`,fillColor 白、由 Compose tint);②`ui/activity/DetailScreens.kt` 标题行插 `IconButton`;③`ui/activity/DetailActivity.kt`:`openMusicPlayer()`(详情未解析完 Toast / 会话未建先 `playCurrent()` / 再交接)、`isAudioContent()`(从 `musicPlaybackDetected()` 里抽出的公共判定)、`handOffToMusicPlayer()` 按 `isAudioContent()` 分流是否 `finish()`、`pendingEpisodeSync` + `syncEpisodeAfterMusicPage()`;④`MusicPlayerActivity.start(context, historySourceKey)`;⑤`ui/player/PlayContainer.java` 的 `handedOver` 复位。
+- **两个必须记住的连带点**(已写进 spec §4.4/§6.1):①影视内容保留详情页 ⇒ 本页会重新接管引擎,`handedOver` 必须在 `reattachIfOwnedByOther()` **和** `reviveEngineIfReleased()` 两条路径都复位,否则真正退出详情页时 `hostDestroy` 漏 `detach`、声音不停;②音乐页改的是 `session.vod`(预览副本)、详情页 UI 读 `vm.vodInfo`,是两个对象 ⇒ 不把 `playFlag/playIndex` 同步回来,选集高亮停在交接那一集、**点播放还会跳回那一集**(用标记只在交接后同步一次,避免"从历史进详情页"被残留会话覆盖)。
+- **验证**:编译 + 装机通过;`stopPlaybackKeepPlayer()` 遇 `STATE_PAUSED` 直接 return ⇒ 退出音乐页后播放器停在 PAUSED 而非 IDLE,返回详情页时 `reattachIfOwnedByOther` 的 `state != IDLE` 成立、预览浮层能正常 rebind(这条是事先排查的,避免返回后黑框)。**未提交**。
+
+## 音乐播放页不落观看历史(2026-09-19)
+
+- **现象(用户报)**:从音乐播放器退出后历史记录不更新。
+- **根因**:`RoomDataManger.insertVodRecord` 是观看历史的**唯一落库点**,而全仓唯一调用者是 `DetailViewModel.insertVod()`(只在 `preparePlaySession()` 里调)⇒ 音乐页全程不落库,历史只有详情页交接那一刻的快照(`updateTime`/`playIndex`/`playNote` 都不再更新;切歌后"上次看到第 X 首"不对、列表排序位置也不刷新)。退出时走的 `PlaybackEngine.detach → saveCurrentProgress()` 只写 `CacheManager` 的续播进度,**不碰历史表**。
+- **改动**:`MusicPlayerActivity` 新增 `syncHistory()`(写 `vod.playNote` → `insertVodRecord` → 广播 `TYPE_HISTORY_REFRESH`),调用点 = 切歌成功(`playAt`)后 + `onDestroy`(刷新时间戳)。⚠️ **key 必须用详情页传进来的 `firstsourceKey`**(`start(context, historySourceKey)`,缺省回落 `controller.sourceKey()`):详情页 `insertVod` 用的是 `firstsourceKey`,而 `controller.sourceKey()` = `session.sourceKey()`,换源/兜底后两者不同,不传会写出第二条历史记录(历史合并开着时被合并掉,关着就直接重复)。无痕模式由 `insertVodRecord` 内部拦截,无需额外判。
+- **验证**:编译 + 装机通过;待真机确认(切歌后返回 → 历史刷新到顶部且显示最后那首;点该历史进详情页从最后那首开始)。**未提交**。
+
+## 歌词不显示:源给的是 ASS 字幕(2026-09-19)
+
+- **现象(用户报)**:播放音乐时音乐页不显示歌词。
+- **定位过程(可复用)**:①先查崩溃缓冲,发现更早构建有 5 次 `MusicLrc.<clinit>` 崩(`PatternSyntaxException: \{[^}]{0,40}}`,即 `braceTag` 漏了转义 `\}` —— ICU 拒绝裸 `}`,而 `MusicLrc` 是 `object`,一处写错就打挂整个类 ⇒ **本进程所有歌词全为空**);②但当前源码已补上转义、崩溃已停,于是给 `syncLyric()` 补日志,实测 `parsed: 0 lines` 且**无** `parse failed` ⇒ 类初始化正常、`load()` 正常返回但解析出 0 行;③再给 `MusicLrc.load()` 补结构日志,拿到 `format=ass` + `head=[Script Info]\nScriptType: v4.00+...` ⇒ **源把歌词做成了 ASS 字幕**,而解析器只认 SRT(`-->`)与 LRC(`[mm:ss]`),两者都不占 ⇒ 走 `parseLrc` 一行都匹配不上。
+- **改动**:`ui/music/MusicLrc.kt` 新增 `LrcFormat` 枚举(判定与分派共用一处,保证日志报的格式 = 实际分支)+ `isAss()` + `parseAss()` + `assTimeMs()`;`Dialogue:` 字段按 `split(",", limit = 10)` 切(Text 本身可含逗号),时间 `H:MM:SS.cc` 用 `roundToLong`(百分秒,`12.34 * 1000` 在 double 下可能是 `12339.999…`,截断会少 1ms),文本剥离 `{...}` 覆盖块、`\N` 还原换行、`\h` 还原空格。⚠️ **ASS 判定必须"行首"**(`[Script Info]` 或行首 `Dialogue:`),用 `raw.contains("Dialogue:")` 会被歌词正文误判 ⇒ 整首 0 行。`syncLyric()` 的 `runCatching` 补日志(`lyric parsed: N lines` / `lyric parse failed` / `lyric raw empty`)—— **禁止静默吞错**:格式不认与类初始化失败在界面上完全一样。`MusicLrcTest` 加 ASS 用例 + "LRC 正文含 Dialogue: 不被误判"用例(6 个用例全过)。
+- **附带结论**:歌词源只给部分歌配词是常态(`echo-lyric pick: none`),界面没歌词不一定是 bug —— 先看 `echo-lyric pick:` 与 `echo-music lyric` 两组日志。**未提交**。
+
+## 跨会话封面残留:音乐页显示上一首的封面(2026-09-19)
+
+- **现象(用户报)**:播放完音乐再播影视、然后进音乐播放器,"有概率"显示的不是本次影视的封面。
+- **根因**:音乐页取封面顺序 = `currentArtwork() → playArtwork() → vod.pic`,而这两个控制器字段都会跨会话残留 —— `playArtwork` 是**只写一次**的(`updateMusicSession` 带 `TextUtils.isEmpty(playArtwork)` 守卫,原先**全仓没有复位点**),`currentArtwork` 只在取流结果处理里被覆盖(影视源取流失败/无 cover 时保持旧值)⇒ 影视源不带 cover 时音乐页命中上一首音乐的 `playArtwork`。影视源自带 cover 就不会复现,所以是"有概率"。
+- **改动**:`PlaybackController.startSession()`(会话边界,本来就是"会话级状态统一复位"的地方)补清 `playArtwork`/`currentArtwork`,**判据必须是 `playbackKey` 变化**:同片接管(退出详情页再进同一部,`PlayContainer.setData` 的 `isSamePlaybackOwned` 分支也走 `startSession`)不能清,否则封面会白到下一次取流结果。切歌路径不走 `startSession`(是 `engine.play`),封面由取流结果的 `currentArtwork = artwork` 覆盖,不受影响。
+- **验证**:编译 + 装机通过;待真机确认(音乐 → 影视 → 进音乐页 = 显示影视 `vod.pic`;退出再进同一部 = 封面不变白)。**未提交**。

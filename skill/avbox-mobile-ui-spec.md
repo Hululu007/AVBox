@@ -44,8 +44,8 @@
 
 **文件布局与可测性基线(2026-09-15 文件级拆分后)**:
 
-- **UI 层文件布局**(四轮 A 档拆分只挪文件、不改行为;**新增代码按归属落位,别再往页面 Activity 里堆**):详情/播放页 = `ui/activity/DetailActivity.kt`(Activity)+ `DetailViewModel.kt`(VM)+ `DetailScreens.kt`(Compose 顶层函数);播放器面板 = `player/ui/PlayerSheets.kt`(公共骨架,`SheetLoading`/`findActivityOrNull` 等在此)+ `DanmuSheets.kt` / `SubtitleSheets.kt` / `CastSheet.kt` / `EpisodeSheet.kt`;直播页 = `ui/activity/LivePlayActivity.kt`(页面态 + 网络编排 + `epgVersion` 代际校验)+ `LiveScreens.kt`(Compose UI,13 个 Composable)+ **`LiveEpgParser.kt`(EPG 与回看的纯解析,无状态 object)**。跨文件暴露的成员一律 `internal` —— 其 JVM 名会带模块后缀(`parseXmlEpg$AVBox_app_debug`)且可见性是 public,**Java 侧调用不到、反射名字也带后缀**;本项目无 Java 调用者与反射需求,故可放心放宽。过程与等价性证据见 `history/features.md`。
-- **单测基线**:`app/src/test` = 4 个测试类(`SearchHelperTest` / `KVKeySpecTest` / `KVDecoderTest` / `LiveEpgParserTest`),**纯 JVM** —— 只有 `testImplementation(libs.junit)`,**无 Robolectric / Mockito / `isReturnDefaultValues`** ⇒ 被测代码一碰 `android.*` 或 `org.json` 即 `not mocked`;可测面只限**无 android 依赖的纯逻辑**(EPG 解析族 / 搜索 / KV 编解码),VM、Activity、用 `JSONObject` 的函数都测不了。**要测纯逻辑就得先把它抽成无状态 object 或顶层函数**(样板 = `ui/activity/LiveEpgParser.kt` + `LiveEpgParserTest`);是否引入 Robolectric 属独立决策(会改变验证模型),当前口径倾向不引入 —— 本项目的验证瓶颈在真机行为(挂摘时序 / 合成 / 坏流),不在 JVM 逻辑。R8 后用单测复验的姿势见 §6.3。
+- **UI 层文件布局**(四轮 A 档拆分只挪文件、不改行为;**新增代码按归属落位,别再往页面 Activity 里堆**):详情/播放页 = `ui/activity/DetailActivity.kt`(Activity)+ `DetailViewModel.kt`(VM)+ `DetailScreens.kt`(Compose 顶层函数);播放器面板 = `player/ui/PlayerSheets.kt`(公共骨架,`SheetLoading`/`findActivityOrNull` 等在此)+ `DanmuSheets.kt` / `SubtitleSheets.kt` / `CastSheet.kt` / `EpisodeSheet.kt`;直播页 = `ui/activity/LivePlayActivity.kt`(页面态 + 网络编排 + `epgVersion` 代际校验)+ `LiveScreens.kt`(Compose UI,13 个 Composable)+ **`LiveEpgParser.kt`(EPG 与回看的纯解析,无状态 object)**;音乐播放页 = `ui/music/MusicPlayerScreen.kt`(UI)+ `MusicPlayerState.kt`(状态)+ `MusicPalette.kt`(取色)+ `MusicLrc.kt`(歌词解析,宿主 `MusicPlayerActivity.kt` 只做编排,见 §4.10)。跨文件暴露的成员一律 `internal` —— 其 JVM 名会带模块后缀(`parseXmlEpg$AVBox_app_debug`)且可见性是 public,**Java 侧调用不到、反射名字也带后缀**;本项目无 Java 调用者与反射需求,故可放心放宽。过程与等价性证据见 `history/features.md`。
+- **单测基线**:`app/src/test` = 5 个测试类(`SearchHelperTest` / `KVKeySpecTest` / `KVDecoderTest` / `LiveEpgParserTest` / `MusicLrcTest`),**纯 JVM** —— 只有 `testImplementation(libs.junit)`,**无 Robolectric / Mockito / `isReturnDefaultValues`** ⇒ 被测代码一碰 `android.*` 或 `org.json` 即 `not mocked`;可测面只限**无 android 依赖的纯逻辑**(EPG 解析族 / 搜索 / KV 编解码),VM、Activity、用 `JSONObject` 的函数都测不了。**要测纯逻辑就得先把它抽成无状态 object 或顶层函数**(样板 = `ui/activity/LiveEpgParser.kt` + `LiveEpgParserTest`);是否引入 Robolectric 属独立决策(会改变验证模型),当前口径倾向不引入 —— 本项目的验证瓶颈在真机行为(挂摘时序 / 合成 / 坏流),不在 JVM 逻辑。R8 后用单测复验的姿势见 §6.3。
 
 ## 3. 信息架构与主题(已定)
 
@@ -99,17 +99,18 @@
 - **弹幕开关默认值**:与 DanmuHelper.isOpen() 对齐为 true(2026-09-09 修,首装显示与实际一致)。
 - **画面渲染默认值**:SurfaceView(PLAY_RENDER 默认 1;2026-09-09 由 TextureView 改,新装生效)。
 
-### 4.4 详情 / 播放页(2026-09-07 实施,2026-09-11/12 补丁定稿)
+### 4.4 详情 / 播放页(2026-09-07 实施,2026-09-11/12 补丁定稿,2026-09-19 加音乐页入口)
 
-- 竖屏布局:顶部 16:9 播放器(内嵌播放,点全屏进横屏沉浸)→ **标题行(右侧 = 投屏图标 + 收藏图标,2026-09-13)**→ 年份/来源 → 简介可展开 → 选集横向行(表头右侧「倒序/正序」+「全部」两个 `PillAction`,「全部」→ 分季+网格 bottom sheet,当前集高亮)→ 换源行 → 相关推荐。
+- 竖屏布局:顶部 16:9 播放器(内嵌播放,点全屏进横屏沉浸)→ **标题行(右侧三个 `IconButton`,顺序 = 进入音乐播放器 → 投屏 → 收藏,2026-09-19)**→ 年份/来源 → 简介可展开 → 选集横向行(表头右侧「倒序/正序」+「全部」两个 `PillAction`,「全部」→ 分季+网格 bottom sheet,当前集高亮)→ 换源行 → 相关推荐。
 - **选集行不要重复「全部」入口(2026-09-12)**:表头已有「全部」药丸钮,chips 行末尾**不再挂**第二颗「全部」chip —— 同一动作两个入口既冗余又挤占横向空间(用户截图反馈后删除 `EpisodeRow` 里 `item(key = "all")` 那段)。
 - **状态栏区 = 纯黑**(2026-09-07 用户改选),播放器紧贴其下;状态栏图标强制白色且需**反复断言**(系统会按主题重设,见 §6.6)。
 - **chips 分区行**(「清晰度」/「线路」)= `surfaceBright` 圆角卡片(圆角 16dp、距屏 6dp、卡内 vertical 12dp、标题 start 16 / bottom 8、chips 行 contentPadding 16),**宽度必须与「选集」卡对齐**(`ChipRow` 的 `Column` 与 `LazyRow` 各加 `fillMaxWidth()`,否则仅两条线路时卡片明显变窄)。
 - **选集网格**(`全部` sheet):自适应多列网格 + 稳定定位当前集;格子 label 13sp + `contentPadding` 水平 6dp + `TextOverflow.Ellipsis`;**不要用 `basicMarquee`** —— 仅差几 dp 的溢出会表现成"文字乱滚/错位"。
 - **换源行 / 播放容器 / 帧率的硬约束见 §6.1**(点击即停 + 失败回滚原源 + 进度继承 + Exo 帧率匹配必须保持关闭)。
 - 播放手势:已有手势保留;**新增长按 2 倍速**(移动端惯例)、亮度/音量/进度手势指示器、全屏拖动进度预览。**横滑进度灵敏度(2026-09-13 用户要求调钝)**:`ComposeVideoController.SLIDE_POSITION_FULL_WIDTH_MS = 240000f` —— 滑满一个屏宽 = 4 分钟(约 1dp ≈ 0.58s),原值 120000f(滑满 = 2 分钟,照抄 dkplayer BaseController)已翻倍。手感仍嫌灵敏就继续调大,嫌迟钝调回 120000f。判定方向用 `abs(distanceX) >= abs(distanceY)`;**四边各 40dp 内按下不触发任何滑动手势**(`PlayerUtils.isEdge`)。
-- **⚠️ 竖屏上下滑 = 调亮度/音量,不再是切集(2026-09-13 用户决策,取代旧 `VodController` 扩展)**。旧实现在 `onScroll` 开头插了一个"竖屏上下滑切集"分支(`isPortraitEpisodeSwipe`:`abs(Δy) > abs(Δx)` 即成立,与 80dp 阈值无关),并且**无条件 `return true`** —— 结果竖屏下所有上下滑都被它吃掉,亮度/音量手势**在竖屏永远走不到**,用户表现为"上下滑没反应/变成别的动作"。现已整套删除(分支 + `isPortraitEpisodeSwipe` + `PORTRAIT_EPISODE_SWIPE_DP`/`_TITLE_SHOW_MS` + `portraitEpisodeSwipeTriggered` + `episodeTitleRunnable` + `PlayerUiState.portraitEpisodeTitleTemp`),竖屏与横屏手势行为**完全一致**,与上游 fongmi 对齐(它也没有这个分支)。**不要凭"切集方便"再加回来** —— 加了必然重新吃掉亮度/音量。**亮度/音量手势提示(2026-09-13 用户定稿)**:与 seek 提示**同款 M3 surface 药丸** —— 复用 `PlayerLayers.HintPill`(半透明 `surfaceContainer` 90% + 4dp 投影、无描边、尺寸内容自适应,文字 `onSurface`/`ts_30`),废弃旧 `shape_user_focus` 的深灰底(#6C3D3D3D)+ 白描边 + 固定 200x100mm 尺寸。**长按倍速浮层同款(2026-09-13 用户要求)**:`PlayerSpeedBoostHint` 也复用 `HintPill`,弃用旧的纯黑圆角底(`#66000000` + 白字 + 12dp 圆角 + 8dp 内边距),文字改 `onSurface`/`ts_26` 加粗居中 —— 至此播放器**全部提示类浮层统一为同一套药丸**(seek / 亮度音量 / 倍速)。
+- **⚠️ 竖屏上下滑 = 调亮度/音量,不再是切集(2026-09-13 用户决策,取代旧 `VodController` 扩展)**。旧实现在 `onScroll` 开头插了一个"竖屏上下滑切集"分支(`isPortraitEpisodeSwipe`:`abs(Δy) > abs(Δx)` 即成立,与 80dp 阈值无关),并且**无条件 `return true`** —— 结果竖屏下所有上下滑都被它吃掉,亮度/音量手势**在竖屏永远走不到**,用户表现为"上下滑没反应/变成别的动作"。现已整套删除(分支 + `isPortraitEpisodeSwipe` + `PORTRAIT_EPISODE_SWIPE_DP`/`_TITLE_SHOW_MS` + `portraitEpisodeSwipeTriggered` + `episodeTitleRunnable` + `PlayerUiState.portraitEpisodeTitleTemp`),竖屏与横屏手势行为**完全一致**,与上游 fongmi 对齐(它也没有这个分支)。**不要凭"切集方便"再加回来** —— 加了必然重新吃掉亮度/音量。**亮度/音量手势提示(2026-09-13 用户定稿)**:与 seek 提示**同款 M3 surface 药丸** —— 复用 `PlayerLayers.HintPill`(半透明 `surfaceContainer` **50%**(2026-09-19 由 90% 下调,透明度硬编码在 `HintPill` 一处,三个消费点同时生效)+ 4dp 投影、无描边、尺寸内容自适应,文字 `onSurface`/`ts_30`),废弃旧 `shape_user_focus` 的深灰底(#6C3D3D3D)+ 白描边 + 固定 200x100mm 尺寸。**长按倍速浮层同款(2026-09-13 用户要求)**:`PlayerSpeedBoostHint` 也复用 `HintPill`,弃用旧的纯黑圆角底(`#66000000` + 白字 + 12dp 圆角 + 8dp 内边距),文字改 `onSurface`/`ts_26` 加粗居中 —— 至此播放器**全部提示类浮层统一为同一套药丸**(seek / 亮度音量 / 倍速)。
 - DLNA 投屏保留:**入口两处、链路同一套** —— ①播放器底栏「投屏」(`PlayerActions.onCastClicked`);②**竖屏详情页标题行投屏图标**(2026-09-13 用户要求,图标取 `.tubiao/投屏.svg` → `drawable/ic_detail_cast.xml`,`IconButton` tint `onSurfaceVariant` 24dp,置于收藏图标左侧),点击走 `PlayContainer.showCast()` → 与 ① 完全同一条 `showCastDialog()` 链路(同一个 `CastSheet` Dialog 面板、同一套 DLNA/TVBox 扫描与投送、无可投地址时的 Toast 也一样)。**同一 sheet 内也扫描局域网 TVBox 设备**(`RemoteTVBox.searchAvalible`),选中即 `post("http://<host>/action")` 推送;**扫描到 / 投屏成功时都要记住 host**(`RemoteTVBox.setAvalible` → KV `REMOTE_TVBOX`),因为 `PlayerHelper` 的 **13 号「RemoteTVBox 播放器」**(把 TVBox 当外部播放器用,`RemoteTVBox.run`)与它的可用性判定都依赖这个值 —— 2026-09-13 修复:Compose 迁移时漏掉了这次写入,导致该播放器恒不可用;同时 `PlayerHelper.invalidatePlayersExistInfo()` 必须跟着调用(该可用性表是**进程级缓存**,不重置则本次进程内不会重新计算)。
+- **手动进入音乐播放页(2026-09-19)**:标题行最左那颗 = `ic_detail_music_player.xml`(取自 `.tubiao/进入音乐播放器.svg`),点击 `DetailActivity.openMusicPlayer()` → 详情未解析完 Toast「内容还没加载好」;会话未建则先 `playCurrent()` 建会话;再 `handOffToMusicPlayer()` 交接。**交接后是否 `finish()` 按内容类型分流**:`isAudioContent()`(= `looksLikeAudioUrl(webPlayUrl)` 或 `isConfirmedAudioOnly()`,与自动跳转同一判定)为真 → 纯音频,收掉本页;为假 → 影视,**本页留在栈里**,音乐页返回即回到竖屏详情页。⚠️ 保留本页这条路径有两个连带点:①返回时靠已有的 `PlayContainer.reattachIfOwnedByOther()` 重新挂载引擎(原用于"从直播页回来"),**必须同时把 `handedOver` 复位**(见 §6.1);②音乐页改的是 `session.vod`(预览副本)、本页 UI 读的是 `vm.vodInfo`,是两个对象 —— `onResume` 的 `syncEpisodeAfterMusicPage()` 要把 `playFlag/playIndex` 同步回来,否则选集高亮停在交接那一集、点播放还会跳回那一集(用 `pendingEpisodeSync` 标记只在交接后同步一次,避免"从历史进详情页"被上次残留会话覆盖)。返回后视频为**暂停态**(引擎「退页面即停」),需手动续播。
 - 弹幕开关/字幕/倍速/音轨 → 播放器设置统一 bottom sheet。
 - **退后台不显示暂停浮层(2026-09-13 修)**:退后台自动暂停(`DetailActivity.onPause` → `HostPause()`)时经 `PlayerControlApi.setLifecyclePaused(true)` 抑制暂停浮层 —— `PlayerUiState.pauseOverlayVisible` 判定追加 `&& !lifecyclePaused`。原因:退后台那一瞬间会画出"暂停"浮层(标题 + 中央播放图标),被系统**任务快照**(后台管理卡片)拍进去,观感是"一退到后台就被暂停了",而回前台 `hostResume()` 会自动续播 → 快照与实际状态不符。回前台复位该标记;用户手动暂停后进后台再回前台,暂停浮层照常出现。
 - **媒体通知对影视也生效(2026-09-13 用户要求)**:前台服务通知 + MediaSession 原先只对**纯音频**(音乐源)建立,判据写在 `PlayContainer.getAudioOnlyPlayback()`(`有音轨 && 无视频轨`)。现已拆成两个概念,同一个方法不能再混用:
@@ -176,6 +177,23 @@
 - **无痕模式(2026-09-12)**:开关行 = `SettingsSwitchRow(title="无痕模式")`(**无副标题** —— 2026-09-13 用户要求删掉「不记录搜索与观看历史」那行),值存 KV `HawkConfig.INCOGNITO`(`"incognito"`,默认关)。开启后**只拦写入、不隐藏已有数据**:①搜索历史 `HistoryHelper.setSearchHistory()` 直接 return;②观看历史 + 播放进度 `RoomDataManger.insertVodRecord()` 直接 return(该方法是观看历史的**唯一落库点**,片头/切集/进度同步都汇聚于此,拦一处即全覆盖)。**不受影响**:手动收藏(`insertVodCollect` 链路)、清空/删除历史、卸载式的用户主动操作。判定统一走 `HistoryHelper.isIncognito()`(照上游 FongMi 的 `Setting.isIncognito()` + `VodHistoryPolicy` 在策略层拦截的写法;区别是 FongMi 只覆盖观看历史,本项目按用户要求把搜索历史也纳入)。
 - **留白**:内容末尾 `Spacer(64.dp)`,与设置页一致。
 
+### 4.10 音乐播放页(2026-09-19 定稿)
+
+- **文件**:`ui/music/MusicPlayerScreen.kt`(Compose UI)+ `MusicPlayerState.kt`(状态)+ `MusicPalette.kt`(专辑取色)+ `MusicLrc.kt`(歌词解析);宿主 = `ui/activity/MusicPlayerActivity.kt`(`PlaybackPage` 实现,自建 1×1 `renderSlot` 后 `engine.attach`)。
+- **入口两条**(都走同一套交接:`detachForHandover` 摘视图不停播 → 起音乐页 → 详情页按内容类型决定是否 `finish`,见 §4.4):
+  ① **自动**:详情页起播后 300ms 轮询 `musicPlaybackDetected()`(开关 `MusicSettings.autoOpenPage()` 默认开 + 引擎归属本页 + 状态已到 PREPARING 之后 + `isAudioContent()`);
+  ② **手动**:详情页标题行「进入音乐播放器」。
+- **页面结构**(自上而下):顶栏(返回圆钮 + 源名玻璃胶囊,`glassTopBarSurface`)→ 封面(按封面取色生成整套 `colorScheme`,只在本页内 `MaterialTheme` 覆盖)→ 曲名/歌手 → **歌词(仅当解析出时间轴行时才显示,整块用 `weight(1f)`,空则不占位)**→ 波形进度条(可点可拖,`onSurface`/22% 双色)→ 播放控件(扇贝形上/下一首 64dp + 蛋形播放键 84×76dp)→ 底部胶囊。
+- **底部胶囊(2026-09-19 用户定稿,参照 `示例文件/PixelPlayer-master` 的 `BottomToggleRow`)**:外层 `surfaceContainer` 胶囊,**宽度 = 三个播放控件的总宽**(常量 `PlaybackControlsWidth` = 64+20+84+22+64 = **254dp**,不随屏宽拉伸;宽屏也等宽)、高 66dp、内缩 8dp;四段等分(`weight(1f)`,间距 8dp)= 播放模式 / 收藏 / 投屏 / 选集;段底色 `surfaceBright`,选中态 `primary`(播放模式)/`tertiary`(收藏)实心 + `onPrimary`/`onTertiary` 图标,投屏与选集恒为未选中。**分段式圆角**(`segmentShape`):最左段朝外两侧 = `CornerSize(percent = 50)`(段高 50dp 的一半 = 25dp,与容器同心)、最右段朝外两侧同理,其余全 8dp;按压 = `scale 0.94` + `spring(0.45, StiffnessMediumLow)` + 涟漪(与 `CapsuleSegmentedButton` 同一套手感)。⚠️ 播放控件尺寸已抽成 `SkipButtonSize`/`PlayButtonWidth`/`SkipToPlayGap`/`PlayToSkipGap` 常量供两处共用,改一边要同步核对胶囊宽度。
+- **选集 sheet**:`AVBoxBottomSheet` + `LazyColumn`,`heightIn(max = 420.dp)`;**弹出即 `scrollToItem(queueIndex)`**(无动画;状态在 `if (queueVisible)` 分支内 `remember`,关闭即销毁,所以每次弹出都从当前曲开始,不残留上次滚动位置)。
+- **投屏**:底部胶囊第 3 段 → `MusicPlayerActivity.showCast()`,取数口径与 `PlayContainer.showCastDialog()` 完全一致(`controller.webPlayUrl()` + `getCastUrl()` 改写 + `webHeaderMap()` 头部 + 当前位置;标题 = 片名 + 集名;无地址 Toast「暂无可投屏播放地址」);面板复用同一个 `CastSheet`(它自带 Dialog,挂在音乐页自己的 Compose 树里)。
+- **观看历史必须本页自己落库**:音乐页不走详情页的 `preparePlaySession()`,而 `RoomDataManger.insertVodRecord` 是历史的**唯一落库点** —— 不补就只有详情页交接那一刻的快照(切歌后"上次看到第 X 首"、`updateTime` 排序都不对)。落库点 = `syncHistory()`:切歌成功(`playAt`)后 + `onDestroy`(退出刷新时间戳)。⚠️ **key 必须用详情页传进来的 `firstsourceKey`**(`MusicPlayerActivity.start(context, historySourceKey)`),用 `controller.sourceKey()`(= `session.sourceKey()`)在换源后会写成第二条记录。
+- **歌词格式支持**:标准 LRC(`[mm:ss]`)/ 增强 LRC(`<mm:ss>` 词标签)/ SRT(`-->`)/ **ASS**(`[Script Info]` 或**行首** `Dialogue:`,字段 `Layer,Start,End,...,Text` 按 `split(",", limit = 10)` 切 —— Text 本身可含逗号;时间为 `H:MM:SS.cc` 百分秒)。判定与分派共用一个 `LrcFormat` 枚举,保证日志里报的格式与实际分支一致。以下四条必须记住:
+  1. **标签正则必须 ICU 兼容**:裸 `}` 会被 `com.android.icu` 拒绝(`PatternSyntaxException`),而 `MusicLrc` 是 `object` —— 一处写错就打挂 `<clinit>`,**本进程内所有歌词全为空**。历史上 `braceTag` 就漏过一次转义,写成 `\{[^}]{0,40}}` 引发过 5 次启动即崩。
+  2. **ASS 判定必须"行首"**,不能用 `raw.contains("Dialogue:")`:歌词正文命中一次就整首 0 行。
+  3. **禁止静默吞错**:`runCatching` 必须打日志(`echo-music lyric parsed: N lines` / `lyric parse failed` / `lyric raw empty`)。"格式不认"与"类初始化失败"在界面上完全一样(都没歌词),不打日志无从区分。
+  4. 歌词源只给部分歌配词是常态(日志 `echo-lyric pick: none`),界面不显示歌词不一定是 bug —— 先看 `echo-lyric pick:` 与 `echo-music lyric` 两组日志再判定。
+
 ## 5. 视觉与组件约定
 
 - 卡片触摸反馈:ripple + 按压缩放(0.96~0.98)。**涟漪透明度全局 = M3 默认 2 倍**(2026-09-13,照搬 `示例文件/android` 的 `Theme.kt`):`AVBoxTheme` 用 `LocalRippleConfiguration` 下发 `RippleConfiguration(rippleAlpha = …)`,pressed 0.20 / hovered 0.16 / focused 0.20 / dragged 0.32 —— M3 默认 pressed 仅 10%,首页海报卡是深色图片 + 黑色渐变 scrim,几乎看不出"点到了"。走全局配置而不是逐卡传 `indication`:`clickable`/`combinedClickable`/`Surface(onClick)`/`ToggleButton` 一次覆盖。⚠️ `RippleConfiguration` 已 deprecated 但官方无替代入口,必须 `@Suppress("DEPRECATION")`。圆角卡必须 **先 `.clip(shape)` 再挂 `clickable`**,否则涟漪与长按激活区会溢出圆角变成矩形(`PressableCard` 已是此顺序)。参考项目的按压缩放目标是 **0.94**(经 `Modifier.scale` + `spring(dampingRatio=0.6f, stiffness=800f)`),本项目沿用自定的 0.96~0.98 不改。
@@ -197,6 +215,8 @@
 - **Exo 帧率匹配必须保持关闭**:`ExoPlayer.disableFrameRateMatching()`(`Renderer.MSG_SET_CHANGE_FRAME_RATE_STRATEGY` 下发 `VIDEO_CHANGE_FRAME_RATE_STRATEGY_OFF`,由自定义 `SubtitleOffsetRenderersFactory.buildVideoRenderers()` 收集视频渲染器后在 `initPlayer()` 逐个下发)。**media3 默认把视频帧率写进播放 Surface,ROM(vivo 2425A / OriginOS)据此把整机刷新率由 120Hz 降到 60Hz**,主观表现 = "播放时滑动 / 开 bottom sheet 卡顿掉帧,暂停就正常"(IJK 不调该 API 故不触发)。⚠️ **窗口级高刷申请(`preferredDisplayModeId` / `preferredRefreshRate` / `View.setRequestedFrameRate`)实测无效,不要再试**。若某机型仍降频,备选 = 屏蔽 `MediaFormat.KEY_OPERATING_RATE`,或该机型默认内核改 IJK。
 - **播放容器 = `ui/player/PlayContainer.java`**(非 Fragment 的 `FrameLayout`,原 `PlayFragment`):宿主显式驱动 `hostResume()/hostPause()/hostDestroy()`;⚠️ `mActivity` 置空必须在 `stopLoadWebView` **之后**,否则 WebView 泄漏。`SourceViewModel` 由容器直接持有(容器不是 ViewModelStoreOwner)。
 - **换源交互(2026-09-11 方案 C 定稿)**:点击换源 = **立即停播**(`PlayContainer.stopForSourceSwitch()`,先 `getCurrentPosition()` 刷新 `mCurrentPosition` 再 release,置 `switchStopPending` 抑制在途取流回调)+ **进度继承到新源**(新键已有历史则不覆盖)+ **失败回滚原源并从停播处续播**(`DetailViewModel.SwitchSnapshot` / `rollbackManualSwitch`,四处失败点改回滚;无快照时保持原空态/关页行为)。快照不被覆盖 → 回滚目标始终是"最后一次可播状态"。过程见 `history/features.md`。
+- **`handedOver` 必须在两条"重新接管引擎"的路径上复位(2026-09-19)**:`PlayContainer.handedOver` 是给"交出去后本页立刻销毁"准备的 —— 置位后 `hostDestroy()` 会**跳过** `engine.detach()`(否则会停掉刚交接给音乐页的音频)。但"影视内容进音乐页、本页留在栈里"(§4.4)这条路径下本页会存活并重新接管,复位点缺一处就会漏 `detach` → **退出详情页后声音不停**(只靠 60s 空闲释放兜底)。两条路径都要复位:`reattachIfOwnedByOther()`(hostResume 触发)与 `reviveEngineIfReleased()`(引擎已被释放后重建)。
+- **封面必须按"会话边界 + 内容是否更换"清(2026-09-19)**:`playArtwork` 是**只写一次**的字段(`updateMusicSession` 里带 `TextUtils.isEmpty(playArtwork)` 守卫,且原先**全仓没有复位点**),`currentArtwork` 只在取流结果处理里被覆盖(取流失败就没走到)。两者都会跨会话残留 → 音乐页按 `currentArtwork → playArtwork → vod.pic` 取值,于是"音乐 → 影视 → 再进音乐页"显示上一首的封面(影视源自带 cover 时不复现,所以是"有概率")。清场点 = `PlaybackController.startSession()`,**判据必须是 `playbackKey` 变化**(换内容才清):同片接管(退出详情页再进同一部,`PlayContainer.setData` 的 `isSamePlaybackOwned` 分支也走 `startSession`)不能清,否则封面会白到下一次取流结果。
 
 ### 6.2 异步与列表
 - **爬虫 `getSearch` / `getDetail` 等阻塞调用必须在 IO 线程**调用(主线程调用 → 卡死 / ANR);并发限流 6、单源 30s 超时(`future.get`)。
@@ -270,6 +290,9 @@
 - ~~历史/收藏 tab 的具体视觉~~(Step 2 已确认,见 §4.2)
 - 首页品牌色板(非动态取色时 Android <12 用的 fallback 色值)
 - 播放器覆盖层触摸目标统一到 48dp(锁屏钮 24dp / 进度条 `vs_30`≈24dp / 底栏菜单按钮≈28dp)。**前置决策**:进度行在菜单行之上,直接加高行高会把进度条顶高 20~40dp;若要两全,需先把进度行移到菜单行**下方**贴底(对齐 B 站/YouTube,以及 media3 官方:底栏 60dp、进度条触摸高 48dp、距底 52dp),再放大触摸目标。
+- **音乐页手动入口在取流完成前点击会误判(2026-09-19)**:`isAudioContent()` 依赖 `webPlayUrl`/轨道信息,刚 `playCurrent()` 就交接时两者可能都还没有 ⇒ 判为"影视"、详情页被保留。后果只是音频内容也保留了详情页(返回看到一个没有画面的详情页),不崩。要收口需补一层片名/源名关键词兜底(webX 系项目的 `isMusicLikeText` 做法),属独立决策。
+- **桥的 `setArtwork("")` 会短暂清空封面(2026-09-19)**:控制器对影视源(取流结果无 cover)会调 `view.setArtwork("")` → 音乐页桥直接把 `ui.artwork` 置空,把 `refreshMeta()` 刚填的 `vod.pic` 盖掉,下一次状态变化再补回来(最终态正确,只有一帧空白)。要收口 = 桥的 `setArtwork` 忽略空值(清空本就有独立的 `clearArtwork()`)。
+- **音乐页返回详情页后视频是暂停态(2026-09-19)**:引擎「退页面即停」的既有语义,需手动按播放续播。若要自动续播,得在 `handOffToMusicPlayer` 置标记、`onResume` 按标记补一次 `playCurrent()` —— **不能无脑在 `onResume` 里播**,`setData` 的同片接管分支会无条件 `start()`,连"用户主动暂停后切后台再回来"都会被强制续播。
 
 ## 8. 历史归档索引(`history/`,按需检索)
 
@@ -278,7 +301,7 @@
 | 文件 | 内容 | 什么时候查 |
 | --- | --- | --- |
 | `history/steps.md` | Step 0–7 改造实施记录、Step 1 删除清单实际对账、各步决策与验证记录 | 想知道"某个类 / 布局 / 依赖当初为什么删"、"某步的架构决策与验证点" |
-| `history/features.md` | 2026-09-09 起功能迭代记录:首页下拉刷新、隧道模式 + AAC 优先、配置管理页、主题设置页、顶部应用栏改造全过程、选集网格溢出修复、快搜删除、卡片点击分发 + 网盘下钻 | 想知道"某功能当初怎么实现 / 为什么这么定 / 踩过什么坑" |
+| `history/features.md` | 2026-09-09 起功能迭代记录:首页下拉刷新、隧道模式 + AAC 优先、配置管理页、主题设置页、顶部应用栏改造全过程、选集网格溢出修复、快搜删除、卡片点击分发 + 网盘下钻、音乐播放页底部胶囊改版 + 详情页音乐页入口 + 歌词(ASS)/封面/历史三处修复 | 想知道"某功能当初怎么实现 / 为什么这么定 / 踩过什么坑" |
 
 **旧章节 → 新位置对应关系**:旧 §5 删除清单 → `history/steps.md`;旧 §7 实施路线 + 旧 §8 Step 记录 → `history/steps.md`;旧 §8 功能小节 → `history/features.md`;旧 §6 视觉细节 → 本文 §5;旧 §9 未决清单 → 本文 §7。
 

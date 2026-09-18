@@ -35,6 +35,7 @@ import com.github.tvbox.osc.player.PlaybackEngine;
 import com.github.tvbox.osc.player.PlaybackService;
 import com.github.tvbox.osc.player.PlaybackController;
 import com.github.tvbox.osc.player.PlaybackHostApi;
+import com.github.tvbox.osc.player.PlaybackPage;
 import com.github.tvbox.osc.player.PlaybackSession;
 import com.github.tvbox.osc.player.PlaybackViewBridge;
 import com.github.tvbox.osc.player.TrackInfo;
@@ -82,7 +83,7 @@ import xyz.doikki.videoplayer.player.AbstractPlayer;
 import xyz.doikki.videoplayer.player.VideoView;
 import xyz.doikki.videoplayer.render.TextureRenderViewFactory;
 
-public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackHostApi {
+public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackHostApi, PlaybackPage {
 
     private final AtomicInteger trackSwitchSeq = new AtomicInteger(0);
     private PlaybackController scheduler;
@@ -103,11 +104,16 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
         PlayerTipBridge.hide();
         init();
         scheduler.setViewBridge(viewBridge);
-        if (engine != null) engine.attach(this, surfaceSlot);
+        if (engine != null) engine.attach(this);
     }
 
     public PlaybackViewBridge viewBridge() {
         return viewBridge;
+    }
+
+    @Override
+    public ViewGroup renderSlot() {
+        return surfaceSlot;
     }
 
     public void onServiceStopped() {
@@ -420,7 +426,10 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
         if (engine.attachedPage() == this) return;
         if (engine.isReleased()) return;
         if (engine.isLiveMode()) engine.exitLive();
-        engine.attach(this, surfaceSlot);
+        engine.attach(this);
+        // 重新接管后本页恢复"退出即停播"的职责:交接标记是给"交出去后本页就销毁"准备的,
+        // 音乐页返回(影视内容)这条路径本页仍存活,不清掉会让 hostDestroy 漏掉 detach —— 退出后声音不停
+        handedOver = false;
         if (mVideoView != null && mController != null) {
             mVideoView.setVideoController((BaseVideoController) mController);
             int state = mVideoView.getCurrentPlayState();
@@ -440,9 +449,18 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
         }
     }
 
+    private boolean handedOver;
+
+    /** 交给音乐播放页接管:引擎摘视图但不停播,随后的 hostDestroy 不得再 detach(会停掉刚交接的音频) */
+    public void handOverToNextPage() {
+        if (engine == null) return;
+        handedOver = true;
+        engine.detachForHandover(this);
+    }
+
     public void hostDestroy() {
         LOG.i("echo-music destroy: hostDestroy enter");
-        if (engine != null) engine.detach(this);
+        if (engine != null && !handedOver) engine.detach(this);
         cancelPreloadToast();
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this);
@@ -1326,7 +1344,8 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
         engine = PlaybackService.engine(mActivity);
         scheduler = engine.controller();
         mVideoView = engine.player();
-        engine.attach(this, surfaceSlot);
+        engine.attach(this);
+        handedOver = false;
         if (mVideoView != null) {
             mVideoView.setVideoController((BaseVideoController) mController);
             if (danmuLoadController != null) danmuLoadController.setVideoView(mVideoView);

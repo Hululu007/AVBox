@@ -95,7 +95,7 @@ public final class PlaybackEngine implements PlaybackHostApi {
             return controller.getSavedProgress(url);
         }
     };
-    private WeakReference<PlayContainer> pageRef;
+    private WeakReference<PlaybackPage> pageRef;
     private PlaybackSession session;
     private boolean released;
     /** 直播模式(P4):同一实例被直播页接管期间,点播侧(进度/预载/媒体会话/弹幕)一概不参与 */
@@ -124,8 +124,14 @@ public final class PlaybackEngine implements PlaybackHostApi {
     }
 
     @Nullable
-    public PlayContainer attachedPage() {
+    public PlaybackPage attachedPage() {
         return pageRef == null ? null : pageRef.get();
+    }
+
+    /** 无页面时的视图桥:非页面实现(音乐播放页)的桥按接口委托复用它,只覆写 UI 相关动作 */
+    @NonNull
+    public PlaybackViewBridge headlessBridge() {
+        return headlessView;
     }
 
     // ==================== 挂摘协议(§2.3) ====================
@@ -201,7 +207,7 @@ public final class PlaybackEngine implements PlaybackHostApi {
         // ① 渲染容器还挂在点播页槽位 → 直播页 Compose 树拿到空壳(无画面);
         // ② 点播音频与直播叠加;③ 点播通知与 wake/wifi 锁残留到直播期间(点通知还会把点播声音叠上来)。
         // ⚠️ detach 必须在 liveMode 置位**之前**(detach 对直播模式直接让路,见其 liveMode 守卫)
-        PlayContainer page = attachedPage();
+        PlaybackPage page = attachedPage();
         if (page != null) detach(page);
         controller.stopMusicSessionForFailedPlayback();
         PlaybackService.forceStopSession(appContext);
@@ -232,7 +238,7 @@ public final class PlaybackEngine implements PlaybackHostApi {
         // 点播页面若还在栈里(未销毁):先把渲染容器收回来(否则它仍挂在那个页面的槽位里,
         // 直播页的 Compose 树拿到的只是一张空壳),并清掉对页面 View 的引用。
         // ⚠️ 必须在 liveMode 置位**之前**:detach 对直播模式直接让路(见 detach 的 liveMode 守卫)
-        PlayContainer page = attachedPage();
+        PlaybackPage page = attachedPage();
         if (page != null) detach(page);
         liveMode = true;
         setLiveFlag(true);
@@ -345,13 +351,13 @@ public final class PlaybackEngine implements PlaybackHostApi {
     }
 
     /** 页面挂载:搬渲染容器进页面宿主,并把视图桥切到页面(提示/弹幕/字幕/控制器动作都在页面) */
-    public void attach(@NonNull PlayContainer page, @NonNull ViewGroup slot) {
+    public void attach(@NonNull PlaybackPage page) {
         if (released) return;
         // 只切人格:exitLive() 会清控制器,而页面构造期(initView)刚把自己的控制器设上去,
         // 这里清掉会导致返回点播页后失去控制器手势/按键(见 exitLiveState 注释)
         if (liveMode) exitLiveState();
         pageRef = new WeakReference<>(page);
-        videoView.attachContainerTo(slot);
+        videoView.attachContainerTo(page.renderSlot());
         controller.setViewBridge(page.viewBridge());
         // 有人接手了,撤销空闲释放排期
         cancelIdleRelease();
@@ -368,28 +374,45 @@ public final class PlaybackEngine implements PlaybackHostApi {
      * <p>两个容易漏的点:① 不 release 就没人触发进度落盘 → 必须显式 `saveCurrentProgress()`;
      * ② 在途取流/解析若不停,退出后会在后台把这一集播起来(无声页面却在响)→ `stopPlaybackForPageExit()`。
      */
-    public void detach(@NonNull PlayContainer page) {
+    public void detach(@NonNull PlaybackPage page) {
+        detach(page, false);
+    }
+
+    /**
+     * 把页面交给下一个页面(音乐播放页):摘视图但**不停播、不撤会话**。
+     *
+     * <p>用于"详情页发现是纯音频 → 拉起音乐页"的交接:老页面随后销毁时不能再走 {@link #detach}
+     * (那样会把刚交接的音频停掉),故提前用本方法摘净视图并置空页面引用;若新页面最终没来接管,
+     * 空闲释放(见 {@link #IDLE_RELEASE_DELAY_MS})仍会给实例一个上界。
+     */
+    public void detachForHandover(@NonNull PlaybackPage page) {
+        detach(page, true);
+    }
+
+    private void detach(@NonNull PlaybackPage page, boolean keepPlayback) {
         if (released) return;
         // ⓪ 直播接管期间播放器属于**直播页**:此时被销毁的点播页(它可能只是被系统回收,或用户
         // 从详情跳直播后旧页才走 onDestroy)不得再动播放器 —— 否则会停掉直播流、撤掉直播通知、
         // 并把渲染容器从直播页的 Compose 树里摘走(直播黑屏)。
-        // 直播页自己不走 attach(没有 PlayContainer),所以归属守卫 `cur != page` 拦不住这种情况。
+        // 直播页自己不走 attach(没有 PlaybackPage),所以归属守卫 `cur != page` 拦不住这种情况。
         if (liveMode) return;
         // ① 进度落盘**先于归属判定**(2026-09-14):"快速返回再进入"时新页面可能已经 attach 了引擎,
         // 归属守卫会让下面的收尾整段跳过;若不在这里先存,这一集的观看进度就随着页面销毁丢了
         // (播放器里还是旧内容/旧 progressKey,存下来正是旧集该存的那一份)。
         videoView.saveCurrentProgress();
-        PlayContainer cur = attachedPage();
+        PlaybackPage cur = attachedPage();
         if (cur != null && cur != page) return;
         pageRef = null;
-        // ① 停播(一律,含"确认纯音频"的音乐):退页面即停
-        videoView.pause();
-        // ③ 刚点播放就退出(PREPARING/BUFFERING):pause() 无效,必须停内核,否则页面销毁后自己播起来
-        videoView.stopPlaybackKeepPlayer();
-        // ③ 收在途:撤取流/超时/解析 + 停会话(撤通知、放 wake/wifi 锁)
-        controller.stopPlaybackForPageExit();
-        // 归属守卫可能让 ③ 的停会话被跳过(owner 是页面 vs host 也是页面 —— 通常一致,这里再兜一次)
-        PlaybackService.forceStopSession(appContext);
+        if (!keepPlayback) {
+            // ① 停播(一律,含"确认纯音频"的音乐):退页面即停
+            videoView.pause();
+            // ③ 刚点播放就退出(PREPARING/BUFFERING):pause() 无效,必须停内核,否则页面销毁后自己播起来
+            videoView.stopPlaybackKeepPlayer();
+            // ③ 收在途:撤取流/超时/解析 + 停会话(撤通知、放 wake/wifi 锁)
+            controller.stopPlaybackForPageExit();
+            // 归属守卫可能让 ③ 的停会话被跳过(owner 是页面 vs host 也是页面 —— 通常一致,这里再兜一次)
+            PlaybackService.forceStopSession(appContext);
+        }
         // ④ 摘视图与页面 View 引用(防引擎持有页面)
         videoView.setVideoController(null);
         videoView.setDanmuView(null);
@@ -398,7 +421,7 @@ public final class PlaybackEngine implements PlaybackHostApi {
         // 页面已摘、播放已停,但实例仍留着(跨页复用的收益所在)—— 给它一个释放上界:
         // 到点还没人来取就释放内核(见 IDLE_RELEASE_DELAY_MS)
         scheduleIdleRelease();
-        LOG.i(TAG + " detach page=" + page.hashCode());
+        LOG.i(TAG + (keepPlayback ? " detach for handover page=" : " detach page=") + page.hashCode());
     }
 
     /**
@@ -425,7 +448,7 @@ public final class PlaybackEngine implements PlaybackHostApi {
         // 引擎死亡必须复位直播标记(2026-09-15):否则"直播中被释放"会把 true 留给下一个引擎/后续点播
         setLiveFlag(false);
         LOG.i(TAG + " engine release");
-        PlayContainer page = attachedPage();
+        PlaybackPage page = attachedPage();
         pageRef = null;
         if (page != null) page.onServiceStopped();
         // 桥切回无页面桥:否则已释放的控制器仍指向那个页面,后续迟到的超时消息会把提示/错误弹到已销毁的页面上
@@ -445,7 +468,7 @@ public final class PlaybackEngine implements PlaybackHostApi {
 
     /** 当前生效的视图桥:页面在时用页面桥,否则用无页面桥 */
     private PlaybackViewBridge activeView() {
-        PlayContainer page = attachedPage();
+        PlaybackPage page = attachedPage();
         if (page == null) return headlessView;
         return page.viewBridge();
     }

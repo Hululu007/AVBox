@@ -68,6 +68,7 @@ import com.github.tvbox.osc.util.FileUtils
 import com.github.tvbox.osc.util.HistoryHelper
 import com.github.tvbox.osc.util.HistoryMerge
 import com.github.tvbox.osc.util.HawkConfig
+import com.github.tvbox.osc.util.MusicSettings
 import com.github.tvbox.osc.util.OkGoHelper
 import com.github.tvbox.osc.util.KV
 import kotlinx.coroutines.Dispatchers
@@ -83,6 +84,7 @@ data class SettingsState(
     val ijkCachePlay: Boolean,
     val playTunnel: Boolean,
     val preferAac: Boolean,
+    val musicPlayerPage: Boolean,
     val autoSwitchLine: Boolean,
     val m3u8Purify: Boolean,
     val incognito: Boolean,
@@ -159,6 +161,7 @@ class SettingsViewModel : ViewModel() {
         ijkCachePlay = KV.get(HawkConfig.IJK_CACHE_PLAY, false),
         playTunnel = KV.get(HawkConfig.PLAY_TUNNEL, false),
         preferAac = KV.get(HawkConfig.PLAY_PREFER_AAC, false),
+        musicPlayerPage = MusicSettings.autoOpenPage(),
         autoSwitchLine = KV.get(HawkConfig.AUTO_SWITCH_LINE, false),
         m3u8Purify = KV.get(HawkConfig.M3U8_PURIFY, false),
         incognito = KV.get(HawkConfig.INCOGNITO, false),

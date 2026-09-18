@@ -49,10 +49,10 @@ private val PillShape = RoundedCornerShape(50)
 private fun HintPill(modifier: Modifier, content: @Composable () -> Unit) {
     Row(
         modifier
-            // M3 surface 样式：surfaceContainer 90% 透明度 + 轻投影,无描边
+            // M3 surface 样式：surfaceContainer 50% 透明度 + 轻投影,无描边
             .shadow(4.dp, PillShape)
             .background(
-                MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.9f),
+                MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.5f),
                 PillShape
             )
             .padding(horizontal = playerDim(R.dimen.vs_20), vertical = playerDim(R.dimen.vs_10)),

@@ -148,6 +148,16 @@ public class PlaybackController {
         cancelInFlight();
         // 解析/嗅探代际复位(2026-09-15 Bug 7):上一会话的迟到回调不得作用到新会话
         parseGeneration.set(0);
+        // 封面属于**上一个会话的内容**,换内容时必须清(2026-09-19):
+        // playArtwork 是"只写一次"的(见 updateMusicSession 的 isEmpty 守卫),currentArtwork 只在取流结果
+        // 里被覆盖 —— 影视源不给 cover 时两者都会残留上一首音乐的值,音乐页又按 currentArtwork→playArtwork
+        // →vod.pic 的顺序取值,于是"音乐 → 影视 → 再进音乐页"会显示上一首的封面。
+        // 同片接管(退出再进同一部)不能清,否则封面会白到下一次取流结果。
+        if (currentSession == null
+                || !TextUtils.equals(currentSession.playbackKey(), session.playbackKey())) {
+            playArtwork = null;
+            currentArtwork = null;
+        }
         this.currentSession = session;
         // 本次会话的内容尚未真正交给播放器:先清掉"已起播内容"标记 ——
         // 否则"切到 B 但取流失败(播放器里其实还是 A)"后重进 B,会被 D6 误判成同片接管(播错内容)
@@ -1277,6 +1287,7 @@ public class PlaybackController {
                         if (TextUtils.isEmpty(artwork) && !TextUtils.isEmpty(playLyric()) && vod() != null) {
                             artwork = vod().pic;
                         }
+                        currentArtwork = artwork;
                         if (view != null) view.setArtwork(artwork);
                         String msg = info.optString("msg", "");
                         if (!TextUtils.isEmpty(msg)) {
@@ -2432,6 +2443,14 @@ public class PlaybackController {
         return playArtwork;
     }
 
+    /** 取流结果里的封面(音乐页等"后挂载页面"读它拿封面;通知用的 {@link #playArtwork} 只允许纯音频) */
+    private String currentArtwork;
+
+    @Nullable
+    public String currentArtwork() {
+        return currentArtwork;
+    }
+
     @Nullable
     public String playDanmu() {
         return playDanmu;
@@ -2651,8 +2670,7 @@ public class PlaybackController {
      * 常见纯音频直链后缀预判(仅用于起播前选渲染视图;误判无功能损失 —— TextureView 照常渲染视频)。
      * 注意只看去 query/fragment 后的后缀:音乐直链常带签名参数(.mp3?sign=...), playlist(m3u8) 绝不能命中。
      */
-    @SuppressWarnings("unused")
-    private static boolean looksLikeAudioUrl(String url) {
+    public static boolean looksLikeAudioUrl(String url) {
         if (url == null || url.isEmpty()) return false;
         String lower = url.toLowerCase();
         int query = lower.indexOf('?');

@@ -27,6 +27,7 @@ import com.github.tvbox.osc.ui.components.SettingsRow
 import com.github.tvbox.osc.ui.components.SettingsSwitchRow
 import com.github.tvbox.osc.ui.components.TopBarActionBox
 import com.github.tvbox.osc.util.HawkConfig
+import com.github.tvbox.osc.util.MusicSettings
 import com.github.tvbox.osc.util.PlayerHelper
 import xyz.doikki.videoplayer.player.VideoView
 
@@ -155,11 +156,22 @@ fun PlaySettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = viewM
                         },
                     )
                 }
-                SettingsCard(SettingsCardPosition.LAST) {
+                SettingsCard(SettingsCardPosition.MIDDLE) {
                     SettingsSwitchRow(
                         title = "AAC 优先",
                         checked = state.preferAac,
                         onCheckedChange = { vm.put(HawkConfig.PLAY_PREFER_AAC, it) },
+                    )
+                }
+                SettingsCard(SettingsCardPosition.LAST) {
+                    SettingsSwitchRow(
+                        title = "音乐播放页",
+                        subtitle = "识别为纯音频时自动打开",
+                        checked = state.musicPlayerPage,
+                        onCheckedChange = {
+                            MusicSettings.setAutoOpenPage(it)
+                            vm.refresh()
+                        },
                     )
                 }
             }
