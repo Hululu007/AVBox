@@ -19,11 +19,13 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -39,8 +41,11 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearWavyProgressIndicator
@@ -48,6 +53,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -60,16 +66,20 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Observer
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil3.compose.AsyncImage
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.base.BaseActivity
@@ -79,6 +89,8 @@ import com.github.tvbox.osc.bean.SourceBean
 import com.github.tvbox.osc.ui.components.AppTopBarScaffold
 import com.github.tvbox.osc.ui.components.LoadStateBox
 import com.github.tvbox.osc.ui.components.LoadState
+import com.github.tvbox.osc.ui.components.PressableCard
+import com.github.tvbox.osc.ui.components.TopBarActionBox
 import com.github.tvbox.osc.ui.components.VodCard
 import com.github.tvbox.osc.ui.components.VodCardMenu
 import com.github.tvbox.osc.ui.components.glassTopBarSurface
@@ -141,6 +153,7 @@ class SearchViewModel : ViewModel() {
         val sourceName: String,
         val state: ResultState,
         val videos: List<Movie.Video>,
+        val arrivedAt: Int = Int.MAX_VALUE,
     )
 
     val results = MutableStateFlow<List<SourceResult>>(emptyList())
@@ -156,6 +169,7 @@ class SearchViewModel : ViewModel() {
     private var suggestSeq = 0
 
     private var token = 0
+    private var arriveSeq = 0
     private var semaphorePermits = KV.get(HawkConfig.SEARCH_THREADS, HawkConfig.SEARCH_THREADS_DEFAULT)
     private var semaphore = Semaphore(semaphorePermits)
     private val pendingSources = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.CompletableDeferred<Unit>>()
@@ -190,9 +204,19 @@ class SearchViewModel : ViewModel() {
 
         @JvmStatic
         fun loadCheckedSources() {
-            checkedSources = SearchSettings.currentSelection()?.let { selection ->
-                HashMap<String, String>().apply { selection.forEach { put(it, "1") } }
-            } ?: SearchHelper.getSources()
+            val selection = SearchSettings.currentSelection()
+            if (selection != null) {
+                checkedSources = HashMap<String, String>().apply { selection.forEach { put(it, "1") } }
+                checkedSourcesApiUrl = KV.get(HawkConfig.API_URL, "")
+                return
+            }
+            val all = SearchHelper.getSources()
+            if (all.isEmpty()) {
+                checkedSources = null
+                checkedSourcesApiUrl = null
+                return
+            }
+            checkedSources = all
             checkedSourcesApiUrl = KV.get(HawkConfig.API_URL, "")
         }
 
@@ -330,6 +354,7 @@ class SearchViewModel : ViewModel() {
         val sources = ApiConfig.get().getSourceBeanList()
             .filter { it.isSearchable() && (checked == null || checked.containsKey(it.key)) }
             .sortedBy { it.key != home.key }
+        arriveSeq = 0
         results.value = sources.map { SourceResult(it.key, it.name.orEmpty(), ResultState.Pending, emptyList()) }
         sitesEmpty.value = sources.isEmpty()
         if (sources.isEmpty()) {
@@ -381,7 +406,7 @@ class SearchViewModel : ViewModel() {
     private fun updateResult(sourceKey: String, videos: List<Movie.Video>) {
         results.value = results.value.map {
             if (it.sourceKey == sourceKey) {
-                SourceResult(sourceKey, it.sourceName, ResultState.Done, videos)
+                SourceResult(sourceKey, it.sourceName, ResultState.Done, videos, ++arriveSeq)
             } else {
                 it
             }
@@ -407,6 +432,7 @@ fun SearchScreen(vm: SearchViewModel = viewModel()) {
     val exactMatch by vm.exactMatch.collectAsState()
     val sitesEmpty by vm.sitesEmpty.collectAsState()
     val vodMenu = rememberVodCardMenuState()
+    var resultLayout by remember { mutableStateOf(SearchSettings.resultLayout()) }
 
     LaunchedEffect(Unit) {
         if (SearchViewModel.isCheckedSourcesStale()) {
@@ -437,6 +463,10 @@ fun SearchScreen(vm: SearchViewModel = viewModel()) {
     }
 
     val resultListState = rememberLazyListState()
+
+    LaunchedEffect(resultLayout) {
+        selectedSource = null
+    }
 
     fun submit(text: String) {
         val t = text.trim()
@@ -473,6 +503,15 @@ fun SearchScreen(vm: SearchViewModel = viewModel()) {
                     modifier = Modifier.size(22.dp),
                 )
             }
+        },
+        actions = {
+            LayoutSwitchAction(
+                selected = resultLayout,
+                onSelect = {
+                    resultLayout = it
+                    SearchSettings.setResultLayout(it)
+                },
+            )
         },
     ) { topPad, _ ->
         if (results.isEmpty() && !running && sitesEmpty) {
@@ -659,6 +698,16 @@ fun SearchScreen(vm: SearchViewModel = viewModel()) {
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(top = topPad),
+                )
+            } else if (resultLayout == SearchSettings.SearchLayout.Vertical) {
+                RailResults(
+                    results = results,
+                    running = running,
+                    selectedSource = selectedSource,
+                    onSelectSource = { selectedSource = it },
+                    topPad = topPad,
+                    onCardClick = { context.openVodCardOrDetail(it) },
+                    onCardLongClick = { vodMenu.show(it) },
                 )
             } else {
                 LazyColumn(
@@ -877,3 +926,323 @@ private fun hideIme(activity: android.app.Activity?) {
     val imm = activity.getSystemService(InputMethodManager::class.java)
     imm?.hideSoftInputFromWindow(view.windowToken, 0)
 }
+
+@Composable
+private fun LayoutSwitchAction(
+    selected: SearchSettings.SearchLayout,
+    onSelect: (SearchSettings.SearchLayout) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        TopBarActionBox(
+            iconRes = R.drawable.ic_more_vert,
+            contentDescription = "结果展示方式",
+            onClick = { expanded = true },
+        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            shape = MaterialTheme.shapes.medium,
+            containerColor = MaterialTheme.colorScheme.surfaceContainer,
+            shadowElevation = 4.dp,
+        ) {
+            Column(
+                modifier = Modifier
+                    .width(156.dp)
+                    .padding(horizontal = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                LayoutSwitchCard(
+                    iconRes = R.drawable.ic_layout_horizontal,
+                    label = "横屏展示",
+                    selected = selected == SearchSettings.SearchLayout.Horizontal,
+                    onClick = {
+                        expanded = false
+                        onSelect(SearchSettings.SearchLayout.Horizontal)
+                    },
+                )
+                LayoutSwitchCard(
+                    iconRes = R.drawable.ic_layout_vertical,
+                    label = "竖屏展示",
+                    selected = selected == SearchSettings.SearchLayout.Vertical,
+                    onClick = {
+                        expanded = false
+                        onSelect(SearchSettings.SearchLayout.Vertical)
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LayoutSwitchCard(
+    iconRes: Int,
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        onClick = onClick,
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.surfaceBright,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                painter = painterResource(iconRes),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                modifier = Modifier.weight(1f),
+            )
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+    }
+}
+
+private val SearchRailWidth = 140.dp
+
+@Composable
+private fun RailResults(
+    results: List<SearchViewModel.SourceResult>,
+    running: Boolean,
+    selectedSource: String?,
+    onSelectSource: (String?) -> Unit,
+    topPad: Dp,
+    onCardClick: (Movie.Video) -> Unit,
+    onCardLongClick: (Movie.Video) -> Unit,
+) {
+    val listState = rememberLazyListState()
+    val rows = remember(results, selectedSource) {
+        results
+            .filter { it.videos.isNotEmpty() && (selectedSource == null || it.sourceKey == selectedSource) }
+            .sortedBy { it.arrivedAt }
+            .flatMap { result -> result.videos.map { result.sourceName to it } }
+    }
+
+    LaunchedEffect(selectedSource) {
+        if (rows.isNotEmpty()) listState.scrollToItem(0)
+    }
+
+    Row(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier.width(SearchRailWidth),
+            contentPadding = PaddingValues(start = 12.dp, end = 10.dp, top = topPad + 8.dp, bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            item(key = "rail_all") {
+                SearchRailItem(
+                    name = "全部",
+                    pending = running,
+                    selected = selectedSource == null,
+                    onClick = { onSelectSource(null) },
+                )
+            }
+            items(results, key = { "rail_${it.sourceKey}" }) { result ->
+                SearchRailItem(
+                    name = result.sourceName,
+                    pending = result.state == SearchViewModel.ResultState.Pending,
+                    selected = selectedSource == result.sourceKey,
+                    onClick = { onSelectSource(result.sourceKey) },
+                )
+            }
+        }
+        VerticalDivider(
+            modifier = Modifier.padding(top = topPad + 8.dp, bottom = 12.dp),
+            color = MaterialTheme.colorScheme.outlineVariant,
+        )
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(start = 10.dp, end = 12.dp, top = topPad + 8.dp, bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            if (running) {
+                item(key = "rail_progress") {
+                    LinearWavyProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                    )
+                }
+            }
+            items(rows, key = { (_, video) -> "${video.sourceKey}_${video.id}_${video.name}" }) { (siteName, video) ->
+                SearchResultRow(
+                    video = video,
+                    siteName = siteName.takeIf { selectedSource == null },
+                    onClick = { onCardClick(video) },
+                    onLongClick = { onCardLongClick(video) },
+                )
+            }
+            if (rows.isEmpty() && !running) {
+                item(key = "rail_empty") {
+                    Text(
+                        text = "该站点暂无结果",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 32.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchRailItem(
+    name: String,
+    pending: Boolean,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val contentColor = if (selected) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSurface
+    }
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(16.dp),
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceBright,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 10.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = name,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                color = contentColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            if (pending) {
+                Spacer(modifier = Modifier.width(6.dp))
+                CircularProgressIndicator(
+                    modifier = Modifier.size(12.dp),
+                    color = contentColor.copy(alpha = 0.6f),
+                    strokeWidth = 1.5.dp,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchResultRow(
+    video: Movie.Video,
+    siteName: String?,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
+    PressableCard(
+        onClick = onClick,
+        onLongClick = onLongClick,
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(96.dp)
+                .background(MaterialTheme.colorScheme.cardContainer),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AsyncImage(
+                model = video.pic,
+                contentDescription = video.name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .width(68.dp)
+                    .fillMaxHeight(),
+            )
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(
+                    text = video.name ?: "",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (!video.note.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = video.note.orEmpty(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val meta = searchMetaText(video)
+                    if (meta.isNotEmpty()) {
+                        Text(
+                            text = meta,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                    } else {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                    if (siteName != null) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = siteName,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .widthIn(max = 90.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun searchMetaText(video: Movie.Video): String = listOfNotNull(
+    video.year.takeIf { it > 0 }?.toString(),
+    video.area?.takeIf { it.isNotBlank() },
+    video.type?.takeIf { it.isNotBlank() },
+).joinToString(" · ")

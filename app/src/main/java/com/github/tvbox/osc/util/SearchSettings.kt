@@ -7,8 +7,17 @@ package com.github.tvbox.osc.util
  */
 object SearchSettings {
 
+    enum class SearchLayout { Horizontal, Vertical }
+
     // 该键未登记 KVKeySpec:读取必须带默认值(靠默认值携带 Boolean 类型),KV.get(key) 不带默认值会解不出
     private const val KEY_EXACT_MATCH = "search_exact_match"
+
+    // 同 KEY_EXACT_MATCH:未登记 KVKeySpec 的键读取必须带默认值
+    private const val KEY_RESULT_LAYOUT = "search_result_layout"
+
+    private const val VALUE_LAYOUT_HORIZONTAL = "horizontal"
+
+    private const val VALUE_LAYOUT_VERTICAL = "vertical"
 
     // 底层"无记录=不限制"表达不了"一个都不搜",只能按源地址另记一份空选择
     private const val KEY_EMPTY_SOURCES = "search_sources_empty"
@@ -22,6 +31,17 @@ object SearchSettings {
 
     fun setExactMatchEnabled(enabled: Boolean) {
         KV.put(KEY_EXACT_MATCH, enabled)
+    }
+
+    /** 搜索结果展示方式:横排(各源分区 + 横向卡片行)/ 竖排(左侧站点栏 + 右侧结果) */
+    fun resultLayout(): SearchLayout =
+        if (KV.get(KEY_RESULT_LAYOUT, "") == VALUE_LAYOUT_VERTICAL) SearchLayout.Vertical else SearchLayout.Horizontal
+
+    fun setResultLayout(layout: SearchLayout) {
+        KV.put(
+            KEY_RESULT_LAYOUT,
+            if (layout == SearchLayout.Vertical) VALUE_LAYOUT_VERTICAL else VALUE_LAYOUT_HORIZONTAL,
+        )
     }
 
     /** 当前源地址是否被显式设为"不搜任何站点" */
