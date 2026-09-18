@@ -50,6 +50,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -78,6 +79,7 @@ import com.github.tvbox.osc.ui.components.VodCardMenu
 import com.github.tvbox.osc.ui.components.rememberVodCardMenuState
 import com.github.tvbox.osc.ui.page.openVodCardOrDetail
 import com.github.tvbox.osc.ui.player.PlayerTipBridge
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -666,19 +668,13 @@ private fun EpisodeSheet(vm: DetailViewModel, revision: Int) {
         emptyList()
     }
     val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+    val gridScope = rememberCoroutineScope()
     var selectedGroup by rememberSaveable { mutableStateOf(0) }
 
     LaunchedEffect(show, currentFlag, playIndex) {
         if (show && playIndex >= 0) {
-            val target = (playIndex / groupCount) * groupCount
             selectedGroup = playIndex / groupCount
-            if (target in episodes.indices) gridState.scrollToItem(target)
-        }
-    }
-    LaunchedEffect(selectedGroup) {
-        if (selectedGroup > 0) {
-            val target = selectedGroup * groupCount
-            if (target in episodes.indices) gridState.scrollToItem(target)
+            if (playIndex in episodes.indices) gridState.scrollToItem(playIndex)
         }
     }
 
@@ -713,7 +709,10 @@ private fun EpisodeSheet(vm: DetailViewModel, revision: Int) {
                     itemsIndexed(groups) { index, label ->
                         FilterChip(
                             selected = index == selectedGroup,
-                            onClick = { selectedGroup = index },
+                            onClick = {
+                                selectedGroup = index
+                                gridScope.launch { gridState.scrollToItem(index * groupCount) }
+                            },
                             label = { Text(label) },
                             shape = RoundedCornerShape(20.dp),
                         )

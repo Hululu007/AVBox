@@ -521,7 +521,10 @@ private fun EpgSheet(activity: LivePlayActivity) {
         }
         val canCatchup = activity.canCurrentChannelCatchup()
         val now = Date()
-        LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp).padding(bottom = 16.dp)) {
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp),
+            contentPadding = PaddingValues(bottom = 16.dp),
+        ) {
             itemsIndexed(epgList) { index, epg ->
                 val isNow = epg.startdateTime != null && epg.enddateTime != null &&
                         !now.before(epg.startdateTime) && !now.after(epg.enddateTime)

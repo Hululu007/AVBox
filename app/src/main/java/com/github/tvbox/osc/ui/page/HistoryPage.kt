@@ -5,8 +5,10 @@
 
 package com.github.tvbox.osc.ui.page
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -37,6 +39,7 @@ import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ProgressIndicatorDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -46,6 +49,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -307,6 +311,8 @@ fun HistoryPage(vm: HistoryViewModel = viewModel(), bottomPadding: Dp = 0.dp) {
     }
 }
 
+private const val PROGRESS_ENTER_DURATION_MS = 600
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun HistoryRow(
@@ -317,6 +323,7 @@ private fun HistoryRow(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
+    var progressEntered by rememberSaveable { mutableStateOf(false) }
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -391,9 +398,21 @@ private fun HistoryRow(
                 val barProgress = playedPercent?.let { it / 100f } ?: episodeFraction
                 if (barProgress != null) {
                     val barColor = MaterialTheme.colorScheme.primary
+                    val progressAnim = remember {
+                        Animatable(if (progressEntered) barProgress else 0f)
+                    }
+                    LaunchedEffect(barProgress) {
+                        val spec = if (progressEntered) {
+                            ProgressIndicatorDefaults.ProgressAnimationSpec
+                        } else {
+                            tween(PROGRESS_ENTER_DURATION_MS)
+                        }
+                        progressEntered = true
+                        progressAnim.animateTo(barProgress, spec)
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         LinearProgressIndicator(
-                            progress = { barProgress },
+                            progress = { progressAnim.value },
                             modifier = Modifier
                                 .weight(1f)
                                 .height(5.dp),
