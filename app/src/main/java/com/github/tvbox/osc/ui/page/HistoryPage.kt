@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -34,6 +35,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -69,13 +71,16 @@ import com.github.tvbox.osc.ui.components.LoadState
 import com.github.tvbox.osc.ui.components.LoadStateBox
 import com.github.tvbox.osc.ui.components.glassTopBarSurface
 import com.github.tvbox.osc.ui.theme.cardContainer
+import com.github.tvbox.osc.util.EpisodeTotals
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.HistoryHelper
 import com.github.tvbox.osc.util.KV
+import com.github.tvbox.osc.util.PlaybackProgress
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
@@ -83,6 +88,8 @@ import org.greenrobot.eventbus.ThreadMode
 class HistoryViewModel : ViewModel() {
     val loading = MutableStateFlow(true)
     val items = MutableStateFlow<List<VodInfo>>(emptyList())
+    val episodeTotals = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val playedPercents = MutableStateFlow<Map<String, Int>>(emptyMap())
 
     init {
         EventBus.getDefault().register(this)
@@ -103,8 +110,9 @@ class HistoryViewModel : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             val limit = HistoryHelper.getHisNum(KV.get(HawkConfig.HISTORY_NUM, 0))
             val list = RoomDataManger.getAllVodRecord(limit)
-            list.forEach { if (!it.playNote.isNullOrEmpty()) it.note = "上次看到" + it.playNote }
             items.value = list
+            episodeTotals.value = EpisodeTotals.snapshot()
+            playedPercents.value = PlaybackProgress.snapshot()
             resolveSourceNames()
             loading.value = false
             if (scrollToTop) scrollSignal.value++
@@ -180,6 +188,8 @@ fun HistoryPage(vm: HistoryViewModel = viewModel(), bottomPadding: Dp = 0.dp) {
     val context = LocalContext.current
     val items by vm.items.collectAsState()
     val loading by vm.loading.collectAsState()
+    val episodeTotals by vm.episodeTotals.collectAsState()
+    val playedPercents by vm.playedPercents.collectAsState()
     val placementAnim by vm.placementAnim.collectAsState()
     var showDeleteAllDialog by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<VodInfo?>(null) }
@@ -250,6 +260,8 @@ fun HistoryPage(vm: HistoryViewModel = viewModel(), bottomPadding: Dp = 0.dp) {
                 items(items, key = { HistoryViewModel.key(it) }) { item ->
                     HistoryRow(
                         item = item,
+                        totalEpisodes = episodeTotals[EpisodeTotals.key(item.sourceKey, item.id)],
+                        playedPercent = playedPercents[PlaybackProgress.key(item.sourceKey, item.id)],
                         modifier = Modifier.animateItem(
                             fadeInSpec = spring(stiffness = Spring.StiffnessMediumLow),
                             placementSpec = if (placementAnim) {
@@ -291,6 +303,8 @@ fun HistoryPage(vm: HistoryViewModel = viewModel(), bottomPadding: Dp = 0.dp) {
 @Composable
 private fun HistoryRow(
     item: VodInfo,
+    totalEpisodes: Int?,
+    playedPercent: Int?,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
@@ -325,30 +339,84 @@ private fun HistoryRow(
                     .fillMaxHeight(),
                 verticalArrangement = Arrangement.SpaceBetween,
             ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = item.name ?: "",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (!item.sourceName.isNullOrEmpty()) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = item.sourceName,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.widthIn(max = 120.dp),
+                        )
+                    }
+                }
                 Text(
-                    text = item.name ?: "",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = item.note ?: "",
+                    text = if (item.playNote.isNullOrEmpty()) {
+                        item.note ?: ""
+                    } else {
+                        "上次看到${item.playNote}"
+                    },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    text = item.sourceName ?: "",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                val numberedEpisode = item.playNote.isNullOrEmpty() || EpisodeTotals.isNumberedEpisode(item.playNote)
+                val eps = if (numberedEpisode) {
+                    totalEpisodes ?: parseEpisodeTotal(item.note) ?: parseEpisodeTotal(item.state)
+                } else {
+                    null
+                }
+                val episodeFraction = eps?.let { total ->
+                    (item.playIndex + 1).coerceIn(1, total).toFloat() / total
+                }
+                val barProgress = playedPercent?.let { it / 100f } ?: episodeFraction
+                if (barProgress != null) {
+                    val barColor = MaterialTheme.colorScheme.primary
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        LinearProgressIndicator(
+                            progress = { barProgress },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(5.dp),
+                            color = barColor,
+                            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            drawStopIndicator = {},
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (eps != null) {
+                                "第${(item.playIndex + 1).coerceIn(1, eps)}集/共${eps}集"
+                            } else {
+                                "已看${(barProgress * 100).roundToInt()}%"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = barColor,
+                        )
+                    }
+                } else {
+                    Spacer(modifier = Modifier.height(5.dp))
+                }
             }
         }
     }
+}
+
+private val EpisodeTotalRegex = Regex("(\\d+)\\s*[集期]")
+
+private fun parseEpisodeTotal(note: String?): Int? {
+    val total = note?.let { EpisodeTotalRegex.find(it)?.groupValues?.get(1)?.toIntOrNull() } ?: return null
+    return total.takeIf { it in 2..1000 }
 }
 
 @Composable

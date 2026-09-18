@@ -13,6 +13,11 @@ object SearchSettings {
     // 底层"无记录=不限制"表达不了"一个都不搜",只能按源地址另记一份空选择
     private const val KEY_EMPTY_SOURCES = "search_sources_empty"
 
+    // 精准匹配按结果逐条调用:正则必须预编译,写在 normalize 里等于每条结果都重新编译两次
+    private val BRACKET_PATTERN = Regex("[（(\\[【][^）)\\]】]*[）)\\]】]")
+
+    private val NOISE_PATTERN = Regex("[\\s\\p{Z}\\p{P}\\p{S}]")
+
     fun isExactMatchEnabled(): Boolean = KV.get(KEY_EXACT_MATCH, false)
 
     fun setExactMatchEnabled(enabled: Boolean) {
@@ -66,8 +71,8 @@ object SearchSettings {
     internal fun normalize(text: String?): String {
         if (text == null) return ""
         return text
-            .replace(Regex("[（(\\[【][^）)\\]】]*[）)\\]】]"), "")
-            .replace(Regex("[\\s\\p{Z}\\p{P}\\p{S}]"), "")
+            .replace(BRACKET_PATTERN, "")
+            .replace(NOISE_PATTERN, "")
             .lowercase(java.util.Locale.ROOT)
     }
 

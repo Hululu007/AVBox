@@ -22,6 +22,7 @@ import com.github.tvbox.osc.R
 import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.bean.ParseBean
 import com.github.tvbox.osc.bean.SourceBean
+import com.github.tvbox.osc.event.RefreshEvent
 import com.github.tvbox.osc.player.state.LockVisibility
 import com.github.tvbox.osc.player.state.PlayerActions
 import com.github.tvbox.osc.player.state.PlayerUiState
@@ -40,6 +41,8 @@ import com.github.tvbox.osc.util.PlayerHelper
 import com.github.tvbox.osc.util.ScreenUtils
 import com.github.tvbox.osc.util.SubtitleHelper
 import com.github.tvbox.osc.util.KV
+import com.github.tvbox.osc.util.PlaybackProgress
+import org.greenrobot.eventbus.EventBus
 import org.json.JSONException
 import org.json.JSONObject
 import xyz.doikki.videoplayer.controller.BaseVideoController
@@ -283,6 +286,7 @@ class ComposeVideoController @JvmOverloads constructor(
         state.playState = playState
         when (playState) {
             VideoView.STATE_IDLE -> {
+                savePlaybackProgress(notifyHistory = true)
                 state.locked = false
                 state.duration = 0
                 state.position = 0
@@ -295,6 +299,7 @@ class ComposeVideoController @JvmOverloads constructor(
                 state.topLeftVisible = false
                 state.netSpeedTopRightVisible = false
                 if (state.controlsVisible) hideBottom()
+                savePlaybackProgress(notifyHistory = true)
             }
             VideoView.STATE_ERROR -> listener?.errReplay()
             VideoView.STATE_PREPARED -> {
@@ -302,7 +307,10 @@ class ComposeVideoController @JvmOverloads constructor(
                     .getOrDefault(true)
                 listener?.prepared()
             }
-            VideoView.STATE_PLAYBACK_COMPLETED -> listener?.playNext(true)
+            VideoView.STATE_PLAYBACK_COMPLETED -> {
+                savePlaybackProgress(notifyHistory = true)
+                listener?.playNext(true)
+            }
         }
     }
 
@@ -321,6 +329,7 @@ class ComposeVideoController @JvmOverloads constructor(
         super.setProgress(duration, position)
         state.duration = duration
         state.position = position
+        PlaybackProgress.onProgress(position, duration)
         // 片尾自动跳下一集（skipEnd 防重，照搬）
         if (skipEnd && position != 0 && duration != 0) {
             val et = playerConfig?.optInt("et", 0) ?: 0
@@ -331,6 +340,17 @@ class ComposeVideoController @JvmOverloads constructor(
         }
         state.seekTimeText = formatSeekTime(position) + " | " + formatSeekTime(duration)
         state.bufferedPercent = runCatching { mControlWrapper?.bufferedPercentage ?: 0 }.getOrDefault(0)
+    }
+
+    private fun savePlaybackProgress(notifyHistory: Boolean) {
+        val wrapperDuration = runCatching { mControlWrapper?.duration ?: 0L }.getOrDefault(0L).toInt()
+        val wrapperPosition = runCatching { mControlWrapper?.currentPosition ?: 0L }.getOrDefault(0L).toInt()
+        val duration = if (wrapperDuration > 0) wrapperDuration else state.duration
+        val position = if (wrapperDuration > 0) wrapperPosition else state.position
+        if (duration <= 0) return
+        PlaybackProgress.flush(position, duration)
+        // 值没变也必须通知:周期写入早已落盘,历史页手里的可能是进播放前的旧快照
+        if (notifyHistory) EventBus.getDefault().post(RefreshEvent(RefreshEvent.TYPE_HISTORY_REFRESH))
     }
 
     /** seek 提示（替代旧 updateSeekUI + msg 1000/1001，UI 侧 1s 自动隐藏） */

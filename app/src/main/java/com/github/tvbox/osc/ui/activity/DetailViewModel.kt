@@ -18,6 +18,7 @@ import com.github.tvbox.osc.cache.RoomDataManger
 import com.github.tvbox.osc.event.RefreshEvent
 import com.github.tvbox.osc.player.PlaybackSession
 import com.github.tvbox.osc.ui.player.PlayContainer
+import com.github.tvbox.osc.util.EpisodeTotals
 import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.util.SearchHelper
 import com.github.tvbox.osc.viewmodel.SourceViewModel
@@ -249,6 +250,11 @@ class DetailViewModel : ViewModel() {
                     flag.selected = flag.name == info.playFlag
                 }
             }
+            EpisodeTotals.put(
+                info.sourceKey,
+                info.id,
+                playingList?.let { list -> EpisodeTotals.episodeCount(list.map { it.name }) },
+            )
             vodInfo = info
             if (searchTitle.isEmpty() && !info.name.isNullOrEmpty()) {
                 searchTitle = info.name.trim()

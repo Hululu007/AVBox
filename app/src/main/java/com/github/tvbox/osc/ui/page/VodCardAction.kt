@@ -29,8 +29,10 @@ object VodCardPolicy {
     private const val VALUE_DETAIL = "detail"
     private const val VALUE_SEARCH = "search"
 
+    private var cached: HashMap<String, String>? = null
+
     private fun readMap(): HashMap<String, String> =
-        KV.get(HawkConfig.SOURCE_CARD_POLICY, HashMap<String, String>())
+        cached ?: KV.get(HawkConfig.SOURCE_CARD_POLICY, HashMap<String, String>()).also { cached = it }
 
     fun policyOf(sourceKey: String?): SourceCardPolicy {
         if (sourceKey.isNullOrEmpty()) return SourceCardPolicy.SEARCH
@@ -46,6 +48,7 @@ object VodCardPolicy {
         val map = readMap()
         map[sourceKey] = if (policy == SourceCardPolicy.DETAIL) VALUE_DETAIL else VALUE_SEARCH
         KV.put(HawkConfig.SOURCE_CARD_POLICY, map)
+        cached = map
     }
 }
 
