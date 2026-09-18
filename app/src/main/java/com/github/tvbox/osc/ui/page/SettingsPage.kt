@@ -66,6 +66,7 @@ import com.github.tvbox.osc.ui.activity.PreloadSettingsActivity
 import com.github.tvbox.osc.ui.activity.ThemeSettingsActivity
 import com.github.tvbox.osc.util.FileUtils
 import com.github.tvbox.osc.util.HistoryHelper
+import com.github.tvbox.osc.util.HistoryMerge
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.OkGoHelper
 import com.github.tvbox.osc.util.KV
@@ -91,6 +92,7 @@ data class SettingsState(
     val danmuApi: String,
     val defaultLoadLive: Boolean,
     val historyNumIndex: Int,
+    val historyMerge: Boolean,
     val searchThreads: Int,
     val longPressSpeed: Int,
     val bufferTimes: Int,
@@ -166,6 +168,7 @@ class SettingsViewModel : ViewModel() {
         danmuApi = KV.get(HawkConfig.DANMU_API, ""),
         defaultLoadLive = KV.get(HawkConfig.DEFAULT_LOAD_LIVE, false),
         historyNumIndex = KV.get(HawkConfig.HISTORY_NUM, 0),
+        historyMerge = HistoryMerge.isEnabled(),
         searchThreads = KV.get(HawkConfig.SEARCH_THREADS, HawkConfig.SEARCH_THREADS_DEFAULT),
         longPressSpeed = KV.get(HawkConfig.LONG_PRESS_SPEED, HawkConfig.LONG_PRESS_SPEED_DEFAULT),
         bufferTimes = KV.get(HawkConfig.BUFFER_TIMES, HawkConfig.BUFFER_TIMES_DEFAULT),

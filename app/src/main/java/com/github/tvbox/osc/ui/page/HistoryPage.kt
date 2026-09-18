@@ -74,6 +74,7 @@ import com.github.tvbox.osc.ui.theme.cardContainer
 import com.github.tvbox.osc.util.EpisodeTotals
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.HistoryHelper
+import com.github.tvbox.osc.util.HistoryMerge
 import com.github.tvbox.osc.util.KV
 import com.github.tvbox.osc.util.PlaybackProgress
 import kotlinx.coroutines.Dispatchers
@@ -109,8 +110,15 @@ class HistoryViewModel : ViewModel() {
         if (scrollToTop) placementAnim.value = false
         viewModelScope.launch(Dispatchers.IO) {
             val limit = HistoryHelper.getHisNum(KV.get(HawkConfig.HISTORY_NUM, 0))
-            val list = RoomDataManger.getAllVodRecord(limit)
-            items.value = list
+            val all = RoomDataManger.getAllVodRecord(limit)
+            if (HistoryMerge.isEnabled()) {
+                // 历史合并:同一部剧只保留最新一条,被合并掉的旧记录直接清库(上游"历史合并"语义,见 HistoryMerge)
+                val (kept, dropped) = HistoryMerge.dedupe(all) { it.name }
+                dropped.forEach { RoomDataManger.deleteVodRecord(it.sourceKey, it) }
+                items.value = kept
+            } else {
+                items.value = all
+            }
             episodeTotals.value = EpisodeTotals.snapshot()
             playedPercents.value = PlaybackProgress.snapshot()
             resolveSourceNames()

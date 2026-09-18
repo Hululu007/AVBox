@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.tvbox.osc.R
+import com.github.tvbox.osc.event.RefreshEvent
 import com.github.tvbox.osc.ui.components.AppTopBarScaffold
 import com.github.tvbox.osc.ui.components.SettingsCard
 import com.github.tvbox.osc.ui.components.SettingsCardPosition
@@ -27,7 +28,9 @@ import com.github.tvbox.osc.ui.components.SettingsSliderRow
 import com.github.tvbox.osc.ui.components.SettingsSwitchRow
 import com.github.tvbox.osc.ui.components.TopBarActionBox
 import com.github.tvbox.osc.util.HawkConfig
+import com.github.tvbox.osc.util.HistoryMerge
 import kotlin.math.roundToInt
+import org.greenrobot.eventbus.EventBus
 
 @Composable
 fun PreferenceSettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = viewModel()) {
@@ -139,6 +142,17 @@ fun PreferenceSettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel =
 
             SettingsGroup(title = null) {
                 SettingsCard(SettingsCardPosition.FIRST) {
+                    SettingsSwitchRow(
+                        title = "历史合并",
+                        checked = state.historyMerge,
+                        onCheckedChange = {
+                            HistoryMerge.setEnabled(it)
+                            vm.refresh()
+                            EventBus.getDefault().post(RefreshEvent(RefreshEvent.TYPE_HISTORY_REFRESH))
+                        },
+                    )
+                }
+                SettingsCard(SettingsCardPosition.MIDDLE) {
                     SettingsSwitchRow(
                         title = "无痕模式",
                         checked = state.incognito,
