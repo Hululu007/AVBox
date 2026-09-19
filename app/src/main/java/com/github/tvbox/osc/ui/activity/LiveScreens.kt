@@ -102,7 +102,7 @@ internal fun LiveScreen(activity: LivePlayActivity) {
                 errorText = "",
                 retryText = "",
                 modifier = Modifier.fillMaxSize(),
-                loadingContent = { ContainedLoadingIndicator(Modifier.size(48.dp)) },
+                loadingContent = { ContainedLoadingIndicator(Modifier.size(64.dp)) },
             )
 
             PageState.EMPTY -> LoadStateBox(

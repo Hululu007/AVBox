@@ -146,6 +146,9 @@ public class PlaybackController {
         // 上,而共享调度层是引擎级的 —— 页面销毁时序与新页面 attach 的先后并不确定,"快速返回再进入"
         // 时旧页面会把新页面刚发起的取流一起撤掉。收尾的正确位置是**会话边界**:新会话开始即清旧账。
         cancelInFlight();
+        // 同上属于"清上一个会话的旧账":上一条"播完待撤会话"的待判消息(见 handlePendingCompletionDrop)
+        // 在此作废,避免它落到刚开的这次会话上。
+        timeoutHandler.removeMessages(MSG_DROP_SESSION_AFTER_COMPLETED);
         // 解析/嗅探代际复位(2026-09-15 Bug 7):上一会话的迟到回调不得作用到新会话
         parseGeneration.set(0);
         // 封面属于**上一个会话的内容**,换内容时必须清(2026-09-19):
@@ -575,6 +578,10 @@ public class PlaybackController {
     /** 取流超时/换线播放超时(与既有 mHandler 的三条定时消息拆开:解析超时留在页面/解析层) */
     private static final int MSG_RESOLVE_PLAY_URL_TIMEOUT = 101;
     private static final int MSG_SWITCH_LINE_PLAY_TIMEOUT = 102;
+    /**
+     * 本集播完后的**延后一拍**撤会话判定(2026-09-19,见 {@link #handlePlayStateForMusicSession})。
+     */
+    private static final int MSG_DROP_SESSION_AFTER_COMPLETED = 103;
     private static final long RESOLVE_PLAY_URL_TIMEOUT_MS = 15 * 1000L;
     private static final long SWITCH_LINE_PLAY_TIMEOUT_MS = 20 * 1000L;
 
@@ -591,6 +598,9 @@ public class PlaybackController {
                 case MSG_PARSE_TIMEOUT:
                     stopParse();
                     if (view != null) view.showErrorWithRetry("嗅探错误", false);
+                    return true;
+                case MSG_DROP_SESSION_AFTER_COMPLETED:
+                    handlePendingCompletionDrop();
                     return true;
                 default:
                     return false;
@@ -637,6 +647,8 @@ public class PlaybackController {
         hasAutoSwitchedPlayer = false;
         hasAutoSwitchedDecode = false;
         hasRetriedAfterStart = false;
+        // 新内容开始 ⇒ 上一条"播完待撤会话"的判定作废(否则那条迟到的消息会打到本次新会话上)
+        timeoutHandler.removeMessages(MSG_DROP_SESSION_AFTER_COMPLETED);
         // 换内容(换集/换线/换源/重播)⇒ 上一次确认的"纯音频"作废,由新内容自己重新确认
         // (自动重试不走本方法,见 retryAfterStartedError:同一内容的确认必须留着)
         audioOnlyConfirmed = false;
@@ -2443,9 +2455,14 @@ public class PlaybackController {
      * <p>状态事件同步派发给所有监听器且引擎监听先注册,故 STATE_PLAYBACK_COMPLETED 到达时
      * {@link #updateMusicSession} 会先跑:此刻 {@link #switchingPlayback} 仍为 false 就会按"播完"
      * 撤掉会话与通知(表现:一首放完,通知消失,下一首在放却没通知)。清位同 {@code play()} 内部那次。
+     *
+     * <p>⚠️ 2026-09-19:仅靠"提前登记"不足以覆盖**本集自然播完自动续播**这条路径(登记发生在
+     * COMPLETED 之后),故播完分支已改为延后一拍判定({@link #handlePendingCompletionDrop});
+     * 本方法顺带撤销那条待判消息,二者配合才完整。
      */
     public void beginSwitchPlayback() {
         switchingPlayback = true;
+        timeoutHandler.removeMessages(MSG_DROP_SESSION_AFTER_COMPLETED);
     }
     /** 是否维护了媒体会话(有音频轨就维护;影视同样,见 updateMusicSession) */
     private boolean audioPlayback;
@@ -2506,6 +2523,8 @@ public class PlaybackController {
     public void stopPlaybackForPageExit() {
         switchingPlayback = false;
         audioPlayback = false;
+        // 与 onHostDestroy 同属会话边界:一并作废"播完待撤会话"的待判消息
+        timeoutHandler.removeMessages(MSG_DROP_SESSION_AFTER_COMPLETED);
         cancelInFlight();
         // 页面退出即"没有正在播的源"(原 PlayContainer.hostDestroy 里的那句,同样属于共享状态)
         ApiConfig.get().setCurrentPlaySourceKey("");
@@ -2516,6 +2535,7 @@ public class PlaybackController {
     public void stopMusicSessionForFailedPlayback() {
         switchingPlayback = false;
         audioPlayback = false;
+        timeoutHandler.removeMessages(MSG_DROP_SESSION_AFTER_COMPLETED);
         stopMusicSession();
     }
 
@@ -2529,6 +2549,7 @@ public class PlaybackController {
     public void onHostDestroy() {
         switchingPlayback = false;
         audioPlayback = false;
+        timeoutHandler.removeMessages(MSG_DROP_SESSION_AFTER_COMPLETED);
         // 引擎已释放:三处超时消息若留着,到期仍会走"换线/报错"链路并打到视图桥(见 detach 的桥切换)
         cancelPlayTimeout();
         cancelResolvePlayUrlTimeout();
@@ -2565,8 +2586,74 @@ public class PlaybackController {
                 }
             }
         }
-        if (!switchingPlayback) updateMusicSession();
+        if (!switchingPlayback) {
+            if (playState == VideoView.STATE_PLAYBACK_COMPLETED) {
+                // ⚠️ **不能在此直接 updateMusicSession()**(2026-09-19 真机根因修复)。
+                // 引擎的状态监听器注册在页面之前(见 PlaybackEngine.createPlayerView 与
+                // MusicPlayerActivity.initView),所以 COMPLETED 到达时**本方法总是先跑**,
+                // 而"要续播下一集"的登记(beginSwitchPlayback)在页面监听器里(onSongCompleted
+                // → playAt/replayCurrent),此刻尚未执行 ⇒ switchingPlayback 读到的必然是 false,
+                // 于是按"播完"撤了会话。后果不是"少一条通知"这么轻:
+                //   ① stopForeground(true) 撤掉唯一的前台通知;
+                //   ② 服务随之失去前台身份;紧接着下一集起播要重新进前台,而此刻 App 通常已在后台
+                //      ⇒ 系统拒绝(真机原文 Service.startForeground() not allowed due to
+                //      mAllowStartForeground false)⇒ **通知永久回不来**;
+                //   ③ audioPlayback 被清 ⇒ 退后台判定也不再豁免。
+                // 真机(vivo V2425A / Android 16,2026-09-19)复现:后台播完一首自动切歌,19 秒后
+                // 通知消失、连两次 startForeground 被拒、回到页面点击无反应。
+                // 改为**延后一拍**再判:让同一次状态分发里页面的 beginSwitchPlayback() 有机会先执行。
+                timeoutHandler.removeMessages(MSG_DROP_SESSION_AFTER_COMPLETED);
+                timeoutHandler.sendEmptyMessage(MSG_DROP_SESSION_AFTER_COMPLETED);
+                return false;
+            }
+            updateMusicSession();
+        }
         return false;
+    }
+
+    /**
+     * 本集播完后的**延后一拍**撤会话判定(配合 {@link #handlePlayStateForMusicSession} 的播完分支)。
+     *
+     * <p>执行时页面侧的收尾已经跑完,可据三件事决定是否真的撤会话:
+     * ① 页面是否登记了"切换中"({@link #beginSwitchPlayback} 会清掉本消息);
+     * ② 内核是否已经进入新的起播态(实时读,不依赖事件到达顺序);
+     * ③ 页面是否已不存活。
+     */
+    private void handlePendingCompletionDrop() {
+        if (switchingPlayback) {
+            LOG.i("echo-music completion drop skipped: page registered switching");
+            return;
+        }
+        if (view == null) return;
+        // ⚠️ 必须与 updateMusicSession 同一道支持性前置(2026-09-19 审查回归修复):旧路径的撤会话
+        // 是经 updateMusicSession 走的,那里有 `if (!PlaybackService.isSupported(context)) return;`。
+        // 本方法直接调 stopSession 会绕过它 —— 在 isSupported()==false 的设备(电视盒子 / API<26)
+        // 上就变成"每次播完都去 release 一个 onCreate 建好、与页面同生命周期的 MediaSessionCompat
+        // 并把 owner 置空"(后续用法都有判空,不会崩,但媒体键会话被无谓拆掉),属本轮引入的行为变化。
+        if (!PlaybackService.isSupported(view.context())) return;
+        int state = view.currentPlayState();
+        if (isStartedPlayState(state)) {
+            LOG.i("echo-music completion drop skipped: kernel already started, state=" + state);
+            return;
+        }
+        // 页面**已销毁**时让位给既有收尾路径(页面退出会走 onHostDestroy/stopPlaybackForPageExit,
+        // 那两条自己撤会话并放锁):这里不再插手,以免与它们重复撤会话、或撤在"随后 attach 的新会话"上。
+        // ⚠️ 本判据**不**负责"防止迟到消息打到新会话" —— 那是各会话边界 removeMessages 的职责:
+        // startSession / beginNewPlay / beginSwitchPlayback / stopMusicSessionForFailedPlayback /
+        // stopPlaybackForPageExit / onHostDestroy。
+        if (!view.isPageAlive()) {
+            LOG.i("echo-music completion drop skipped: page not alive, state=" + state);
+            return;
+        }
+        // 页面还活着且内核仍停在"播完"⇒ 这是真的没人接续(队列末尾 / 非音乐页的影视播完),照旧撤会话。
+        // 这一步与原实现等价(原实现是在 COMPLETED 时同步走 updateMusicSession 的撤会话分支)。
+        if (state != VideoView.STATE_PLAYBACK_COMPLETED) {
+            LOG.i("echo-music completion drop skipped: state moved on, state=" + state);
+            return;
+        }
+        LOG.i("echo-music session drop after completed (deferred): no next episode registered");
+        PlaybackService.stopSession(view.context(), view.playbackHost());
+        audioPlayback = false;
     }
 
     /**

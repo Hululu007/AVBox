@@ -99,6 +99,16 @@ public class PlaybackService extends Service {
     private boolean playing;
     private PowerManager.WakeLock wakeLock;
     private WifiManager.WifiLock wifiLock;
+    /**
+     * 上一次 {@code startForeground} 被系统拒绝(2026-09-19)。
+     *
+     * <p>真机原文:{@code Service.startForeground() not allowed due to mAllowStartForeground false}
+     * —— Android 12+ 禁止**后台应用**把服务提为前台。一旦被拒,服务会以"在跑但没进前台"的状态
+     * 存活:唯一的前台通知已撤、前台身份丢失,进程随即可能被降级/冻结 —— 这就是"通知消失后再也
+     * 回不来 + 回页面点击无反应"的起点。置位后由下一次会话更新自动重试(见 {@link #handleSessionIntent})。
+     */
+    private boolean foregroundDenied;
+    private boolean foregroundRetryLogged;
 
     // ==================== 引擎入口(P2) ====================
 
@@ -165,6 +175,13 @@ public class PlaybackService extends Service {
             stopWhenStarted = false;
             instance.handleSessionIntent(intent);
         } else {
+            // ⚠️ 这条是**后台受限启动**的入口(2026-09-19):服务不在时新建会话会走 startHost 的
+            // startForegroundService 分支;若此刻 App 已在后台,系统会拒绝把服务提为前台
+            // (Service.startForeground() not allowed due to mAllowStartForeground false),
+            // 通知随之永远不出现。真机复现路径 = 本集自然播完撤会话后、在后台自动续播下一集。
+            // 留痕以区分"服务已在前台只是没通知"与"这次压根没提到前台"。
+            LOG.i(TAG + " session update with no live service → startForegroundService"
+                    + " (may be denied if app is in background)");
             pendingStart = true;
             stopWhenStarted = false;
             startHost(context.getApplicationContext(), intent);
@@ -349,9 +366,41 @@ public class PlaybackService extends Service {
         if (mediaSession == null) return;
         try {
             startForeground(NOTIFICATION_ID, buildNotification());
+            if (foregroundDenied) {
+                // 之前被拒过、这次成了:前台身份已恢复(通知重新可见)
+                foregroundDenied = false;
+                foregroundRetryLogged = false;
+                LOG.i(TAG + " startForeground recovered after denial");
+            }
         } catch (Throwable th) {
-            LOG.i(TAG + " startForeground failed: " + th.getMessage());
+            // ⚠️ 不能只打日志了事(2026-09-19):startForeground 被拒 ⇒ 服务**没进前台**,
+            // 唯一的前台通知已被前一次 stopForeground 撤掉、且不会有新的 notification_enqueue,
+            // 系统也不再给 FGS 的进程优先级。历史上这里静默吞掉,于是一路走到
+            // 「回页面点击无反应」(引擎随进程被降级/回收而失效)都没有任何痕迹。
+            // 现在置位并明确留痕,由后续会话更新自动重试。
+            foregroundDenied = true;
+            if (!foregroundRetryLogged) {
+                foregroundRetryLogged = true;
+                LOG.i(TAG + " startForeground DENIED (service stays non-foreground, will retry on"
+                        + " next session update): " + th.getMessage());
+            }
         }
+    }
+
+    /**
+     * 通知栏 / 媒体键动作触发的"补一次前台"。
+     *
+     * <p>为什么单列一个入口(2026-09-19 审查补):修复的目标场景里**根本没有状态变化可供重试** ——
+     * 已确认纯音频的会话退后台**不会被暂停**(`MusicPlayerActivity.hostPause` 对纯音频让路),
+     * 所以回到前台时 `hostResume()` 也不产生任何播放状态事件 ⇒ 拿不到 ACTION_UPDATE ⇒
+     * "回到前台即自动救回"是不成立的。真正的可达恢复点是**用户与通知/媒体键交互**这一刻:
+     * 系统此刻一定允许提升前台(应用正在响应用户动作),且这一下正好是用户最可能做的操作。
+     * 另有 ACTION_UPDATE 那条机会性重试(见其分支),二者互补。
+     */
+    private void promoteIfForegroundDenied() {
+        if (!foregroundDenied) return;
+        LOG.i(TAG + " media action while foreground denied → retry startForeground");
+        startForegroundSafely();
     }
 
     private void handleSessionIntent(Intent intent) {
@@ -365,11 +414,13 @@ public class PlaybackService extends Service {
         if (ACTION_PLAY.equals(action)) {
             PlaybackHostApi host = getOwner();
             if (host != null) host.resumeFromMediaSession();
+            promoteIfForegroundDenied();
             return;
         }
         if (ACTION_PAUSE.equals(action)) {
             PlaybackHostApi host = getOwner();
             if (host != null) host.pauseFromMediaSession();
+            promoteIfForegroundDenied();
             return;
         }
         if (ACTION_PREVIOUS.equals(action)) {
@@ -378,6 +429,7 @@ public class PlaybackService extends Service {
                 pauseForSwitch();
                 host.playPrevious();
             }
+            promoteIfForegroundDenied();
             return;
         }
         if (ACTION_NEXT.equals(action)) {
@@ -386,6 +438,7 @@ public class PlaybackService extends Service {
                 pauseForSwitch();
                 host.playNext(false);
             }
+            promoteIfForegroundDenied();
             return;
         }
         if (ACTION_SEEK.equals(action)) {
@@ -409,6 +462,11 @@ public class PlaybackService extends Service {
             playing = intent.getBooleanExtra(EXTRA_PLAYING, false);
             updateArtwork(newArtworkUrl);
             updateSessionState();
+            // 每次会话更新都顺手补一次前台:若上一次 startForeground 被系统拒(见 startForegroundSafely
+            // 注释),服务此刻在跑但没有前台身份、也没有通知 —— 这次调用就是机会性重试,成功时
+            // startForegroundSafely 内部会清标记并打 recovered 日志。**不在此打"正在重试"的日志**:
+            // 被持续拒绝时那会每次更新刷一行,而本次修复的用意正是"别再静默、也别刷屏"。
+            // 另一个更可靠的恢复点见 promoteIfForegroundDenied(用户动通知/媒体键那一刻)。
             startForegroundSafely();
         }
     }
@@ -580,6 +638,11 @@ public class PlaybackService extends Service {
         // 撤通知的唯一收尾点:留痕以便定位"通知自己消失"的路径
         LOG.i(TAG + " stopPlaybackSession (notification 1001 removed, playing=" + playing + ")");
         playing = false;
+        // 会话结束 ⇒ "本会话曾进不了前台"这件事随之失效,两个标记一起复位
+        // (只复位一个会让 foregroundRetryLogged 永远留在 true:整个服务生命周期只打一次
+        //  DENIED 日志 —— 而"留痕"正是这两个标记存在的理由,再被拒就看不见了)
+        foregroundDenied = false;
+        foregroundRetryLogged = false;
         releasePlaybackLocks();
         if (mediaSession != null) {
             mediaSession.setActive(false);

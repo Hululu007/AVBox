@@ -3,15 +3,11 @@
     <dimen name="ts_18">18mm</dimen>
     <dimen name="ts_19">19mm</dimen>
     <dimen name="ts_20">20mm</dimen>
-    <dimen name="ts_22">22mm</dimen>
-    <dimen name="ts_24">24mm</dimen>
     <dimen name="ts_26">26mm</dimen>
     <dimen name="ts_30">30mm</dimen>
 
-    <dimen name="vs_1">1mm</dimen>
     <dimen name="vs_2">2mm</dimen>
     <dimen name="vs_5">5mm</dimen>
-    <dimen name="vs_6">6mm</dimen>
     <dimen name="vs_10">10mm</dimen>
     <dimen name="vs_12">12mm</dimen>
     <dimen name="vs_15">15mm</dimen>
