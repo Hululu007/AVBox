@@ -157,6 +157,8 @@ public class PlaybackController {
                 || !TextUtils.equals(currentSession.playbackKey(), session.playbackKey())) {
             playArtwork = null;
             currentArtwork = null;
+            // 换内容 ⇒ 上一份内容的"纯音频"确认作废(同片接管不清:内容没变)
+            audioOnlyConfirmed = false;
         }
         this.currentSession = session;
         // 本次会话的内容尚未真正交给播放器:先清掉"已起播内容"标记 ——
@@ -635,6 +637,9 @@ public class PlaybackController {
         hasAutoSwitchedPlayer = false;
         hasAutoSwitchedDecode = false;
         hasRetriedAfterStart = false;
+        // 换内容(换集/换线/换源/重播)⇒ 上一次确认的"纯音频"作废,由新内容自己重新确认
+        // (自动重试不走本方法,见 retryAfterStartedError:同一内容的确认必须留着)
+        audioOnlyConfirmed = false;
     }
 
     /** 换源点击即停:清"播放中"标记与复用开关,并置"在途结果作废"标记(下一次 play 清除) */
@@ -2431,8 +2436,25 @@ public class PlaybackController {
 
     /** 取流/起播期间不更新通知(避免"旧集通知 → 新集"的中间态) */
     private boolean switchingPlayback;
+
+    /**
+     * 页面在"本集播完会自动续下一集"时提前登记切换中(须在 {@link #play(boolean)} 之前调)。
+     *
+     * <p>状态事件同步派发给所有监听器且引擎监听先注册,故 STATE_PLAYBACK_COMPLETED 到达时
+     * {@link #updateMusicSession} 会先跑:此刻 {@link #switchingPlayback} 仍为 false 就会按"播完"
+     * 撤掉会话与通知(表现:一首放完,通知消失,下一首在放却没通知)。清位同 {@code play()} 内部那次。
+     */
+    public void beginSwitchPlayback() {
+        switchingPlayback = true;
+    }
     /** 是否维护了媒体会话(有音频轨就维护;影视同样,见 updateMusicSession) */
     private boolean audioPlayback;
+    /**
+     * 本次会话确认过"纯音频"的粘滞标记:轨道信息随时可能读不到(内核重建/播放器 ERROR),
+     * 实时读取失败不能让退后台判定翻转成影视。复位点仅内容边界({@link #beginNewPlay()} 与 startSession)。
+     * 不得用于封面判定(封面须实时读取,否则影视被压成海报)。
+     */
+    private boolean audioOnlyConfirmed;
     /** 纯音频封面地址(影视绝不设置:否则视频被压成海报) */
     private String playArtwork;
     /** 当前集的弹幕地址(取流结果或弹幕搜索的产物;退页面重进时页面要重新拿一份) */
@@ -2515,9 +2537,11 @@ public class PlaybackController {
         destroyPreload();
     }
 
-    /** 退后台是否保留播放:只有**确定是纯音频**才保留(影视与"轨道信息未知"都按既有行为暂停) */
+    /**
+     * 退后台是否保留播放:本次会话确认过纯音频才保留(粘滞确认见 {@link #audioOnlyConfirmed})。
+     */
     public boolean isConfirmedAudioOnly() {
-        return Boolean.TRUE.equals(isAudioOnlyPlayback());
+        return Boolean.TRUE.equals(isAudioOnlyPlayback()) || audioOnlyConfirmed;
     }
 
     /**
@@ -2531,8 +2555,8 @@ public class PlaybackController {
                 LOG.i("echo-music keep session while resolving next episode");
                 return true;
             } else if (playState == VideoView.STATE_ERROR) {
+                // 只解除"切换中"抑制:在此清 audioPlayback 会让后续既不能重试也不能重建会话
                 switchingPlayback = false;
-                audioPlayback = false;
             } else if (isStartedPlayState(playState)) {
                 // 起播成功:有音频轨则维护会话/通知(影视同样,见 updateMusicSession 的语义拆分)
                 if (hasPlayableAudio() || audioPlayback) {
@@ -2608,26 +2632,53 @@ public class PlaybackController {
      * 维护媒体会话与前台通知(有音频轨就维护,影视/音乐一视同仁;拿到轨道信息前沿用上次判定)。
      *
      * <p>⚠️ 封面(artworkView)盖在渲染 Surface 之上,只能给「纯音频」兜底,绝不能给影视占位
-     * (影视一旦 setArtwork,视频被压成海报)。三个条件缺一不可:①确定纯音频;②画面未就绪;
-     * ③audioPlayback(既有门槛)。2026-09-13 回归修复:此前只判 audioPlayback → 压住所有视频。
+     * (影视一旦 setArtwork,视频被压成海报)。三个条件缺一不可:①确定纯音频(实时读轨道,
+     * **不能用** {@link #audioOnlyConfirmed} 粘滞标记);②画面未就绪;③audioPlayback(既有门槛)。
+     * 2026-09-13 回归修复:此前只判 audioPlayback → 压住所有视频。
+     *
+     * <p>本方法是通知/会话的唯一入口:audioPlayback 在此**只置位不清零**(清零只在会话边界),
+     * 否则一次读取失败就会让通知永久消失(撤会话会连带清该标记,而重建只认 STATE_PLAYING 事件)。
      */
     public void updateMusicSession() {
         if (view == null || !view.isPageAlive()) return;
         Context context = view.context();
         if (!PlaybackService.isSupported(context)) return;
         if (switchingPlayback) return;
-        Boolean hasAudio = hasPlayableAudio();
-        if (hasAudio) audioPlayback = true;
+        TrackInfo trackInfo = currentTrackInfo();
+        Boolean hasAudio = trackInfo != null && !trackInfo.getAudio().isEmpty();
+        Boolean audioOnly = trackInfo == null || trackInfo.getAudio().isEmpty()
+                ? null : trackInfo.getVideo().isEmpty();
+        // 只置位不清零:"读到轨道列表但 audio 为空"≠"没有音频"(Exo 在 IDLE/重取流期、音频渲染器
+        // 未选中时同样给空 audio 列表),据此清零会让通知与退后台判定双双失效。清零只在会话边界。
+        if (Boolean.TRUE.equals(hasAudio)) {
+            audioPlayback = true;
+            if (Boolean.TRUE.equals(audioOnly)) audioOnlyConfirmed = true;
+        }
         int state = view.currentPlayState();
-        if (audioPlayback && Boolean.TRUE.equals(isAudioOnlyPlayback())
+        LOG.i("echo-music session gate: state=" + state + " playing=" + view.isPlaying()
+                + " hasAudio=" + hasAudio + " audioOnly=" + audioOnly + " audioPlayback=" + audioPlayback
+                + " audioOnlyConfirmed=" + audioOnlyConfirmed + " switching=" + switchingPlayback
+                + " pos=" + view.currentPosition());
+        if (audioPlayback && Boolean.TRUE.equals(audioOnly)
                 && !isStartedPlayState(state)
                 && TextUtils.isEmpty(playArtwork) && vod() != null && !TextUtils.isEmpty(vod().pic)) {
             playArtwork = vod().pic;
             view.setArtwork(playArtwork);
         }
+        if ((state == VideoView.STATE_ERROR && audioOnlyConfirmed) && retryAfterStartedError()) {
+            // 已确认纯音频的会话遇可重试错误:同地址重播一次并**保留会话**(撤会话会连锁清 audioPlayback,
+            // 而重建只认 STATE_PLAYING 事件 ⇒ 后台失败后点播放再也不出通知)。重试无路可走则照旧撤会话。
+            // ⚠️ 判据不得放宽成 audioPlayback:影视也带音轨,会抢在详情页 errorWithRetry 之前
+            // 消耗掉 hasRetriedAfterStart(引擎状态监听先注册 ⇒ 总是本方法先跑),使影视丢失"同地址重播"这一档。
+            LOG.i("echo-music session keep: auto retry after started error (audio-only)");
+            return;
+        }
         if (vod() == null || !audioPlayback
                 || state == VideoView.STATE_ERROR
                 || state == VideoView.STATE_PLAYBACK_COMPLETED) {
+            LOG.i("echo-music session drop: vod=" + (vod() != null) + " audioPlayback=" + audioPlayback
+                    + " state=" + state + " (ERROR=" + VideoView.STATE_ERROR
+                    + " COMPLETED=" + VideoView.STATE_PLAYBACK_COMPLETED + ")");
             PlaybackService.stopSession(context, view.playbackHost());
             audioPlayback = false;
             return;

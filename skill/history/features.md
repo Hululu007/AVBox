@@ -1264,3 +1264,25 @@ P1 最后两组。至此**调度层(会话/取流/解析/嗅探/重试/换线/�
 - **根因**:音乐页取封面顺序 = `currentArtwork() → playArtwork() → vod.pic`,而这两个控制器字段都会跨会话残留 —— `playArtwork` 是**只写一次**的(`updateMusicSession` 带 `TextUtils.isEmpty(playArtwork)` 守卫,原先**全仓没有复位点**),`currentArtwork` 只在取流结果处理里被覆盖(影视源取流失败/无 cover 时保持旧值)⇒ 影视源不带 cover 时音乐页命中上一首音乐的 `playArtwork`。影视源自带 cover 就不会复现,所以是"有概率"。
 - **改动**:`PlaybackController.startSession()`(会话边界,本来就是"会话级状态统一复位"的地方)补清 `playArtwork`/`currentArtwork`,**判据必须是 `playbackKey` 变化**:同片接管(退出详情页再进同一部,`PlayContainer.setData` 的 `isSamePlaybackOwned` 分支也走 `startSession`)不能清,否则封面会白到下一次取流结果。切歌路径不走 `startSession`(是 `engine.play`),封面由取流结果的 `currentArtwork = artwork` 覆盖,不受影响。
 - **验证**:编译 + 装机通过;待真机确认(音乐 → 影视 → 进音乐页 = 显示影视 `vod.pic`;退出再进同一部 = 封面不变白)。**未提交**。
+
+## 音乐页后台播放:声音停 + 通知消失且不再重建(2026-09-19,三轮静态审查收敛)
+
+- **现象(用户报)**:音乐播放中把 app 挂后台,过一段时间声音停了(进程未被杀);通知栏的播放控制通知消失;回到音乐页界面仍是播放页、状态是暂停;再点播放有声音,但**通知再也不出现**,且此时"离开应用会被暂停";只能退出重进(重新从卡片打开)才恢复正常 —— 重开会在播出时重新出现通知,也能正常离开应用播放。
+- **根因(会话状态机里三处"单向闩锁")**:通知/前台服务会话的唯一入口是 `PlaybackController.updateMusicSession()`,它每次都在同一处决定"建会话"或"撤会话":
+  1. `audioPlayback` 一旦为 false,**只有"读到音轨"才会回写 true**,而撤会话分支会把它清掉;命中 `STATE_ERROR` / `STATE_PLAYBACK_COMPLETED` 时同样撤会话。
+  2. `switchingPlayback`(取流/切集期间抑制)若卡 true,`updateMusicSession` 直接 return。
+  3. 退后台判定 `isConfirmedAudioOnly()` 与通知重建**共用同一份轨道信息代理**(`currentTrackInfo()` → `hasPlayableAudio()` / `isAudioOnlyPlayback()`);轨道读不到时(内核重建、播放器 ERROR、Exo `MappedTrackInfo == null` ⇒ 空 TrackInfo)实时读取返回 null ⇒ 后台播放与通知同时失效。
+  于是后台一次失败(错误或轨道读取失败)之后:通知被撤、`audioPlayback` 被清,**点播放不再产生通知**(重建只认 `STATE_PLAYING` 事件),退后台也没有"纯音频"豁免 ⇒ 与用户描述的四个现象逐条对应;退出重开会走 `startSession/play` 重新确认,所以能恢复。
+- **改动(全部落在会话层,不动播放内核与封面语义)**:
+  1. 新增 `PlaybackController.audioOnlyConfirmed` 粘滞标记,"确认过纯音频"不因一次读取失败而翻转;复位点只有内容边界(`beginNewPlay()` = 换集/换线/换源/重播,`startSession()` = playbackKey 变化)⇒ **自动重试不清**(同一内容的确认必须留着)。
+  2. `updateMusicSession()` 里 `audioPlayback` **只置位、不清零**;"读到轨道列表但 audio 为空"分支删除(Exo 在 IDLE/重取流期、音频渲染器未选中时同样给空 audio 列表)。清零点收敛到会话边界:会话维护内的撤会话分支、`play()`、`stopPlaybackForPageExit()`、`onHostDestroy()`。
+  3. `handlePlayStateForMusicSession()` 的切换期 `STATE_ERROR` 分支不再清 `audioPlayback`。
+  4. ERROR 时对**已确认纯音频**的会话先 `retryAfterStartedError()`(同内核同地址重播一次)**并保留会话**,无路可走才照旧撤会话。判据刻意用 `audioOnlyConfirmed` 而不是 `audioPlayback`:影视也带音轨,放宽会让本方法抢在详情页 `errorWithRetry` 之前消耗掉 `hasRetriedAfterStart`(引擎状态监听先注册 ⇒ 总是它先跑),使影视丢失"同地址重播一次"这一档。
+  5. 新增 `PlaybackController.beginSwitchPlayback()`,由音乐页 `playAt()` / `replayCurrent()` 在 `engine.play()` **之前**调用:状态事件同步派发给所有监听器且引擎监听先注册 ⇒ `STATE_PLAYBACK_COMPLETED` 到达时 `updateMusicSession` 会先跑,`switchingPlayback` 若仍为 false 就按"播完"撤会话(表现:一首放完,通知消失,下一首在播却没有通知)。队列末尾因 `playAt` 越界早退而不登记,照旧撤会话(正确)。
+  6. 保留诊断日志:`echo-music session gate`(每次进闸门的 state/playing/hasAudio/audioOnly/audioPlayback/audioOnlyConfirmed/switching/pos)、`session drop`(撤会话的判据组合)、`session keep`、`echo-music page onPause/onResume`、`hostPause -> pause player`、`echo-p2 stopSession/stopPlaybackSession`。
+- **为什么用粘滞标记而不是改 `hostPause` 判据**:判据是"退后台是否保持播放",属于会话的**粘性事实**(这份内容有没有音轨),不该随一次实时读取失败翻转;改 `hostPause` 只会掩盖读取失败,通知侧仍会失效。
+- **审查中发现自己引入的两处回归并收回**(三轮静态审查的产出,值得记住的教训):①自动重试判据原本写成 `audioPlayback` ⇒ 影视也满足,抢走详情页的重播额度(上面第 4 条的 ⚠️);②`updateMusicSession` 里曾新增"`trackInfo != null` 就清 `audioPlayback`",但"读到轨道列表"≠"读到音频轨"(Exo 会给非 null 的空 audio 列表)⇒ 比改动前更严格,等于把同一个 bug 换个入口放回来,故改为只置位。
+- **同时撤回一处误报**:第 4 轮审查曾判定 `updateMusicSession` 里 `view.isPlaying()` 会 NPE —— 实际 `ExoMediaPlayer.isPlaying()` 自带 `mInternalPlayer == null` 判空返回 false(`ExoMediaPlayer.java:186-199`),`IjkMediaPlayer` 同款;另确认 `ExoMediaPlayer.mInternalPlayer` 是实例字段(非 static),不存在跨实例共享已释放播放器的引用泄漏。
+- **本轮实证(对以后排查有用)**:`ExoMediaPlayer.isPlaying()` 在 `STATE_BUFFERING/READY` 时直接返回 `getPlayWhenReady()` ⇒ **网络卡死/缓冲停顿时仍返回 true**,于是 `PlaybackController.isPlaybackStarted()` 的 `view.isPlaying()` 兜底也判为"在播" ⇒ 换线超时会被取消、后台卡死**不会**触发任何超时自愈,自愈入口只有内核抛出的错误回调(即本次给纯音频补的那条重试)。
+- **验证**:`:app:assembleDebug` 构建通过(多轮改动后均绿);**未真机验证**。待真机核对:①一首放完自动下一首,通知栏全程保持(不再消失后重建);②手动切歌/上一首/下一首通知跟着切;③后台久放 → 音乐继续、通知可控(点暂停/播放/切歌);④若仍出现"声音停→点播放→无通知",取 `files/preload_debug.log`(debug 包)或 `adb shell run-as com.github.tvbox.osc cat files/preload_debug.log`,看 `echo-music session gate` 的 `audioPlayback/audioOnlyConfirmed/hasAudio` 三列即可判定剩余路径;⑤影视播放中报错仍走"同地址重播一次 → 换内核 → 换线"原阶梯(本改动不得影响);⑥退后台视频仍自动暂停(纯音频才保留后台播放)。**未提交**。
+- **仍未处理(有意,免被当成遗漏)**:①影视完成态不保会话(同类问题,但与本 issue 无关、改影视风险高);②架构层 `updateMusicSession` 被 `view.isPageAlive()` 门控,而后台时事实持有者是 `attachedPage`(页面若被判死则本次修复也兜不住,需真机日志确认是否构成第三种触发)。

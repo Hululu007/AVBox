@@ -145,6 +145,7 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
     override fun onResume() {
         super.onResume()
         if (!ready) return
+        LOG.i("echo-music page onResume lifecyclePaused=$lifecyclePaused playing=${player.isPlaying} audioOnly=${controller.isConfirmedAudioOnly()}")
         host.hostResume()
         main.removeCallbacks(positionTick)
         main.post(positionTick)
@@ -152,6 +153,7 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
 
     override fun onPause() {
         if (ready) {
+            LOG.i("echo-music page onPause lifecyclePaused=$lifecyclePaused playing=${player.isPlaying} audioOnly=${controller.isConfirmedAudioOnly()}")
             host.hostPause()
             main.removeCallbacks(positionTick)
         }
@@ -235,6 +237,8 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
     private fun playAt(index: Int, removeProgress: Boolean) {
         val list = queueList()
         if (index < 0 || index >= list.size || index == vod.playIndex) return
+        // 必须在 engine.play() 之前(见 PlaybackController.beginSwitchPlayback)
+        controller.beginSwitchPlayback()
         if (removeProgress) {
             controller.progressKey()?.let { CacheManager.delete(MD5.string2MD5(it), 0) }
         }
@@ -272,6 +276,8 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
     }
 
     private fun replayCurrent() {
+        // 同 playAt:必须在 engine.play() 之前
+        controller.beginSwitchPlayback()
         controller.progressKey()?.let { CacheManager.delete(MD5.string2MD5(it), 0) }
         controller.clearTriedLines()
         controller.setReusePlayerOnSwitch(true)
@@ -442,6 +448,8 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
         override fun hostPause() {
             if (!controller.isConfirmedAudioOnly()) {
                 lifecyclePaused = player.isPlaying
+                // 与"通知消失"同判据:留痕才能区分音频轨读不到与真判成影视
+                LOG.i("echo-music hostPause -> pause player (lifecyclePaused=$lifecyclePaused)")
                 player.pause()
             }
         }

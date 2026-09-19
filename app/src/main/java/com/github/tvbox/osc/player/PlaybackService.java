@@ -189,6 +189,9 @@ public class PlaybackService extends Service {
     public static void stopSession(Context context, PlaybackHostApi host) {
         PlaybackHostApi current = owner == null ? null : owner.get();
         if (host != null && current != null && current != host) return;
+        // 归属守卫:owner 是弱引用,页面被回收后 current 为 null ⇒ 守卫会放行任何调用者,留痕以便定位
+        LOG.i(TAG + " stopSession: ownerMatch=" + (host != null && current == host)
+                + " ownerAlive=" + (current != null) + " host=" + host);
         owner = null;
         if (instance != null) {
             pendingStart = false;
@@ -574,6 +577,8 @@ public class PlaybackService extends Service {
      * **不 stopSelf、不释放引擎** —— 播放器要继续跨页面复用(P2),任务移除/服务销毁时才释放(见 onTaskRemoved)。
      */
     private void stopPlaybackSession() {
+        // 撤通知的唯一收尾点:留痕以便定位"通知自己消失"的路径
+        LOG.i(TAG + " stopPlaybackSession (notification 1001 removed, playing=" + playing + ")");
         playing = false;
         releasePlaybackLocks();
         if (mediaSession != null) {
