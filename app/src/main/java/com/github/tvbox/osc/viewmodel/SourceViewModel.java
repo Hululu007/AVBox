@@ -215,6 +215,11 @@ public class SourceViewModel extends ViewModel {
 
     // homeContent
     public void getSort(final String sourceKey) {
+        getSort(sourceKey, true);
+    }
+
+    /** withRec=false 跳过首页推荐那一次额外请求(豆瓣类 videolist / spider homeVideoContent),sorts 不必等它 */
+    public void getSort(final String sourceKey, final boolean withRec) {
         if (sourceKey == null) {
             sortResult.postValue(new AbsSortXml());
             return;
@@ -276,7 +281,10 @@ public class SourceViewModel extends ViewModel {
                             attachSortSource(sourceKey, sortXml);
                             if (sortXml != null) {
                                 AbsXml absXml = json(null, sortJson, sourceBean.getKey());
-                                if (absXml != null && absXml.movie != null && absXml.movie.videoList != null && absXml.movie.videoList.size() > 0) {
+                                if (!withRec) {
+                                    postSortResult(sourceKey, sortXml);
+                                    cacheSort(sourceKey, sortXml);
+                                } else if (absXml != null && absXml.movie != null && absXml.movie.videoList != null && absXml.movie.videoList.size() > 0) {
                                     sortXml.videoList = absXml.movie.videoList;
                                     postSortResult(sourceKey, sortXml);
                                     cacheSort(sourceKey, sortXml);
@@ -330,7 +338,7 @@ public class SourceViewModel extends ViewModel {
                                 sortXml = sortJson(sortResult, json);
                             }
                             attachSortSource(sourceKey, sortXml);
-                            if (sortXml != null && sortXml.list != null && sortXml.list.videoList != null && sortXml.list.videoList.size() > 0) {
+                            if (withRec && sortXml != null && sortXml.list != null && sortXml.list.videoList != null && sortXml.list.videoList.size() > 0) {
                                 ArrayList<String> ids = new ArrayList<>();
                                 for (Movie.Video vod : sortXml.list.videoList) {
                                     ids.add(vod.id);

@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -16,11 +17,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.github.tvbox.osc.bean.Movie
+
+enum class VodCardStyle { Overlay, Stacked }
 
 @Composable
 fun VodCard(
@@ -28,7 +32,35 @@ fun VodCard(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
+    style: VodCardStyle = VodCardStyle.Overlay,
 ) {
+    if (style == VodCardStyle.Stacked) {
+        Column(modifier = modifier) {
+            PressableCard(
+                onClick = onClick,
+                onLongClick = onLongClick,
+                shape = RoundedCornerShape(16.dp),
+            ) {
+                Box(modifier = Modifier.aspectRatio(2f / 3f)) {
+                    VodPoster(video)
+                    RatingBadge(video, Modifier.align(Alignment.TopEnd))
+                }
+            }
+            Text(
+                text = video.name ?: "",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp),
+            )
+        }
+        return
+    }
+
     PressableCard(
         onClick = onClick,
         onLongClick = onLongClick,
@@ -36,12 +68,7 @@ fun VodCard(
         shape = RoundedCornerShape(16.dp),
     ) {
         Box(modifier = Modifier.aspectRatio(2f / 3f)) {
-            AsyncImage(
-                model = video.pic,
-                contentDescription = video.name,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
+            VodPoster(video)
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -52,21 +79,7 @@ fun VodCard(
                         )
                     ),
             )
-            val badge = ratingBadgeText(video.note)
-            if (badge != null) {
-                Text(
-                    text = badge,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(8.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))
-                        .padding(horizontal = 8.dp, vertical = 2.dp),
-                )
-            }
+            RatingBadge(video, Modifier.align(Alignment.TopEnd))
             Column(modifier = Modifier.align(Alignment.BottomStart).padding(10.dp)) {
                 Text(
                     text = video.name ?: "",
@@ -97,6 +110,32 @@ fun VodCard(
             }
         }
     }
+}
+
+@Composable
+private fun VodPoster(video: Movie.Video) {
+    AsyncImage(
+        model = video.pic,
+        contentDescription = video.name,
+        contentScale = ContentScale.Crop,
+        modifier = Modifier.fillMaxSize(),
+    )
+}
+
+@Composable
+private fun RatingBadge(video: Movie.Video, modifier: Modifier = Modifier) {
+    val badge = ratingBadgeText(video.note) ?: return
+    Text(
+        text = badge,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurface,
+        maxLines = 1,
+        modifier = modifier
+            .padding(8.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+    )
 }
 
 private val RATING_SCORE_REGEX = Regex("评分[:：]?\\s*(\\d+(?:\\.\\d+)?)")

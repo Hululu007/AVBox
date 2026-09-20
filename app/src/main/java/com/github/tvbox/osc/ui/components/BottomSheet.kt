@@ -57,6 +57,7 @@ fun AVBoxBottomSheet(
     title: String? = null,
     containerColor: Color? = null,
     isScrollable: Boolean = true,
+    headerContent: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val host = LocalSheetHost.current
@@ -67,13 +68,14 @@ fun AVBoxBottomSheet(
             title = title,
             containerColor = containerColor,
             isScrollable = isScrollable,
+            headerContent = headerContent,
             content = content,
         )
     } else {
         val id = remember { Any() }
         SideEffect {
             host.submit(
-                SheetRequest(id, onDismissRequest, modifier, title, containerColor, isScrollable, content),
+                SheetRequest(id, onDismissRequest, modifier, title, containerColor, isScrollable, headerContent, content),
             )
         }
         DisposableEffect(id) {
@@ -149,6 +151,7 @@ internal class SheetRequest(
     val title: String?,
     val containerColor: Color?,
     val isScrollable: Boolean,
+    val headerContent: (@Composable () -> Unit)?,
     val content: @Composable ColumnScope.() -> Unit,
 )
 
@@ -179,6 +182,7 @@ fun SheetHost(state: SheetHostState) {
             title = req.title,
             containerColor = req.containerColor,
             isScrollable = req.isScrollable,
+            headerContent = req.headerContent,
             content = req.content,
         )
     }
@@ -192,6 +196,7 @@ private fun SheetOverlay(
     title: String? = null,
     containerColor: Color? = null,
     isScrollable: Boolean = true,
+    headerContent: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -261,6 +266,7 @@ private fun SheetOverlay(
                         Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                             BottomSheetDefaults.DragHandle()
                         }
+                        headerContent?.invoke()
                         title?.let {
                             Text(
                                 text = it,

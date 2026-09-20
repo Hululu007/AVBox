@@ -39,7 +39,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
-enum class SegmentStyle { Connected, Track }
+enum class SegmentStyle { Connected, Track, Separated }
 
 private val TrackShape = RoundedCornerShape(percent = 50)
 
@@ -48,6 +48,10 @@ private val TrackPadding = 4.dp
 private val TrackSegmentSpacing = 4.dp
 
 private val TrackContentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp)
+
+private val SeparatedSegmentSpacing = 8.dp
+
+private val SeparatedContentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
 
 data class SegmentOption<T>(
     val label: String,
@@ -65,6 +69,7 @@ fun <T> CapsuleSegmentedButton(
     onOptionSelected: (T) -> Unit,
     modifier: Modifier = Modifier,
     style: SegmentStyle = SegmentStyle.Connected,
+    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
 ) {
     val selectedIndex = options.indexOfFirst { it.value == selectedValue }.coerceAtLeast(0)
 
@@ -72,7 +77,7 @@ fun <T> CapsuleSegmentedButton(
         Surface(
             modifier = modifier,
             shape = TrackShape,
-            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+            color = containerColor,
         ) {
             Row(
                 modifier = Modifier.padding(TrackPadding),
@@ -90,6 +95,28 @@ fun <T> CapsuleSegmentedButton(
                         modifier = Modifier.weight(1f),
                     )
                 }
+            }
+        }
+        return
+    }
+
+    if (style == SegmentStyle.Separated) {
+        Row(
+            modifier = modifier,
+            horizontalArrangement = Arrangement.spacedBy(SeparatedSegmentSpacing),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            options.forEachIndexed { index, option ->
+                CapsuleToggleButton(
+                    option = option,
+                    checked = selectedIndex == index,
+                    onCheckedChange = { onOptionSelected(option.value) },
+                    index = index,
+                    count = options.size,
+                    style = style,
+                    containerColor = containerColor,
+                    modifier = Modifier.weight(1f),
+                )
             }
         }
         return
@@ -124,6 +151,7 @@ private fun <T> CapsuleToggleButton(
     count: Int,
     style: SegmentStyle,
     modifier: Modifier = Modifier,
+    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -154,6 +182,22 @@ private fun <T> CapsuleToggleButton(
             interactionSource = interactionSource,
         ) {
             SegmentContent(option, MaterialTheme.typography.labelSmall)
+        }
+    } else if (style == SegmentStyle.Separated) {
+        ToggleButton(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            modifier = segmentModifier,
+            shapes = ToggleButtonShapes(
+                shape = TrackShape,
+                pressedShape = TrackShape,
+                checkedShape = TrackShape,
+            ),
+            colors = ToggleButtonDefaults.colors(containerColor = containerColor),
+            contentPadding = SeparatedContentPadding,
+            interactionSource = interactionSource,
+        ) {
+            SegmentContent(option, MaterialTheme.typography.bodySmall)
         }
     } else {
         ToggleButton(

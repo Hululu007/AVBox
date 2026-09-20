@@ -97,6 +97,7 @@ import com.github.tvbox.osc.ui.components.VodCardMenu
 import com.github.tvbox.osc.ui.components.glassTopBarSurface
 import com.github.tvbox.osc.ui.components.rememberVodCardMenuState
 import com.github.tvbox.osc.ui.theme.cardContainer
+import com.github.tvbox.osc.util.HomeSettings
 import com.kyant.capsule.ContinuousCapsule
 
 @Composable
@@ -113,6 +114,8 @@ fun HomePage(vm: HomeViewModel, bottomPadding: Dp = 0.dp) {
     val pullState = rememberPullToRefreshState()
 
     val pageLoading by vm.pageLoading.collectAsState()
+    val homeLayout by HomeSettings.layoutFlow.collectAsState()
+    LaunchedEffect(homeLayout) { vm.onLayoutChanged() }
     LaunchedEffect(vm) {
         vm.pageErrorEvents.collect { msg ->
             Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
@@ -249,7 +252,16 @@ fun HomePage(vm: HomeViewModel, bottomPadding: Dp = 0.dp) {
                 }
             }
             else -> {
-            LazyColumn(
+            if (homeLayout == HomeSettings.HomeLayout.Vertical) {
+                HomeGridLayout(
+                    vm = vm,
+                    topPadding = topPad,
+                    bottomPadding = bottomPadding,
+                    pullState = pullState,
+                    onCardClick = { video -> handleCardClick(vm, video, context) },
+                    onCardLongClick = { video -> vodMenu.show(video) },
+                )
+            } else LazyColumn(
                 state = listState,
                 modifier = Modifier
                     .fillMaxSize()
@@ -326,7 +338,7 @@ fun HomePage(vm: HomeViewModel, bottomPadding: Dp = 0.dp) {
         }
         }
 
-        if (sources.isNotEmpty()) {
+        if (sources.isNotEmpty() && homeLayout == HomeSettings.HomeLayout.Horizontal) {
             HomePullRefreshIndicator(
                 state = pullState,
                 isRefreshing = false,
@@ -427,7 +439,7 @@ fun HomePage(vm: HomeViewModel, bottomPadding: Dp = 0.dp) {
 }
 
 @Composable
-private fun HomePullRefreshIndicator(
+fun HomePullRefreshIndicator(
     state: PullToRefreshState,
     isRefreshing: Boolean,
     topPadding: Dp,
@@ -538,6 +550,8 @@ private fun PartitionSection(
             }
         }
         when (state) {
+            HomeViewModel.PartitionState.Idle -> Unit
+
             HomeViewModel.PartitionState.Loading -> {
                 Row(
                     modifier = Modifier

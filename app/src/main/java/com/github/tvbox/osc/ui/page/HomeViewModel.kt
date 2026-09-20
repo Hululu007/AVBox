@@ -11,6 +11,7 @@ import com.github.tvbox.osc.bean.MovieSort
 import com.github.tvbox.osc.bean.SourceBean
 import com.github.tvbox.osc.event.RefreshEvent
 import com.github.tvbox.osc.util.DefaultConfig
+import com.github.tvbox.osc.util.HomeSettings
 import com.github.tvbox.osc.viewmodel.SourceViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
@@ -30,6 +31,7 @@ import kotlin.coroutines.resume
 
 class HomeViewModel : ViewModel() {
     sealed interface PartitionState {
+        data object Idle : PartitionState
         data object Loading : PartitionState
         data object Empty : PartitionState
         data object Ready : PartitionState
@@ -67,16 +69,22 @@ class HomeViewModel : ViewModel() {
     private val scope = viewModelScope
     private val sortViewModel = SourceViewModel()
     private val actionViewModel = SourceViewModel()
+    private val recViewModel = SourceViewModel()
     private val loaders = HashMap<String, PartitionLoader>()
     private val loadSemaphore = Semaphore(2)
     private var loadGeneration = 0
     private var loadingSourceKey: String? = null
     private var watchdogJob: Job? = null
 
+    var activeSortId: String? = null
+        private set
+
     var defaultLiveLaunched = false
     var lastBackTime = 0L
 
     private val sortObserver = Observer<AbsSortXml> { absXml: AbsSortXml? -> onSortResult(absXml) }
+
+    private val recObserver = Observer<AbsSortXml> { absXml: AbsSortXml? -> onRecResult(absXml) }
 
     val actionMessages = MutableSharedFlow<String>(
         extraBufferCapacity = 8,
@@ -91,6 +99,7 @@ class HomeViewModel : ViewModel() {
     init {
         EventBus.getDefault().register(this)
         sortViewModel.sortResult.observeForever(sortObserver)
+        recViewModel.sortResult.observeForever(recObserver)
         actionViewModel.actionResult.observeForever(actionObserver)
         sources.value = ApiConfig.get().getSwitchSourceBeanList()
         currentSource.value = ApiConfig.get().getHomeSourceBean()
@@ -116,6 +125,7 @@ class HomeViewModel : ViewModel() {
     override fun onCleared() {
         EventBus.getDefault().unregister(this)
         sortViewModel.sortResult.removeObserver(sortObserver)
+        recViewModel.sortResult.removeObserver(recObserver)
         actionViewModel.actionResult.removeObserver(actionObserver)
         val staleLoaders = ArrayList(loaders.values)
         loaders.clear()
@@ -158,7 +168,7 @@ class HomeViewModel : ViewModel() {
             delay(20_000)
             onHomeLoadTimeout()
         }
-        sortViewModel.getSort(loadingSourceKey)
+        sortViewModel.getSort(loadingSourceKey, HomeSettings.current() == HomeSettings.HomeLayout.Horizontal)
     }
 
     private fun onHomeLoadTimeout() {
@@ -186,6 +196,35 @@ class HomeViewModel : ViewModel() {
             if (it.sort.id == partition.sort.id) it.copy(state = PartitionState.Loading) else it
         }
         requestPartition(partition, Partition.FIRST_PAGE)
+    }
+
+    fun ensureLoaded(sortId: String) {
+        activeSortId = sortId
+        val current = partitions.value.firstOrNull { it.sort.id == sortId } ?: return
+        if (current.state != PartitionState.Idle) return
+        partitions.value = partitions.value.map {
+            if (it.sort.id == sortId) it.copy(state = PartitionState.Loading) else it
+        }
+        requestPartition(current, Partition.FIRST_PAGE)
+    }
+
+    fun onLayoutChanged() {
+        if (HomeSettings.current() != HomeSettings.HomeLayout.Horizontal) return
+        val idle = partitions.value.filter { it.state == PartitionState.Idle }
+        if (idle.isNotEmpty()) {
+            partitions.value = partitions.value.map {
+                if (it.state == PartitionState.Idle) it.copy(state = PartitionState.Loading) else it
+            }
+            idle.forEach { p -> requestPartition(p, Partition.FIRST_PAGE) }
+        }
+        val key = loadingSourceKey
+        val hasRecSort = allSorts.value.any { it.id == "my0" }
+        if (key != null && hasRecSort && rec.value.videos.isEmpty() &&
+            rec.value.state != PartitionState.Loading
+        ) {
+            rec.value = Rec(PartitionState.Loading, emptyList())
+            recViewModel.getSort(key, true)
+        }
     }
 
     private fun onSortResult(absXml: AbsSortXml?) {
@@ -216,15 +255,32 @@ class HomeViewModel : ViewModel() {
 
         val visible = adjusted.filter { it.id != "my0" }
         sorts.value = visible
-        val newPartitions = visible.map { Partition(it, PartitionState.Loading, emptyList(), Partition.FIRST_PAGE, 0) }
+        val vertical = HomeSettings.current() == HomeSettings.HomeLayout.Vertical
+        val active = activeSortId?.takeIf { id -> visible.any { it.id == id } } ?: visible.firstOrNull()?.id
+        activeSortId = active
+        val newPartitions = visible.map { sort ->
+            if (vertical && sort.id != active) {
+                Partition(sort, PartitionState.Idle, emptyList(), Partition.FIRST_PAGE, 0)
+            } else {
+                Partition(sort, PartitionState.Loading, emptyList(), Partition.FIRST_PAGE, 0)
+            }
+        }
         partitions.value = newPartitions
         sortsLoaded.value = true
-        newPartitions.forEach { p -> requestPartition(p, Partition.FIRST_PAGE) }
+        newPartitions
+            .filter { it.state == PartitionState.Loading }
+            .forEach { p -> requestPartition(p, Partition.FIRST_PAGE) }
     }
 
     private fun loadRec(absXml: AbsSortXml?) {
         val videos = absXml?.videoList ?: emptyList()
         rec.value = if (videos.isEmpty()) Rec(PartitionState.Empty, videos) else Rec(PartitionState.Ready, videos)
+    }
+
+    private fun onRecResult(absXml: AbsSortXml?) {
+        val key = loadingSourceKey ?: return
+        if (absXml?.sourceKey != null && absXml.sourceKey != key) return
+        loadRec(absXml)
     }
 
     private class LoaderResult(val stale: Boolean, val absXml: AbsXml?)
@@ -284,10 +340,21 @@ class HomeViewModel : ViewModel() {
     }
 
     fun refreshPartitions() {
-        partitions.value = partitions.value.map {
-            Partition(it.sort, PartitionState.Loading, emptyList(), Partition.FIRST_PAGE, 0)
+        val vertical = HomeSettings.current() == HomeSettings.HomeLayout.Vertical
+        val active = activeSortId
+        val targets = if (vertical) {
+            partitions.value.filter { it.sort.id == active }
+        } else {
+            partitions.value
         }
-        partitions.value.forEach { p -> requestPartition(p, Partition.FIRST_PAGE) }
+        partitions.value = partitions.value.map { p ->
+            if (targets.any { it.sort.id == p.sort.id }) {
+                Partition(p.sort, PartitionState.Loading, emptyList(), Partition.FIRST_PAGE, 0)
+            } else {
+                p
+            }
+        }
+        targets.forEach { p -> requestPartition(p, Partition.FIRST_PAGE) }
     }
 
     private inner class PartitionLoader(val sort: MovieSort.SortData) {

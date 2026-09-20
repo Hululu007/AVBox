@@ -193,7 +193,7 @@ internal fun LayoutSwitchAction(
             ) {
                 LayoutSwitchCard(
                     iconRes = R.drawable.ic_layout_horizontal,
-                    label = "横屏展示",
+                    label = "横向展示",
                     selected = selected == SearchSettings.SearchLayout.Horizontal,
                     onClick = {
                         expanded = false
@@ -202,7 +202,7 @@ internal fun LayoutSwitchAction(
                 )
                 LayoutSwitchCard(
                     iconRes = R.drawable.ic_layout_vertical,
-                    label = "竖屏展示",
+                    label = "竖向展示",
                     selected = selected == SearchSettings.SearchLayout.Vertical,
                     onClick = {
                         expanded = false
@@ -309,7 +309,7 @@ internal fun RailResults(
         }
         VerticalDivider(
             modifier = Modifier.padding(top = topPad + 8.dp, bottom = 12.dp),
-            color = MaterialTheme.colorScheme.outlineVariant,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
         )
         LazyColumn(
             state = listState,

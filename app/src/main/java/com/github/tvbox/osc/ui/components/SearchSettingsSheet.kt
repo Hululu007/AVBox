@@ -17,6 +17,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -24,14 +25,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.github.tvbox.osc.R
 import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.bean.SourceBean
 import com.github.tvbox.osc.ui.activity.SearchViewModel
+import com.github.tvbox.osc.util.HomeSettings
 import com.github.tvbox.osc.util.SearchSettings
 
 private val SourceCardShapeLeft = RoundedCornerShape(
@@ -52,6 +56,7 @@ private val SourceCardShapeRight = RoundedCornerShape(
 fun SearchSettingsSheet(onDismiss: () -> Unit) {
     val sources = remember { ApiConfig.get().getSourceBeanList().filter(SourceBean::isSearchable) }
     val allKeys = remember(sources) { sources.map { it.key }.toSet() }
+    val homeLayout by HomeSettings.layoutFlow.collectAsState()
     var exactMatch by remember { mutableStateOf(SearchSettings.isExactMatchEnabled()) }
     var selected by remember {
         val selection = SearchSettings.currentSelection()
@@ -74,6 +79,29 @@ fun SearchSettingsSheet(onDismiss: () -> Unit) {
         onDismissRequest = onDismiss,
         title = "搜索设置",
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
+        headerContent = {
+            CapsuleSegmentedButton(
+                options = listOf(
+                    SegmentOption(
+                        label = "横向展示",
+                        value = HomeSettings.HomeLayout.Horizontal,
+                        iconPainter = painterResource(R.drawable.ic_layout_horizontal),
+                    ),
+                    SegmentOption(
+                        label = "竖向展示",
+                        value = HomeSettings.HomeLayout.Vertical,
+                        iconPainter = painterResource(R.drawable.ic_layout_vertical),
+                    ),
+                ),
+                selectedValue = homeLayout,
+                onOptionSelected = { HomeSettings.setLayout(it) },
+                style = SegmentStyle.Separated,
+                containerColor = MaterialTheme.colorScheme.surfaceBright,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
+            )
+        },
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
             SettingsGroup(title = null) {
