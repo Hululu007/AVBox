@@ -5,20 +5,14 @@ package com.github.tvbox.osc.ui.activity
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Bitmap
-import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.text.TextUtils
-import android.util.Base64
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.viewModels
 import com.github.tvbox.osc.ui.theme.enableTransparentEdgeToEdge
 import androidx.compose.foundation.layout.size
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -40,20 +34,12 @@ import com.github.tvbox.osc.ui.components.LocalSheetDismiss
 import com.github.tvbox.osc.ui.theme.AVBoxTheme
 import com.github.tvbox.osc.ui.theme.AppThemeState
 import com.github.tvbox.osc.util.DefaultConfig
-import com.github.tvbox.osc.util.EpgUtil
 import com.github.tvbox.osc.util.HawkConfig
-import com.github.tvbox.osc.util.HistoryHelper
 import com.github.tvbox.osc.util.LOG
-import com.github.tvbox.osc.util.OkGoHelper
 import com.github.tvbox.osc.util.PlayerHelper
-import com.github.tvbox.osc.util.live.TxtSubscribe
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
-import com.lzy.okgo.OkGo
-import com.lzy.okgo.callback.AbsCallback
-import com.lzy.okgo.model.Response
 import com.github.tvbox.osc.util.KV
-import org.json.JSONException
 import xyz.doikki.videoplayer.exo.ExoMediaSourceHelper
 import xyz.doikki.videoplayer.player.VideoView
 import xyz.doikki.videoplayer.util.PlayerUtils
@@ -61,13 +47,14 @@ import java.text.SimpleDateFormat
 import java.util.ArrayList
 import java.util.Calendar
 import java.util.Date
-import java.util.Hashtable
 import java.util.Locale
 import java.util.TimeZone
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.TimeoutException
 import java.util.regex.Pattern
+import kotlin.properties.ReadOnlyProperty
+import kotlin.properties.ReadWriteProperty
+import kotlin.reflect.KMutableProperty1
+import kotlin.reflect.KProperty
+import kotlin.reflect.KProperty1
 
 internal class LiveListRow(
     val group: LiveChannelGroup?,
@@ -81,55 +68,57 @@ class LivePlayActivity : BaseActivity() {
     companion object {
         private const val TAG = "LivePlayActivity"
         private const val SYSBAR_APPEARANCE_REASSERT_DELAY_MS = 400L
-        private const val EPG_LOAD_DELAY = 1200L
         private const val RESOLUTION_INFO_MAX_RETRY = 10
         private const val RESOLUTION_INFO_RETRY_DELAY = 300L
         private const val RESOLUTION_INFO_HIDE_DELAY = 3000L
         private const val OVERLAY_HIDE_DELAY = 6000L
         private const val CONNECT_TIMEOUT_SWITCH_DELAY = 3500L
-        private const val DEFAULT_EPG_ADDRESS = "http://epg.51zmt.top:8000/api/diyp/?ch={name}&date={date}"
-        private val FORMAT_DATE = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
         private val FORMAT_DATE1 = SimpleDateFormat("MM-dd", Locale.getDefault())
     }
 
-    internal enum class PageState { LOADING, EMPTY, READY }
+    /** 界面状态与设置项分发都在 ViewModel;同名转发使调用点不用改,转发仍走 snapshot state,Compose 订阅不变 */
+    private val vm: LivePlayViewModel by viewModels()
 
-    internal var pageState by mutableStateOf(PageState.LOADING)
-    internal var playState by mutableStateOf(VideoView.STATE_IDLE)
-    internal var snapshotVisible by mutableStateOf(false)
-    internal var snapshotBitmap by mutableStateOf<Bitmap?>(null)
-    private var fullScreen by mutableStateOf(false)
-    private var rotating by mutableStateOf(false)
-    internal var overlayVisible by mutableStateOf(false)
-    internal var isBackState by mutableStateOf(false)
-    internal var epgSheetVisible by mutableStateOf(false)
-    internal var settingsSheetVisible by mutableStateOf(false)
-    internal var passwordDialogTarget by mutableStateOf<Pair<Int, Int>?>(null)
-    internal var settingsVersion by mutableIntStateOf(0)
-    internal var channelVersion by mutableIntStateOf(0)
-    internal var epgVersion by mutableIntStateOf(0)
-    internal var scrollTick by mutableIntStateOf(0)
-    internal var resolutionText by mutableStateOf("")
-    internal var resolutionVisible by mutableStateOf(false)
-    internal var showTimeOn by mutableStateOf(false)
-    internal var showNetSpeedOn by mutableStateOf(false)
-    internal var timeText by mutableStateOf("")
-    internal var netSpeedText by mutableStateOf("")
-    internal var gestureHintText by mutableStateOf<String?>(null)
-    internal var tsPosition by mutableIntStateOf(0)
-    internal var tsDuration by mutableIntStateOf(0)
-    internal var channelInfoUi by mutableStateOf(ChannelInfoUi())
-    internal val expandedGroups = mutableStateListOf<Int>()
+    internal var pageState by VmVar(LivePlayViewModel::pageState)
+    internal var playState by VmVar(LivePlayViewModel::playState)
+    internal var snapshotVisible by VmVar(LivePlayViewModel::snapshotVisible)
+    internal var snapshotBitmap by VmVar(LivePlayViewModel::snapshotBitmap)
+    private var fullScreen by VmVar(LivePlayViewModel::fullScreen)
+    private var rotating by VmVar(LivePlayViewModel::rotating)
+    internal var overlayVisible by VmVar(LivePlayViewModel::overlayVisible)
+    internal var isBackState by VmVar(LivePlayViewModel::isBackState)
+    internal var epgSheetVisible by VmVar(LivePlayViewModel::epgSheetVisible)
+    internal var settingsSheetVisible by VmVar(LivePlayViewModel::settingsSheetVisible)
+    internal var passwordDialogTarget by VmVar(LivePlayViewModel::passwordDialogTarget)
+    internal var settingsVersion by VmVar(LivePlayViewModel::settingsVersion)
+    internal var channelVersion by VmVar(LivePlayViewModel::channelVersion)
+    internal var epgVersion by VmVar(LivePlayViewModel::epgVersion)
+    internal var scrollTick by VmVar(LivePlayViewModel::scrollTick)
+    internal var resolutionText by VmVar(LivePlayViewModel::resolutionText)
+    internal var resolutionVisible by VmVar(LivePlayViewModel::resolutionVisible)
+    internal var showTimeOn by VmVar(LivePlayViewModel::showTimeOn)
+    internal var showNetSpeedOn by VmVar(LivePlayViewModel::showNetSpeedOn)
+    internal var timeText by VmVar(LivePlayViewModel::timeText)
+    internal var netSpeedText by VmVar(LivePlayViewModel::netSpeedText)
+    internal var gestureHintText by VmVar(LivePlayViewModel::gestureHintText)
+    internal var tsPosition by VmVar(LivePlayViewModel::tsPosition)
+    internal var tsDuration by VmVar(LivePlayViewModel::tsDuration)
+    internal var channelInfoUi by VmVar(LivePlayViewModel::channelInfoUi)
+    internal val expandedGroups by VmVal(LivePlayViewModel::expandedGroups)
 
-    internal data class ChannelInfoUi(
-        val name: String = "",
-        val num: Int = 0,
-        val sourceText: String = "",
-        val currentEpgTime: String = "",
-        val currentEpgTitle: String = "",
-        val nextEpgTime: String = "",
-        val nextEpgTitle: String = "",
-    )
+    /**
+     * 转发属性读写到 ViewModel。
+     * 不能写成 `by vm::x`:绑定属性引用会在 Activity 构造期求值 vm,此时未 attach,getViewModelStore 会抛。
+     */
+    private inner class VmVar<T>(private val ref: KMutableProperty1<LivePlayViewModel, T>) : ReadWriteProperty<Any?, T> {
+        override fun getValue(thisRef: Any?, property: KProperty<*>): T = ref.get(vm)
+
+        override fun setValue(thisRef: Any?, property: KProperty<*>, value: T) = ref.set(vm, value)
+    }
+
+    private inner class VmVal<T>(private val ref: KProperty1<LivePlayViewModel, T>) : ReadOnlyProperty<Any?, T> {
+        override fun getValue(thisRef: Any?, property: KProperty<*>): T = ref.get(vm)
+    }
 
     internal var mVideoView: MyVideoView? = null
     private var liveController: ComposeLiveController? = null
@@ -144,27 +133,55 @@ class LivePlayActivity : BaseActivity() {
     private var pendingLiveRefreshChannelName: String? = null
     private var pendingLiveRefreshSourceIndex = -1
     private var refreshingLiveChannelList = false
-    private var liveConfigRequestId = 0
     private val livePlayerManager = LivePlayerManager()
     private val channelGroupPasswordConfirmed = ArrayList<Int>()
     internal var channelName: LiveChannelItem? = null
-    private val hsEpg = Hashtable<String, ArrayList<Epginfo>>()
     internal var epgdata = ArrayList<Epginfo>()
-    private var epgStringAddress = ""
     private var catchup: JsonObject? = null
     private var logoUrl: String? = null
     private var isSHIYI = false
     private var playUrl: String? = null
     private var shiyiTimeC = 0
     private var selectedChannelGroupIndex = 0
-    private var firstLiveEpgLoad = true
     private var resolutionInfoRetryCount = 0
     private var resolutionInfoPending = false
     private var exitingLivePlay = false
     private var loadingLiveConfigOnEnter = false
     private var liveSettingGroupList: List<LiveSettingGroup> = ArrayList()
     private var nowday = Date()
-    private var epgDayPresented = ""
+
+    /** EPG 取数与缓存;列表状态仍由本 Activity 持有,控制器只回调通知 */
+    private val epgController = LiveEpgController(object : LiveEpgController.Host {
+        override fun currentChannel(): LiveChannelItem? = channelName
+
+        override fun currentChannelHasLogo(): Boolean = !logoUrl.isNullOrEmpty()
+
+        override fun onEpgListChanged(list: ArrayList<Epginfo>) {
+            epgdata = list
+            epgVersion++
+        }
+
+        override fun onEpgSettled() {
+            updateChannelInfoUi()
+        }
+    })
+
+    /** 代理直播源加载 */
+    private val proxyLoader = LiveProxyLoader(object : LiveProxyLoader.Host {
+        override fun isRefreshing(): Boolean = refreshingLiveChannelList
+
+        override fun onLoading() {
+            pageState = PageState.LOADING
+        }
+
+        override fun onEmpty() {
+            setEmptyLiveChannelList()
+        }
+
+        override fun onGroupsLoaded(groups: List<LiveChannelGroup>) {
+            applyLiveChannelGroups(groups)
+        }
+    })
 
     override fun getLayoutResID(): Int = R.layout.activity_main
 
@@ -191,9 +208,9 @@ class LivePlayActivity : BaseActivity() {
                 }
             }
         })
-        epgStringAddress = getConfiguredEpgAddress()
+        epgController.reloadAddress()
         nowday = Date()
-        epgDayPresented = FORMAT_DATE1.format(nowday)
+        epgController.setDayKey(FORMAT_DATE1.format(nowday))
         initVideoView()
         findViewById<ComposeView>(R.id.compose_view).setContent {
             AVBoxTheme(manageStatusBarIcons = false) {
@@ -228,6 +245,9 @@ class LivePlayActivity : BaseActivity() {
         PlaybackService.peek()?.exitLive()
         mVideoView = null
         mHandler.removeCallbacksAndMessages(null)
+        // 这两个自带 Handler:延迟任务不再挂在 mHandler 上,必须显式取消,否则销毁后仍会回调到已销毁的界面
+        epgController.cancelAll()
+        proxyLoader.cancelAll()
     }
 
     private fun initVideoView() {
@@ -447,27 +467,7 @@ class LivePlayActivity : BaseActivity() {
     }
 
     private fun loadEpgAfterChannelStarted() {
-        mHandler.removeCallbacks(mLoadEpgRun)
-        if (!hasEpgAddress()) {
-            epgdata = ArrayList()
-            epgVersion++
-            return
-        }
-        if (hasCurrentEpgCache()) {
-            firstLiveEpgLoad = false
-            return
-        }
-        if (firstLiveEpgLoad) {
-            firstLiveEpgLoad = false
-            mHandler.postDelayed(mLoadEpgRun, EPG_LOAD_DELAY)
-        } else {
-            getEpg(Date())
-        }
-    }
-
-    private fun hasCurrentEpgCache(): Boolean {
-        val channel = channelName ?: return false
-        return hsEpg.containsKey(channel.channelName + "_" + epgDayPresented)
+        epgController.loadAfterChannelStarted()
     }
 
     private fun playNext() {
@@ -521,61 +521,16 @@ class LivePlayActivity : BaseActivity() {
         return true
     }
 
-    private fun getNextChannel(direction: Int): Array<Int> {
-        var channelGroupIndex = currentChannelGroupIndex
-        var liveChannelIndex = currentLiveChannelIndex
-        if (direction > 0) {
-            liveChannelIndex++
-            if (liveChannelIndex >= (getLiveChannels(channelGroupIndex)?.size ?: 0)) {
-                liveChannelIndex = 0
-                if (KV.get(HawkConfig.LIVE_CROSS_GROUP, false)) {
-                    do {
-                        channelGroupIndex++
-                        if (channelGroupIndex >= liveChannelGroupList.size) channelGroupIndex = 0
-                    } while (liveChannelGroupList.getOrNull(channelGroupIndex)?.groupPassword?.isNotEmpty() != false ||
-                        channelGroupIndex == currentChannelGroupIndex
-                    )
-                }
-            }
-        } else {
-            liveChannelIndex--
-            if (liveChannelIndex < 0) {
-                if (KV.get(HawkConfig.LIVE_CROSS_GROUP, false)) {
-                    do {
-                        channelGroupIndex--
-                        if (channelGroupIndex < 0) channelGroupIndex = liveChannelGroupList.size - 1
-                    } while (liveChannelGroupList.getOrNull(channelGroupIndex)?.groupPassword?.isNotEmpty() != false ||
-                        channelGroupIndex == currentChannelGroupIndex
-                    )
-                }
-                liveChannelIndex = (getLiveChannels(channelGroupIndex)?.size ?: 1) - 1
-            }
-        }
-        return arrayOf(channelGroupIndex, liveChannelIndex)
-    }
-
-    private fun getFirstChannelByName(keyword: String?): IntArray? {
-        if (TextUtils.isEmpty(keyword)) return null
-        val upperKeyword = keyword!!.uppercase(Locale.US)
-        for (group in liveChannelGroupList) {
-            if (isNeedInputPassword(group.groupIndex)) continue
-            val groupChannels = group.liveChannels ?: continue
-            if (groupChannels.isEmpty()) continue
-            for (item in groupChannels) {
-                val name = item.channelName ?: continue
-                if (name.uppercase(Locale.US).contains(upperKeyword)) {
-                    return intArrayOf(group.groupIndex, item.channelIndex)
-                }
-            }
-        }
-        return null
-    }
-
-    private fun getFirstNoPasswordChannelGroup(): Int {
-        for (group in liveChannelGroupList) {
-            if (group.groupPassword.isEmpty()) return group.groupIndex
-        }
-        return -1
+    /** 上/下一台:索引计算在 LiveChannelNavigator,这里只注入当前状态(跨组开关 + 密码可见性) */
+    private fun getNextChannel(direction: Int): IntArray {
+        return LiveChannelNavigator.nextPosition(
+            groups = liveChannelGroupList,
+            currentGroupIndex = currentChannelGroupIndex,
+            currentChannelIndex = currentLiveChannelIndex,
+            direction = direction,
+            crossGroup = KV.get(HawkConfig.LIVE_CROSS_GROUP, false),
+            channelsOf = { groupIndex -> getLiveChannels(groupIndex) },
+        )
     }
 
     private fun isCurrentLiveChannelValid(): Boolean {
@@ -712,99 +667,7 @@ class LivePlayActivity : BaseActivity() {
     }
 
     private fun loadProxyLives(url: String) {
-        var realUrl = url
-        try {
-            val parsedUrl = Uri.parse(realUrl)
-            realUrl = String(
-                Base64.decode(parsedUrl.getQueryParameter("ext"), Base64.DEFAULT or Base64.URL_SAFE or Base64.NO_WRAP),
-                charset("UTF-8"),
-            )
-        } catch (th: Throwable) {
-            if (!realUrl.startsWith("http://127.0.0.1")) {
-                setEmptyLiveChannelList()
-                return
-            }
-        }
-        if (!isValidLiveProxyUrl(realUrl)) {
-            setEmptyLiveChannelList()
-            return
-        }
-        if (!refreshingLiveChannelList) {
-            pageState = PageState.LOADING
-        }
-        LOG.i("echo-live-url:$realUrl")
-        if (realUrl.contains(".py") || realUrl.contains(".js")) {
-            val finalUrl = realUrl
-            val waitResponse = Runnable {
-                val executor = Executors.newSingleThreadExecutor()
-                val future = executor.submit(java.util.concurrent.Callable<String> {
-                    val sp = ApiConfig.get().getLiveCSP(finalUrl)
-                    sp.liveContent(finalUrl)
-                })
-                var sortJson: String? = null
-                try {
-                    sortJson = future.get(ApiConfig.get().liveConnectTimeoutSeconds.toLong(), TimeUnit.SECONDS)
-                } catch (e: TimeoutException) {
-                    e.printStackTrace()
-                    future.cancel(true)
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                } finally {
-                    if (sortJson.isNullOrEmpty()) {
-                        mHandler.post { setEmptyLiveChannelList() }
-                        return@Runnable
-                    }
-                    val livesArray = TxtSubscribe.parseToJsonArray(sortJson)
-                    mHandler.post {
-                        ApiConfig.get().loadLives(livesArray)
-                        val list = ApiConfig.get().channelGroupList
-                        if (list.isEmpty()) {
-                            setEmptyLiveChannelList()
-                        } else {
-                            applyLiveChannelGroups(ArrayList(list))
-                        }
-                    }
-                    try {
-                        executor.shutdown()
-                    } catch (th: Throwable) {
-                        th.printStackTrace()
-                    }
-                }
-            }
-            Executors.newSingleThreadExecutor().execute(waitResponse)
-        } else {
-            OkGo.get<String>(realUrl).execute(object : AbsCallback<String>() {
-                override fun convertResponse(response: okhttp3.Response): String {
-                    return response.body.string()
-                }
-
-                override fun onSuccess(response: Response<String>) {
-                    val livesArray = TxtSubscribe.parseToJsonArray(response.body())
-                    ApiConfig.get().loadLives(livesArray)
-                    val list = ApiConfig.get().channelGroupList
-                    if (list.isEmpty()) {
-                        mHandler.post { setEmptyLiveChannelList() }
-                        return
-                    }
-                    val loadedGroups = ArrayList(list)
-                    mHandler.post { applyLiveChannelGroups(loadedGroups) }
-                }
-
-                override fun onError(response: Response<String>) {
-                    mHandler.post { setEmptyLiveChannelList() }
-                }
-            })
-        }
-    }
-
-    private fun isValidLiveProxyUrl(url: String?): Boolean {
-        if (TextUtils.isEmpty(url)) return false
-        val lowerUrl = url!!.trim { it <= ' ' }.lowercase(Locale.US)
-        return lowerUrl.startsWith("http://") ||
-                lowerUrl.startsWith("https://") ||
-                lowerUrl.startsWith("rtsp://") ||
-                lowerUrl.startsWith("rtmp://") ||
-                lowerUrl.startsWith("rtp://")
+        proxyLoader.load(url)
     }
 
     private fun applyLiveChannelGroups(groups: List<LiveChannelGroup>) {
@@ -838,12 +701,14 @@ class LivePlayActivity : BaseActivity() {
             if (lastChannelGroupIndex != -1) break
         }
         if (lastChannelGroupIndex == -1) {
-            val cctv1Channel = getFirstChannelByName("CCTV1")
+            val cctv1Channel = LiveChannelNavigator.firstChannelByName(
+                liveChannelGroupList, "CCTV1"
+            ) { groupIndex -> isNeedInputPassword(groupIndex) }
             if (cctv1Channel != null) {
                 lastChannelGroupIndex = cctv1Channel[0]
                 lastLiveChannelIndex = cctv1Channel[1]
             } else {
-                lastChannelGroupIndex = getFirstNoPasswordChannelGroup()
+                lastChannelGroupIndex = LiveChannelNavigator.firstUnlockedGroupIndex(liveChannelGroupList)
                 if (lastChannelGroupIndex == -1) lastChannelGroupIndex = 0
                 lastLiveChannelIndex = 0
             }
@@ -870,7 +735,7 @@ class LivePlayActivity : BaseActivity() {
         allowLiveSwitchPlayer = true
         channelGroupPasswordConfirmed.clear()
         mHandler.removeCallbacks(mConnectTimeoutChangeSourceRun)
-        mHandler.removeCallbacks(mLoadEpgRun)
+        epgController.cancelPending()
         hideSwitchChannelSnapshot()
         expandedGroups.clear()
         isBackState = false
@@ -892,7 +757,7 @@ class LivePlayActivity : BaseActivity() {
         liveChannelGroupList.clear()
         ApiConfig.get().channelGroupList.clear()
         mHandler.removeCallbacks(mConnectTimeoutChangeSourceRun)
-        mHandler.removeCallbacks(mLoadEpgRun)
+        epgController.cancelPending()
         hideSwitchChannelSnapshot()
         if (releasePlayer) releasePlayerKernel()
         expandedGroups.clear()
@@ -914,30 +779,16 @@ class LivePlayActivity : BaseActivity() {
     }
 
     private fun loadCurrentSourceList() {
-        val items = ArrayList<com.github.tvbox.osc.bean.LiveSettingItem>()
-        val sourceNames = currentLiveChannelItem?.channelSourceNames
-        if (sourceNames != null) {
-            for (j in sourceNames.indices) {
-                val item = com.github.tvbox.osc.bean.LiveSettingItem()
-                item.itemIndex = j
-                item.itemName = sourceNames[j]
-                items.add(item)
-            }
-        }
-        liveSettingGroupList.getOrNull(0)?.liveSettingItems = items
+        liveSettingGroupList.getOrNull(0)?.liveSettingItems =
+            LiveSettingsRules.sourceItems(currentLiveChannelItem?.channelSourceNames)
     }
 
     fun visibleSettingGroups(): List<LiveSettingGroup> {
-        val showChannelOptions = hasCurrentLiveChannelSource()
-        return liveSettingGroupList.filter { group ->
-            !(group.groupIndex in 0..2 && !showChannelOptions)
-        }
+        return LiveSettingsRules.visibleGroups(liveSettingGroupList, hasCurrentLiveChannelSource())
     }
 
     private fun hasCurrentLiveChannelSource(): Boolean {
-        val item = currentLiveChannelItem ?: return false
-        return item.channelUrls != null && item.sourceNum > 0 &&
-                item.sourceIndex >= 0 && item.sourceIndex < item.channelUrls.size
+        return LiveSettingsRules.hasChannelSource(currentLiveChannelItem)
     }
 
     internal fun openSettingsSheet() {
@@ -984,118 +835,70 @@ class LivePlayActivity : BaseActivity() {
     }
 
     private fun getCurrentLiveConfigIndex(): Int {
-        if (ApiConfig.isLiveFollowVod()) return 0
-        val history = KV.get(HawkConfig.LIVE_API_HISTORY, ArrayList<String>())
-        val index = history.indexOf(KV.get(HawkConfig.LIVE_API_URL, ""))
-        return if (index < 0) -1 else index + 1
+        return LiveSettingsRules.currentConfigIndex(
+            ApiConfig.isLiveFollowVod(),
+            KV.get(HawkConfig.LIVE_API_HISTORY, ArrayList<String>()),
+            KV.get(HawkConfig.LIVE_API_URL, ""),
+        )
     }
 
     internal fun clickSettingItem(groupIndex: Int, position: Int) {
-        if (groupIndex in 0..2 && !isCurrentLiveChannelValid()) return
-        when (groupIndex) {
-            0 -> {
-                val item = currentLiveChannelItem ?: return
-                if (position < 0 || position >= item.sourceNum || position == item.sourceIndex) return
-                item.sourceIndex = position
-                playChannel(currentChannelGroupIndex, currentLiveChannelIndex, true)
-            }
-            1 -> {
-                if (position == livePlayerManager.livePlayerScale) return
-                mVideoView?.let { livePlayerManager.changeLivePlayerScale(it, position) }
-            }
-            2 -> {
-                if (position == livePlayerManager.livePlayerType) return
-                val videoView = mVideoView ?: return
-                releasePlayerKernel()
-                livePlayerManager.changeLivePlayerType(videoView, position)
-                currentLiveChannelItem?.let { videoView.setUrl(it.url, liveChannelHeader()) }
-                videoView.start()
-            }
-            3 -> {
-                if (position == KV.get(HawkConfig.LIVE_CONNECT_TIMEOUT, 1)) return
-                KV.put(HawkConfig.LIVE_CONNECT_TIMEOUT, position)
-            }
-            4 -> {
-                when (position) {
-                    0 -> KV.put(HawkConfig.LIVE_SHOW_TIME, !KV.get(HawkConfig.LIVE_SHOW_TIME, false)).also { showTime() }
-                    1 -> KV.put(HawkConfig.LIVE_SHOW_NET_SPEED, !KV.get(HawkConfig.LIVE_SHOW_NET_SPEED, false)).also { showNetSpeed() }
-                    2 -> KV.put(HawkConfig.LIVE_CHANNEL_REVERSE, !KV.get(HawkConfig.LIVE_CHANNEL_REVERSE, false))
-                    3 -> KV.put(HawkConfig.LIVE_CROSS_GROUP, !KV.get(HawkConfig.LIVE_CROSS_GROUP, false))
-                }
-            }
-            5 -> {
-                if (position == ApiConfig.getLiveGroupIndex()) return
-                val currentChannelName = getPreferredLiveRefreshChannelName()
-                val currentSourceIndex = getPreferredLiveRefreshSourceIndex()
-                val liveGroups = KV.get(HawkConfig.LIVE_GROUP_LIST, JsonArray())
-                if (liveGroups == null || position >= liveGroups.size()) return
-                liveConfigRequestId++
-                val livesOBJ = liveGroups.get(position).asJsonObject
-                ApiConfig.setLiveGroupIndex(position)
-                ApiConfig.get().loadLiveApi(livesOBJ)
-                if (ApiConfig.get().channelGroupList.isEmpty()) {
-                    releasePlayerKernel()
-                    setEmptyLiveChannelList(false)
-                    return
-                }
-                refreshLiveChannelListAndPlay(currentChannelName, currentSourceIndex)
-            }
-            6 -> {
-                val history = KV.get(HawkConfig.LIVE_API_HISTORY, ArrayList<String>())
-                val target: String
-                if (position == 0) {
-                    if (ApiConfig.isLiveFollowVod()) return
-                    target = ""
-                } else {
-                    if (position - 1 >= history.size) return
-                    target = history[position - 1]
-                    if (target == KV.get(HawkConfig.LIVE_API_URL, "")) return
-                }
-                val configChannelName = getPreferredLiveRefreshChannelName()
-                val configSourceIndex = getPreferredLiveRefreshSourceIndex()
-                val requestId = ++liveConfigRequestId
-                KV.put(HawkConfig.LIVE_API_URL, target)
-                if (target.isNotEmpty()) HistoryHelper.setLiveApiHistory(target)
-                ApiConfig.get().invalidateLiveConfig()
-                ApiConfig.get().refreshLiveApiHistoryItems()
-                ApiConfig.get().loadLiveConfig(false, object : ApiConfig.LoadConfigCallback {
-                    override fun success() {
-                        mHandler.post {
-                            if (requestId != liveConfigRequestId || isFinishing) return@post
-                            refreshLiveChannelListAndPlay(configChannelName, configSourceIndex)
-                        }
-                    }
+        vm.onSettingClicked(groupIndex, position, settingHost)
+    }
 
-                    override fun error(msg: String) {
-                        mHandler.post {
-                            if (requestId != liveConfigRequestId || isFinishing) return@post
-                            releasePlayerKernel()
-                            ApiConfig.get().refreshLiveApiHistoryItems()
-                            setEmptyLiveChannelList(false)
-                            Toast.makeText(this@LivePlayActivity, msg, Toast.LENGTH_SHORT).show()
-                        }
-                    }
+    /** 设置项分发里"要动播放器/频道列表"的动作实现(判定与 KV 写在 ViewModel) */
+    private val settingHost = object : LivePlayViewModel.Host {
+        override fun currentChannelItem(): LiveChannelItem? = currentLiveChannelItem
 
-                    override fun notice(msg: String) {
-                        mHandler.post {
-                            if (requestId != liveConfigRequestId || isFinishing) return@post
-                            Toast.makeText(this@LivePlayActivity, msg, Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                })
-            }
+        override fun currentPlayerScale(): Int = livePlayerManager.livePlayerScale
+
+        override fun currentPlayerType(): Int = livePlayerManager.livePlayerType
+
+        override fun replayCurrentChannel() {
+            playChannel(currentChannelGroupIndex, currentLiveChannelIndex, true)
         }
-        settingsVersion++
-    }
 
-    private fun getPreferredLiveRefreshChannelName(): String? {
-        currentLiveChannelItem?.let { return it.channelName }
-        return KV.get(HawkConfig.LIVE_CHANNEL, "")
-    }
+        override fun applyPlayerScale(position: Int) {
+            mVideoView?.let { livePlayerManager.changeLivePlayerScale(it, position) }
+        }
 
-    private fun getPreferredLiveRefreshSourceIndex(): Int {
-        currentLiveChannelItem?.let { return it.sourceIndex }
-        return -1
+        override fun applyPlayerType(position: Int) {
+            val videoView = mVideoView ?: return
+            releasePlayerKernel()
+            livePlayerManager.changeLivePlayerType(videoView, position)
+            currentLiveChannelItem?.let { videoView.setUrl(it.url, liveChannelHeader()) }
+            videoView.start()
+        }
+
+        override fun releasePlayerKernel() {
+            this@LivePlayActivity.releasePlayerKernel()
+        }
+
+        override fun refreshTimeOverlay() {
+            showTime()
+        }
+
+        override fun refreshNetSpeedOverlay() {
+            showNetSpeed()
+        }
+
+        override fun refreshChannelListAndPlay(channelName: String?, sourceIndex: Int) {
+            refreshLiveChannelListAndPlay(channelName, sourceIndex)
+        }
+
+        override fun setEmptyChannelList(releasePlayer: Boolean) {
+            setEmptyLiveChannelList(releasePlayer)
+        }
+
+        override fun toast(msg: String) {
+            Toast.makeText(this@LivePlayActivity, msg, Toast.LENGTH_SHORT).show()
+        }
+
+        override fun isFinishing(): Boolean = this@LivePlayActivity.isFinishing
+
+        override fun postToMain(action: Runnable) {
+            mHandler.post(action)
+        }
     }
 
     private fun liveWebHeader(): HashMap<String, String>? {
@@ -1345,8 +1148,7 @@ class LivePlayActivity : BaseActivity() {
         var currentTitle = ""
         var next = ""
         var nextTitle = ""
-        val savedEpgKey = name + "_" + epgDayPresented
-        val arrayList = hsEpg[savedEpgKey]
+        val arrayList = epgController.cachedEpg(name)
         if (arrayList != null && arrayList.isNotEmpty()) {
             epgdata = arrayList
         } else {
@@ -1401,196 +1203,6 @@ class LivePlayActivity : BaseActivity() {
             nextEpgTitle = nextTitle,
         )
         epgVersion++
-    }
-
-    private val mLoadEpgRun = Runnable {
-        if (channelName != null) getEpg(Date())
-    }
-
-    fun getEpg(date: Date) {
-        val channel = channelName ?: return
-        val channelNameStr = channel.channelName ?: return
-        val channelNameReal = LiveEpgParser.normalizeEpgChannelName(LiveEpgParser.getFirstPartBeforeSpace(channelNameStr) ?: "")
-        val timeFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).apply {
-            timeZone = TimeZone.getTimeZone("GMT+8:00")
-        }
-        var epgTagName = channelNameReal
-        if (logoUrl.isNullOrEmpty()) {
-            val epgInfo = EpgUtil.getEpgInfo(channelNameReal)
-            if (epgInfo != null && epgInfo[1].isNotEmpty()) {
-                epgTagName = epgInfo[1]
-            }
-        }
-        if (!hasEpgAddress()) {
-            epgdata = ArrayList()
-            epgVersion++
-            return
-        }
-        val epgQueryNames = LiveEpgParser.buildEpgQueryNames(channelNameStr, channelNameReal, epgTagName)
-        val url = LiveEpgParser.buildEpgUrl(epgStringAddress, epgQueryNames[0], date, timeFormat)
-        val savedEpgKey = channelNameStr + "_" + epgDayPresented
-        if (hsEpg.containsKey(savedEpgKey)) {
-            showEpg(date, hsEpg[savedEpgKey])
-            updateChannelInfoUi()
-            return
-        }
-        epgdata = ArrayList()
-        epgVersion++
-        requestEpg(url, date, channelNameReal, epgTagName, savedEpgKey, epgQueryNames, timeFormat, 0)
-    }
-
-    private fun showEpg(@Suppress("UNUSED_PARAMETER") date: Date, arrayList: ArrayList<Epginfo>?) {
-        epgdata = if (arrayList != null && arrayList.isNotEmpty()) arrayList else ArrayList()
-        epgVersion++
-    }
-
-    private fun getConfiguredEpgAddress(): String {
-        val userEpgAddress: String = KV.get(HawkConfig.EPG_URL, "")
-        if (userEpgAddress.trim { it <= ' ' }.length >= 5) {
-            return userEpgAddress.trim { it <= ' ' }
-        }
-        return DEFAULT_EPG_ADDRESS
-    }
-
-    private fun hasEpgAddress(): Boolean {
-        return epgStringAddress.isNotEmpty() && epgStringAddress.trim { it <= ' ' }.isNotEmpty()
-    }
-
-    private fun requestEpg(
-        url: String,
-        date: Date,
-        channelNameReal: String,
-        finalEpgTagName: String,
-        savedEpgKey: String,
-        epgQueryNames: ArrayList<String>,
-        timeFormat: SimpleDateFormat,
-        queryIndex: Int,
-    ) {
-        var client = OkGoHelper.getDefaultClient()
-        if (client == null) client = com.github.catvod.net.OkHttp.client()
-        client.newCall(okhttp3.Request.Builder().url(url).build()).enqueue(object : okhttp3.Callback {
-            override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
-                mHandler.post {
-                    onEpgRequestFailure(date, channelNameReal, finalEpgTagName, savedEpgKey, epgQueryNames, timeFormat, queryIndex)
-                }
-            }
-
-            override fun onResponse(call: okhttp3.Call, response: okhttp3.Response) {
-                if (response.code != 200) {
-                    response.close()
-                    mHandler.post {
-                        onEpgRequestFailure(date, channelNameReal, finalEpgTagName, savedEpgKey, epgQueryNames, timeFormat, queryIndex)
-                    }
-                    return
-                }
-                val body = try {
-                    response.body.string()
-                } finally {
-                    response.close()
-                }
-                mHandler.post {
-                    onEpgRequestResponse(body, date, channelNameReal, finalEpgTagName, savedEpgKey, epgQueryNames, timeFormat, queryIndex)
-                }
-            }
-        })
-    }
-
-    private fun onEpgRequestFailure(
-        date: Date,
-        channelNameReal: String,
-        finalEpgTagName: String,
-        savedEpgKey: String,
-        epgQueryNames: ArrayList<String>,
-        timeFormat: SimpleDateFormat,
-        queryIndex: Int,
-    ) {
-        if (!isCurrentEpgRequest(savedEpgKey)) return
-        if (requestNextEpgQueryName(date, channelNameReal, finalEpgTagName, savedEpgKey, epgQueryNames, timeFormat, queryIndex)) {
-            return
-        }
-        if (requestDefaultEpgOnFailure(date, channelNameReal, finalEpgTagName, savedEpgKey, epgQueryNames, timeFormat, queryIndex)) {
-            return
-        }
-        epgdata = ArrayList()
-        epgVersion++
-    }
-
-    private fun onEpgRequestResponse(
-        paramString: String?,
-        date: Date,
-        channelNameReal: String,
-        finalEpgTagName: String,
-        savedEpgKey: String,
-        epgQueryNames: ArrayList<String>,
-        timeFormat: SimpleDateFormat,
-        queryIndex: Int,
-    ) {
-        if (!isCurrentEpgRequest(savedEpgKey)) return
-        if (paramString.isNullOrEmpty() || paramString.trim { it <= ' ' }.isEmpty()) {
-            epgdata = ArrayList()
-            epgVersion++
-            return
-        }
-        LOG.i("echo-epgTagName:$channelNameReal")
-        var arrayList = ArrayList<Epginfo>()
-        try {
-            if (LiveEpgParser.isXmlEpgResponse(paramString)) {
-                arrayList = LiveEpgParser.parseXmlEpg(paramString, finalEpgTagName, date)
-            } else if (paramString.contains("epg_data") || paramString.trim { it <= ' ' }.startsWith("{")) {
-                arrayList = LiveEpgParser.parseJsonEpg(paramString, date)
-            }
-        } catch (jsonException: JSONException) {
-            jsonException.printStackTrace()
-        }
-        if (arrayList.isEmpty() && requestNextEpgQueryName(date, channelNameReal, finalEpgTagName, savedEpgKey, epgQueryNames, timeFormat, queryIndex)) {
-            return
-        }
-        hsEpg[savedEpgKey] = arrayList
-        if (!isCurrentEpgRequest(savedEpgKey)) return
-        showEpg(date, arrayList)
-        updateChannelInfoUi()
-    }
-
-    private fun requestDefaultEpgOnFailure(
-        date: Date,
-        channelNameReal: String,
-        finalEpgTagName: String,
-        savedEpgKey: String,
-        epgQueryNames: ArrayList<String>,
-        timeFormat: SimpleDateFormat,
-        queryIndex: Int,
-    ): Boolean {
-        if (DEFAULT_EPG_ADDRESS == epgStringAddress || queryIndex >= epgQueryNames.size) {
-            return false
-        }
-        val fallbackUrl = LiveEpgParser.buildEpgUrl(DEFAULT_EPG_ADDRESS, epgQueryNames[0], date, timeFormat)
-        LOG.i("echo-epg fallback default address")
-        requestEpg(fallbackUrl, date, channelNameReal, finalEpgTagName, savedEpgKey, epgQueryNames, timeFormat, epgQueryNames.size)
-        return true
-    }
-
-    private fun requestNextEpgQueryName(
-        date: Date,
-        channelNameReal: String,
-        finalEpgTagName: String,
-        savedEpgKey: String,
-        epgQueryNames: ArrayList<String>,
-        timeFormat: SimpleDateFormat,
-        queryIndex: Int,
-    ): Boolean {
-        if (!LiveEpgParser.isTemplateEpgAddress(epgStringAddress) || queryIndex + 1 >= epgQueryNames.size) {
-            return false
-        }
-        val nextIndex = queryIndex + 1
-        val nextUrl = LiveEpgParser.buildEpgUrl(epgStringAddress, epgQueryNames[nextIndex], date, timeFormat)
-        LOG.i("echo-epg retry query name:" + epgQueryNames[nextIndex])
-        requestEpg(nextUrl, date, channelNameReal, finalEpgTagName, savedEpgKey, epgQueryNames, timeFormat, nextIndex)
-        return true
-    }
-
-    private fun isCurrentEpgRequest(savedEpgKey: String): Boolean {
-        val channel = channelName ?: return false
-        return savedEpgKey == channel.channelName + "_" + epgDayPresented
     }
 
     private fun currentChannelHasCatchup(): Boolean {
