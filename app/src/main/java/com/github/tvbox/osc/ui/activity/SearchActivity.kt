@@ -79,6 +79,7 @@ import com.github.tvbox.osc.ui.components.VodCard
 import com.github.tvbox.osc.ui.components.VodCardMenu
 import com.github.tvbox.osc.ui.components.glassTopBarSurface
 import com.github.tvbox.osc.ui.components.rememberVodCardMenuState
+import com.github.tvbox.osc.ui.components.SettingsIconBadge
 import com.github.tvbox.osc.ui.theme.AVBoxTheme
 import com.github.tvbox.osc.ui.theme.cardContainer
 import com.github.tvbox.osc.ui.activity.PartitionListActivity
@@ -578,7 +579,7 @@ private fun SearchIdleContent(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                SectionIconBadge(R.drawable.ic_search_history, "搜索历史")
+                SettingsIconBadge(R.drawable.ic_search_history, "搜索历史")
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
                     text = "搜索历史",
@@ -633,7 +634,7 @@ private fun SearchIdleContent(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                SectionIconBadge(R.drawable.ic_hot_search, suggestTitle)
+                SettingsIconBadge(R.drawable.ic_hot_search, suggestTitle)
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
                     text = suggestTitle,
