@@ -233,7 +233,7 @@ class SearchViewModel : ViewModel() {
             }
             val year = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
             OkGo.get<String>(DOUBAN_HOT_URL + year + "," + year)
-                .headers("User-Agent", UA.randomOne())
+                .headers("User-Agent", UA.random())
                 .execute(object : AbsCallback<String>() {
                     override fun onSuccess(response: com.lzy.okgo.model.Response<String>) {
                         val body = response.body().orEmpty()
