@@ -44,8 +44,8 @@
 
 **文件布局与可测性基线(2026-09-15 文件级拆分后)**:
 
-- **UI 层文件布局**(四轮 A 档拆分只挪文件、不改行为;**新增代码按归属落位,别再往页面 Activity 里堆**):详情/播放页 = `ui/activity/DetailActivity.kt`(Activity)+ `DetailViewModel.kt`(VM)+ `DetailScreens.kt`(Compose 顶层函数);播放器面板 = `player/ui/PlayerSheets.kt`(公共骨架,`SheetLoading`/`findActivityOrNull` 等在此)+ `DanmuSheets.kt` / `SubtitleSheets.kt` / `CastSheet.kt` / `EpisodeSheet.kt`;直播页 = `ui/activity/LivePlayActivity.kt`(页面态 + 网络编排 + `epgVersion` 代际校验)+ `LiveScreens.kt`(Compose UI,13 个 Composable)+ **`LiveEpgParser.kt`(EPG 与回看的纯解析,无状态 object)**;音乐播放页 = `ui/music/MusicPlayerScreen.kt`(UI)+ `MusicPlayerState.kt`(状态)+ `MusicPalette.kt`(取色)+ `MusicLrc.kt`(歌词解析,宿主 `MusicPlayerActivity.kt` 只做编排,见 §4.10)。跨文件暴露的成员一律 `internal` —— 其 JVM 名会带模块后缀(`parseXmlEpg$AVBox_app_debug`)且可见性是 public,**Java 侧调用不到、反射名字也带后缀**;本项目无 Java 调用者与反射需求,故可放心放宽。过程与等价性证据见 `history/features.md`。
-- **单测基线**:`app/src/test` = 5 个测试类(`SearchHelperTest` / `KVKeySpecTest` / `KVDecoderTest` / `LiveEpgParserTest` / `MusicLrcTest`),**纯 JVM** —— 只有 `testImplementation(libs.junit)`,**无 Robolectric / Mockito / `isReturnDefaultValues`** ⇒ 被测代码一碰 `android.*` 或 `org.json` 即 `not mocked`;可测面只限**无 android 依赖的纯逻辑**(EPG 解析族 / 搜索 / KV 编解码),VM、Activity、用 `JSONObject` 的函数都测不了。**要测纯逻辑就得先把它抽成无状态 object 或顶层函数**(样板 = `ui/activity/LiveEpgParser.kt` + `LiveEpgParserTest`);是否引入 Robolectric 属独立决策(会改变验证模型),当前口径倾向不引入 —— 本项目的验证瓶颈在真机行为(挂摘时序 / 合成 / 坏流),不在 JVM 逻辑。R8 后用单测复验的姿势见 §6.3。
+- **UI 层文件布局**(四轮 A 档拆分只挪文件、不改行为;**新增代码按归属落位,别再往页面 Activity 里堆**):详情/播放页 = `ui/activity/DetailActivity.kt`(Activity)+ `DetailViewModel.kt`(VM)+ `DetailScreens.kt`(Compose 顶层函数);播放器面板 = `player/ui/PlayerSheets.kt`(公共骨架,`SheetLoading`/`findActivityOrNull` 等在此)+ `DanmuSheets.kt` / `SubtitleSheets.kt` / `CastSheet.kt` / `EpisodeSheet.kt`;直播页 = `ui/activity/LivePlayActivity.kt`(播放器与频道列表编排)+ `LivePlayViewModel.kt`(界面状态 + 设置项分发;Activity 以同名属性转发,故 `LiveScreens` 直接读 `activity.xxx` 仍成立)+ `LiveScreens.kt`(Compose UI,13 个 Composable)+ `LiveEpgController.kt`(EPG 取数/缓存/三级降级)+ `LiveProxyLoader.kt`(代理源加载)+ `LiveChannelNavigator.kt`(切台下标推算,纯函数)+ `LiveSettingsRules.kt`(设置面板可见性/下标判定,纯函数)+ **`LiveEpgParser.kt`(EPG 与回看的纯解析,无状态 object)**;音乐播放页 = `ui/music/MusicPlayerScreen.kt`(UI)+ `MusicPlayerState.kt`(状态)+ `MusicPalette.kt`(取色)+ `MusicLrc.kt`(歌词解析,宿主 `MusicPlayerActivity.kt` 只做编排,见 §4.10)。跨文件暴露的成员一律 `internal` —— 其 JVM 名会带模块后缀(`parseXmlEpg$AVBox_app_debug`)且可见性是 public,**Java 侧调用不到、反射名字也带后缀**;本项目无 Java 调用者与反射需求,故可放心放宽。过程与等价性证据见 `history/features.md`。
+- **单测基线**:`app/src/test` = 17 个测试类 / 174 用例,**纯 JVM** —— 只有 `testImplementation(libs.junit)`,**无 Robolectric / Mockito**;但有 `unitTests.isReturnDefaultValues = true`(`app/build.gradle.kts` 的 testOptions,为让 `LOG` 在 catch 分支打日志时不炸而加)⇒ 未 mock 的 `android.*` **返回默认值而不是抛 `not mocked`**,⚠️ **真正的坑是静默假值**(`TextUtils.isEmpty` 恒 false、`Log` 无输出):纯逻辑里一旦用 `android.text.TextUtils` 判空,单测会走错分支却仍然"通过"(判据见 `ConfigParser.isEmpty` 与 `LiveProxyLoader.isValidProxyUrl` 的注释);可测面只限**无 android 依赖的纯逻辑**,VM、Activity、用 `JSONObject` 的函数都测不了。**要测纯逻辑就得先把它抽成无状态 object 或顶层函数**(样板 = `ui/activity/LiveEpgParser.kt` / `LiveChannelNavigator.kt` / `LiveSettingsRules.kt`、`api/ConfigParser.java`、`LiveProxyLoader` 的伴生函数,各配同名 Test);是否引入 Robolectric 属独立决策(会改变验证模型),当前口径倾向不引入 —— 本项目的验证瓶颈在真机行为(挂摘时序 / 合成 / 坏流),不在 JVM 逻辑。R8 后用单测复验的姿势见 §6.3。
 
 ## 3. 信息架构与主题(已定)
 
@@ -283,6 +283,11 @@
 ⚠️ **两条硬约束**:
 1. **别用 `getValueSize` 式的"源码里没有就是没用"来裁权限** —— 依赖库会通过清单合并塞权限进来。改完必须 `aapt2 dump xmltree` 看 APK 实际清单,或读 `app/build/outputs/logs/manifest-merger-*-report.txt` 查来源。
 2. **同一声明里不能"既要声明、又要 `tools:node="remove"`"** —— 清单合并会直接报 `Validation failed` 构建失败(本次踩过:`READ/WRITE_EXTERNAL_STORAGE` 已在 app 清单合法声明,我又加了两条 remove)。
+
+### 6.9 组件与生命周期(2026-09-21 补,均由实坑得出)
+
+- ⚠️ **`by viewModels()` 不能被"绑定属性引用"触发**。`var x by vm::x` 会在 **Activity 构造期**求值 `vm`,`by viewModels()` 的懒加载随即调 `getViewModelStore()`,而那时 Activity 尚未 attach,`ComponentActivity` 直接抛 `IllegalStateException("Your activity is not yet attached to the Application instance…")` ⇒ **进页面即崩**。要让宿主转发 VM 状态,必须用**非绑定**属性引用 + 自定义委托(样板 `LivePlayActivity.VmVar`/`VmVal`),取值推迟到 `getValue`/`setValue`。
+- ⚠️ **抽离出的类若自带 `Handler`(或线程),宿主销毁时必须显式取消**。宿主 `onDestroy` 里清自己的队列(`removeCallbacksAndMessages`)带不走它们的延迟任务 ⇒ 销毁后仍会回调到已销毁的界面(直播页:延迟 1.2s 的 EPG 取数 / 代理源加载)。样板:两个类各留 `cancelAll()` 并在 `onDestroy` 调用。
 
 ## 7. 未决 / 待细化清单
 
