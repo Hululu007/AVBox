@@ -231,6 +231,7 @@ public class PlaybackController {
             }
         } catch (Throwable th) {
             // 与原实现一致:补全失败不阻断播放(配置保持已解析出的部分)
+            LOG.d("PlaybackController", "initPlayerCfg fill-up failed, keep parsed part");
         }
     }
 
@@ -395,6 +396,7 @@ public class PlaybackController {
                 return Integer.parseInt(number);
             }
         } catch (Exception ignored) {
+            LOG.d("PlaybackController", "episode number extract failed, name=" + name);
         }
         return -1;
     }
@@ -759,6 +761,7 @@ public class PlaybackController {
             }
         } catch (Throwable th) {
             // 与 initPlayerCfg 一致:刷新失败不阻断播放
+            LOG.d("PlaybackController", "syncDecodeFromGlobal failed, keep current cfg");
         }
     }
 
@@ -902,6 +905,7 @@ public class PlaybackController {
             if (live instanceof IjkMediaPlayer) return 1;
             if (live instanceof ExoPlayer) return 2;
         } catch (Throwable ignored) {
+            LOG.d("PlaybackController", "live kernel probe failed, fallback cfg.pl");
         }
         return playerCfg == null ? 2 : playerCfg.optInt("pl", 2);
     }
@@ -2695,6 +2699,7 @@ public class PlaybackController {
                 return ((ExoPlayer) mediaPlayer).getTrackInfo();
             }
         } catch (Throwable ignored) {
+            LOG.d("PlaybackController", "track info unavailable");
         }
         return null;
     }

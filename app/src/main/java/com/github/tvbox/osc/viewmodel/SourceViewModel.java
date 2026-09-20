@@ -1240,7 +1240,8 @@ public class SourceViewModel extends ViewModel {
                 header.put(key, pushUrl.headers.get(key));
             }
             result.put("header", header);
-        } catch (Throwable ignored) {
+        } catch (Throwable th) {
+            LOG.e("SourceViewModel", "merge push headers failed", th);
         }
     }
 
@@ -1409,7 +1410,7 @@ public class SourceViewModel extends ViewModel {
                     }
                 }
             } catch (Throwable th) {
-
+                LOG.d("SourceViewModel", "sort filters parse failed, continue without filters");
             }
             return data;
         } catch (Exception e) {

@@ -1,6 +1,7 @@
 package com.github.tvbox.osc.util.parser;
 import android.util.Base64;
 import com.github.catvod.crawler.SpiderDebug;
+import com.github.tvbox.osc.util.LOG;
 import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -40,11 +41,13 @@ public class JsonParallel {
             try {
                 client.dispatcher().cancelAll();
             } catch (Throwable ignored) {
+                LOG.d("JsonParallel", "cancel dispatcher calls failed");
             }
             for (Future<JSONObject> future : futures) {
                 try {
                     future.cancel(true);
                 } catch (Throwable ignored) {
+                    LOG.d("JsonParallel", "cancel in-flight future failed");
                 }
             }
             futures.clear();
@@ -159,7 +162,7 @@ public class JsonParallel {
                 }
                 reqHeaders.put("url", newUrl);
             } catch (Throwable th) {
-
+                LOG.d("JsonParallel", "cat_ext param decode failed, ignore extended headers");
             }
         }
         return reqHeaders;

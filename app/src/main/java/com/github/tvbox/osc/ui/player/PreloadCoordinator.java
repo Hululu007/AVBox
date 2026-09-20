@@ -228,6 +228,7 @@ public final class PreloadCoordinator {
             }
             startPos = Math.max(startPos, rec);
         } catch (Throwable ignored) {
+            LOG.d("PreloadCoordinator", "read saved progress failed, use snapshot start");
         }
         preloadedKey = snapshot.nextKey;
         LOG.i("echo-preload-resolve-ok: " + url);
@@ -235,6 +236,7 @@ public final class PreloadCoordinator {
             info.put("proKey", snapshot.nextKey);
             info.put("subtKey", snapshot.nextSubtitleKey);
         } catch (Throwable ignored) {
+            LOG.d("PreloadCoordinator", "mark preload result keys failed");
         }
         cachedInfo = info;
         cachedKey = snapshot.nextKey;

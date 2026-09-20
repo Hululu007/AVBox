@@ -94,6 +94,7 @@ import com.lzy.okgo.callback.AbsCallback
 import com.github.tvbox.osc.viewmodel.SourceViewModel
 import com.github.catvod.crawler.JsLoader
 import com.github.tvbox.osc.util.KV
+import com.github.tvbox.osc.util.LOG
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
@@ -218,7 +219,8 @@ class SearchViewModel : ViewModel() {
         org.greenrobot.eventbus.EventBus.getDefault().unregister(this)
         try {
             OkGo.getInstance().cancelTag("suggest")
-        } catch (_: Throwable) {
+        } catch (ignored: Throwable) {
+            LOG.d("SearchViewModel", "cancel suggest requests failed")
         }
     }
 
@@ -320,11 +322,13 @@ class SearchViewModel : ViewModel() {
         clearSuggest()
         try {
             JsLoader.stopAll()
-        } catch (_: Throwable) {
+        } catch (ignored: Throwable) {
+            LOG.d("SearchViewModel", "JsLoader.stopAll failed, continue new search")
         }
         try {
             com.lzy.okgo.OkGo.getInstance().cancelTag("search")
-        } catch (_: Throwable) {
+        } catch (ignored: Throwable) {
+            LOG.d("SearchViewModel", "cancel previous search requests failed")
         }
         for (entry in pendingSources) {
             entry.value.complete(Unit)

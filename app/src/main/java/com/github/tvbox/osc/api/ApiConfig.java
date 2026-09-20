@@ -632,6 +632,7 @@ public class ApiConfig {
         try {
             if (closeable != null) closeable.close();
         } catch (Throwable ignored) {
+            LOG.d("ApiConfig", "close failed");
         }
     }
 
@@ -812,6 +813,7 @@ public class ApiConfig {
                 }
             }
         } catch (Throwable ignored) {
+            LOG.d("ApiConfig", "api lines parse failed, keep lines so far");
         }
         return apiLines;
     }
@@ -1201,6 +1203,7 @@ public class ApiConfig {
                     return;
                 }
             } catch (Throwable ignored) {
+                LOG.d("ApiConfig", "live config json parse failed, fallback to text");
             }
         }
         if (isLiveJsonContent(content)) {
@@ -1406,6 +1409,7 @@ public class ApiConfig {
                     try {
                         liveChannelItem.setChannelParse(obj.get("parse").getAsInt());
                     } catch (Throwable ignored) {
+                        LOG.d("ApiConfig", "channel parse flag not an int, use default");
                     }
                 }
                 if (obj.has("catchup")) {

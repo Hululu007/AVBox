@@ -128,6 +128,7 @@ public class Connect {
             OkGo.getInstance().cancelTag(tag);
             cancelDefaultClient(tag);
         } catch (Exception e) {
+            LOG.d("Connect", "cancel tag failed");
         }
     }
 

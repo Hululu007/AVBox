@@ -88,6 +88,7 @@ public class JsSpider extends Spider {
             try {
                 if (ctx != null) ctx.destroy();
             } catch (Throwable ignored) {
+                LOG.d("JsSpider", "cleanup ctx after init failure failed");
             }
             executor.shutdownNow();
             throw th;
@@ -124,6 +125,7 @@ public class JsSpider extends Spider {
                 try {
                     method.invoke(receiver, ctx);
                 } catch (Throwable ignored) {
+                    LOG.d("JsSpider", "context setter invoke failed");
                 }
             }
         }
@@ -192,7 +194,7 @@ public class JsSpider extends Spider {
             if (cat) call("init", submit(() -> cfg(extend)).get());
             else call("init", Json.valid(extend) ? ctx.parse(extend) : extend);
         }catch (Exception e){
-
+            LOG.e("JsSpider", "init js spider failed", e);
         }
     }
 
@@ -308,6 +310,7 @@ public class JsSpider extends Spider {
             try {
                 global.destroy();
             } catch (Throwable ignored) {
+                LOG.d("JsSpider", "global destroy failed");
             }
         }
         try {

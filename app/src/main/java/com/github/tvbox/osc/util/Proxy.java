@@ -39,8 +39,8 @@ public class Proxy {
                 return SuperParse.loadHtml(params.get("flag"), params.get("url"));
             }
 
-        } catch (Throwable ignored) {
-
+        } catch (Throwable th) {
+            LOG.e("Proxy", "proxy request failed", th);
         }
         return null;
     }

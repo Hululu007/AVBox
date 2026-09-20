@@ -281,7 +281,8 @@ public class DefaultSubtitleEngine implements SubtitleEngine {
                         mWorkHandler.sendEmptyMessageDelayed(MSG_REFRESH, delay);
                     }
                 } catch (Exception e) {
-                    // ignored
+                    // 刷新循环单次失败不打断后续 tick
+                    LOG.d("DefaultSubtitleEngine", "subtitle refresh tick failed");
                 }
                 return true;
             }

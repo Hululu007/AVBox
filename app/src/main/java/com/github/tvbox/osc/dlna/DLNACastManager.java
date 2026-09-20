@@ -69,6 +69,7 @@ public class DLNACastManager extends DefaultRegistryListener implements ServiceC
             if (upnpService != null) upnpService.getRegistry().removeListener(this);
             context.getApplicationContext().unbindService(this);
         } catch (Exception ignored) {
+            LOG.d("DLNACastManager", "unbind service failed");
         }
         upnpService = null;
         binding = false;
@@ -85,6 +86,7 @@ public class DLNACastManager extends DefaultRegistryListener implements ServiceC
             multicastLock.setReferenceCounted(false);
             multicastLock.acquire();
         } catch (Exception ignored) {
+            LOG.d("DLNACastManager", "acquire multicast lock failed");
         }
     }
 
@@ -92,6 +94,7 @@ public class DLNACastManager extends DefaultRegistryListener implements ServiceC
         try {
             if (multicastLock != null && multicastLock.isHeld()) multicastLock.release();
         } catch (Exception ignored) {
+            LOG.d("DLNACastManager", "release multicast lock failed");
         }
         multicastLock = null;
     }

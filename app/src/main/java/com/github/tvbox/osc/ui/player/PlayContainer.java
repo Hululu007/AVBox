@@ -843,6 +843,7 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
                 if (idx >= 0) return c.getString(idx);
             }
         } catch (Exception ignored) {
+            LOG.d("PlayContainer", "query display name failed, keep null");
         }
         return null;
     }

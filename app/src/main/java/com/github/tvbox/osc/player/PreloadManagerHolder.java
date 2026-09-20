@@ -202,7 +202,8 @@ public final class PreloadManagerHolder {
         int seconds = PRELOAD_SECONDS_DEFAULT;
         try {
             seconds = KV.get(HawkConfig.PRELOAD_DURATION, PRELOAD_SECONDS_DEFAULT);
-        } catch (Throwable ignored) {
+        } catch (Throwable th) {
+            LOG.e("PreloadManagerHolder", "preload duration KV read failed, use default", th);
         }
         seconds = Math.max(PRELOAD_SECONDS_MIN, Math.min(PRELOAD_SECONDS_MAX, seconds));
         return seconds * 1000L;
@@ -217,7 +218,8 @@ public final class PreloadManagerHolder {
         if (sPendingItem != null) {
             try {
                 sManager.remove(sPendingItem);
-            } catch (Throwable ignored) {
+            } catch (Throwable th) {
+                LOG.e("PreloadManagerHolder", "remove pending preload item failed", th);
             }
             sPendingItem = null;
         }
@@ -237,7 +239,8 @@ public final class PreloadManagerHolder {
         if (sManager != null) {
             try {
                 sManager.release();
-            } catch (Throwable ignored) {
+            } catch (Throwable th) {
+                LOG.e("PreloadManagerHolder", "preload manager release failed", th);
             }
             sManager = null;
         }
@@ -270,7 +273,8 @@ public final class PreloadManagerHolder {
                     if (listener != null && url != null) {
                         try {
                             listener.onPreloadReady(url);
-                        } catch (Throwable ignored) {
+                        } catch (Throwable th) {
+                            LOG.e("PreloadManagerHolder", "preload ready callback failed", th);
                         }
                     }
                 }

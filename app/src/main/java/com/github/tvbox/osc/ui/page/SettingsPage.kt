@@ -71,6 +71,7 @@ import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.MusicSettings
 import com.github.tvbox.osc.util.OkGoHelper
 import com.github.tvbox.osc.util.KV
+import com.github.tvbox.osc.util.LOG
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -207,7 +208,8 @@ fun SettingsPage(vm: SettingsViewModel = viewModel(), bottomPadding: Dp = 0.dp) 
     val versionName = remember {
         try {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: ""
-        } catch (_: Exception) {
+        } catch (ignored: Exception) {
+            LOG.d("SettingsPage", "read versionName failed")
             ""
         }
     }

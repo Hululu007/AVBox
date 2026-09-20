@@ -1,6 +1,7 @@
 package com.github.tvbox.osc.util.live;
 
 import com.github.tvbox.osc.util.DefaultConfig;
+import com.github.tvbox.osc.util.LOG;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -63,6 +64,7 @@ public class TxtSubscribe {
             JsonElement element = JsonParser.parseString(str);
             if (element.isJsonArray()) return normalizeJsonArray(element.getAsJsonArray());
         } catch (Throwable ignored) {
+            LOG.d("TxtSubscribe", "not json content, try m3u/txt parse");
         }
         if (str.startsWith("#EXTM3U")) return parseM3uToJsonArray(str);
         return parseTxtToJsonArray(str);
@@ -162,6 +164,7 @@ public class TxtSubscribe {
             }
             reader.close();
         } catch (Throwable ignored) {
+            LOG.d("TxtSubscribe", "m3u parse failed, keep parsed channels");
         }
         return result;
     }
@@ -206,6 +209,7 @@ public class TxtSubscribe {
             }
             reader.close();
         } catch (Throwable ignored) {
+            LOG.d("TxtSubscribe", "txt parse failed, keep parsed channels");
         }
         return result;
     }
@@ -336,6 +340,7 @@ public class TxtSubscribe {
                 try {
                     obj.add("header", JsonParser.parseString(value).getAsJsonObject());
                 } catch (Throwable ignored) {
+                    LOG.d("TxtSubscribe", "header setting json invalid, skipped");
                 }
             }
         }
@@ -346,6 +351,7 @@ public class TxtSubscribe {
             try {
                 obj.add("header", JsonParser.parseString(line.split("#EXTHTTP:")[1].trim()).getAsJsonObject());
             } catch (Throwable ignored) {
+                LOG.d("TxtSubscribe", "EXTHTTP header json invalid, skipped");
             }
         }
         if (line.startsWith("#EXTVLCOPT:")) {

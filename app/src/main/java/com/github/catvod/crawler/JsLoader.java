@@ -105,6 +105,7 @@ public class JsLoader {
             File parent = cache.getParentFile();
             if (parent != null && !parent.exists()) parent.mkdirs();
         } catch (Throwable ignored) {
+            LOG.d("JsLoader", "create csp dir failed");
         }
         if (!md5.isEmpty()) {
             if (cache.exists() && MD5.getFileMd5(cache).equalsIgnoreCase(md5)) {
@@ -175,6 +176,7 @@ public class JsLoader {
                 try {
                     sp.destroy();
                 } catch (Throwable ignored) {
+                    LOG.d("JsLoader", "destroy spider failed");
                 }
             }
         }
@@ -188,6 +190,7 @@ public class JsLoader {
                 return proxyFun.proxyLocal(params);
             }
         } catch (Throwable th) {
+            LOG.e("JsLoader", "proxy invoke failed", th);
         }
         return null;
     }

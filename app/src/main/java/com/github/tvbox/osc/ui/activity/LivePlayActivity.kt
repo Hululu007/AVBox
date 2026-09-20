@@ -1248,6 +1248,7 @@ class LivePlayActivity : BaseActivity() {
         try {
             bitmap = mVideoView?.doScreenShot()
         } catch (ignored: Throwable) {
+            LOG.d("LivePlayActivity", "doScreenShot failed, switch-channel snapshot skipped")
         }
         snapshotBitmap = bitmap
         snapshotVisible = true

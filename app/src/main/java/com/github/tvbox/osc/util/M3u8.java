@@ -445,6 +445,7 @@ public class M3u8 {
         try {
             return new BigDecimal(line.substring(start, end)).stripTrailingZeros();
         } catch (Exception ignored) {
+            LOG.d("M3u8", "extinf duration parse failed, treat as 0");
         }
         return BigDecimal.ZERO;
     }
@@ -847,6 +848,7 @@ public class M3u8 {
                 try {
                     totalDuration += Double.parseDouble(line.substring(durationStart, durationEnd));
                 } catch (Exception ignored) {
+                    LOG.d("M3u8", "segment duration parse failed, skip");
                 }
             }
             if (line.length() == 0 || line.startsWith("#")) {

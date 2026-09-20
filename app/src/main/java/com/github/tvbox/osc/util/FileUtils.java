@@ -110,6 +110,7 @@ public class FileUtils {
                 try {
                     in.close();
                 } catch (IOException el) {
+                    LOG.d("FileUtils", "close reader failed");
                 }
             }
         }

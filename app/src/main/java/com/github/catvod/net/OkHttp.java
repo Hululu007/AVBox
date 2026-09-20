@@ -2,6 +2,7 @@ package com.github.catvod.net;
 
 import androidx.collection.ArrayMap;
 
+import com.github.tvbox.osc.util.LOG;
 import com.github.tvbox.osc.util.SSL.SSLSocketFactoryCompat;
 import com.github.tvbox.osc.util.OkGoHelper;
 
@@ -170,7 +171,8 @@ public class OkHttp {
             SSLSocketFactory sslSocketFactory = new SSLSocketFactoryCompat(TRUST_ALL_CERT);
             builder.sslSocketFactory(sslSocketFactory, TRUST_ALL_CERT);
             builder.hostnameVerifier((hostname, session) -> true);
-        } catch (Throwable ignored) {
+        } catch (Throwable th) {
+            LOG.e("OkHttp", "trust-all ssl setup failed, https sites may fail", th);
         }
     }
 

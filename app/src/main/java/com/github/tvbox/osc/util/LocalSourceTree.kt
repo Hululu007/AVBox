@@ -102,6 +102,7 @@ object LocalSourceTree {
             try {
                 cursor?.close()
             } catch (ignored: Throwable) {
+                LOG.d("LocalSourceTree", "close cursor failed")
             }
         }
     }

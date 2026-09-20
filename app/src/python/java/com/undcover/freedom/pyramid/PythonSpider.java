@@ -7,6 +7,7 @@ import android.util.Log;
 
 import com.chaquo.python.PyObject;
 import com.github.catvod.crawler.Spider;
+import com.github.tvbox.osc.util.LOG;
 import androidx.media3.common.util.UriUtil;
 
 import org.json.JSONArray;
@@ -64,6 +65,7 @@ public class PythonSpider extends Spider {
             try {
                 pySpider.put("siteKey", name);
             } catch (Exception ignored) {
+                LOG.d("PyLoader", "set siteKey failed");
             }
 
             List<PyObject> poList = app.callAttr("getDependence", pySpider).asList();
@@ -329,6 +331,7 @@ public class PythonSpider extends Spider {
         try {
             if (app != null && pySpider != null) app.callAttr("destroy", pySpider);
         } catch (Exception ignored) {
+            LOG.d("PyLoader", "python spider destroy failed");
         }
     }
 

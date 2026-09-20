@@ -632,7 +632,8 @@ class DetailViewModel : ViewModel() {
                     i += 2
                 }
             }
-        } catch (_: Throwable) {
+        } catch (ignored: Throwable) {
+            LOG.d("DetailViewModel", "quality url list parse failed, keep empty options")
         }
         if (options == qualityOptions.value) return
         qualityOptions.value = options

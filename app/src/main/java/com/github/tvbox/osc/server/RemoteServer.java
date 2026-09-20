@@ -186,6 +186,7 @@ public class RemoteServer extends NanoHTTPD {
                                 return NanoHTTPD.newChunkedResponse(NanoHTTPD.Response.Status.OK, "application/octet-stream", new FileInputStream(localFile));
                             } catch (Throwable ignored) {
                                 // 文件在但读不到(没开「所有文件访问」等)⇒ 交给下面的目录授权兜底
+                                LOG.d("RemoteServer", "file open failed, fallback to tree grant");
                             }
                         }
                         // 本地源目录授权(SAF):应用自己读不到原目录时靠它直引原目录,副本不必搬。

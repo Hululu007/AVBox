@@ -67,6 +67,7 @@ public class JarLoader {
             try {
                 spider.destroy();
             } catch (Throwable ignored) {
+                LOG.d("JarLoader", "destroy spider failed");
             }
         }
         loaders.clear();
@@ -155,6 +156,7 @@ public class JarLoader {
             try {
                 instance = clz.getMethod("get").invoke(null);
             } catch (Throwable ignored) {
+                LOG.d("JarLoader", "init get() invoke failed");
             }
             Context app = hostContext;
             for (java.lang.reflect.Field field : clz.getDeclaredFields()) {
@@ -235,12 +237,15 @@ public class JarLoader {
             try {
                 danmuClickMethods.put(key, clz.getMethod("onClick", String.class, String.class));
             } catch (Throwable ignored) {
+                LOG.d("JarLoader", "danmaku onClick method not found");
             }
             try {
                 danmuLongClickMethods.put(key, clz.getMethod("onLongClick", String.class, String.class));
             } catch (Throwable ignored) {
+                LOG.d("JarLoader", "danmaku onLongClick method not found");
             }
         } catch (Throwable ignored) {
+            LOG.d("JarLoader", "danmaku class not found in jar");
         }
     }
 
@@ -410,6 +415,7 @@ public class JarLoader {
             try {
                 return loader.loadClass(name);
             } catch (ClassNotFoundException ignored) {
+                LOG.d("JarLoader", "class not in cached loader: " + name);
             }
         }
         loader = loaders.get(MAIN_KEY);
@@ -536,6 +542,7 @@ public class JarLoader {
             Method set = proxy.getMethod("set", int.class);
             set.invoke(null, getServerPort());
         } catch (Throwable ignored) {
+            LOG.d("JarLoader", "inject proxy port into jar failed");
         }
     }
 
@@ -547,6 +554,7 @@ public class JarLoader {
                 return Integer.parseInt(baseUrl.substring(baseUrl.lastIndexOf(":") + 1));
             }
         } catch (Throwable ignored) {
+            LOG.d("JarLoader", "parse server port failed, use RemoteServer.serverPort");
         }
         return RemoteServer.serverPort;
     }
@@ -555,6 +563,7 @@ public class JarLoader {
         try {
             if (closeable != null) closeable.close();
         } catch (Throwable ignored) {
+            LOG.d("JarLoader", "close failed");
         }
     }
 }

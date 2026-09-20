@@ -2,6 +2,7 @@ package com.github.tvbox.osc.ui.activity
 
 import android.text.TextUtils
 import com.github.tvbox.osc.bean.Epginfo
+import com.github.tvbox.osc.util.LOG
 import com.google.gson.JsonObject
 import org.json.JSONArray
 import org.json.JSONObject
@@ -129,6 +130,7 @@ internal object LiveEpgParser {
                 dateFormat.timeZone = TimeZone.getTimeZone("GMT+8:00")
                 return dateFormat.parse(trimText)
             } catch (ignored: ParseException) {
+                LOG.d("LiveEpgParser", "date '$trimText' doesn't match $pattern")
             }
         }
         val dayFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
@@ -140,6 +142,7 @@ internal object LiveEpgParser {
                 dateFormat.timeZone = TimeZone.getTimeZone("GMT+8:00")
                 return dateFormat.parse("$dayText $trimText")
             } catch (ignored: ParseException) {
+                LOG.d("LiveEpgParser", "'$dayText $trimText' doesn't match $pattern")
             }
         }
         return null
@@ -175,6 +178,7 @@ internal object LiveEpgParser {
                 factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false)
                 factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false)
             } catch (ignored: Exception) {
+                LOG.d("LiveEpgParser", "XML factory rejects XXE-hardening feature, parse continues")
             }
             val builder = factory.newDocumentBuilder()
             builder.setEntityResolver { _, _ -> InputSource(StringReader("")) }
@@ -241,12 +245,14 @@ internal object LiveEpgParser {
         try {
             return SimpleDateFormat("yyyyMMddHHmmss Z", Locale.getDefault()).parse(trimDate)
         } catch (ignored: ParseException) {
+            LOG.d("LiveEpgParser", "xmltv date '$trimDate' doesn't match yyyyMMddHHmmss Z")
         }
         try {
             val dateFormat = SimpleDateFormat("yyyyMMddHHmmss", Locale.getDefault())
             dateFormat.timeZone = TimeZone.getTimeZone("GMT+8:00")
             return dateFormat.parse(trimDate)
         } catch (ignored: ParseException) {
+            LOG.d("LiveEpgParser", "xmltv date '$trimDate' doesn't match yyyyMMddHHmmss")
         }
         return null
     }
@@ -268,6 +274,7 @@ internal object LiveEpgParser {
         return try {
             catchupObj.get(key).asString
         } catch (ignored: Throwable) {
+            LOG.d("LiveEpgParser", "catchup key '$key' is not a string")
             ""
         }
     }
@@ -287,6 +294,7 @@ internal object LiveEpgParser {
             try {
                 replayUrl = replayUrl.replace(parts[0].toRegex(), parts[1])
             } catch (ignored: Throwable) {
+                LOG.d("LiveEpgParser", "catchup replace pattern '${parts[0]}' invalid, url kept")
             }
         }
         val queryIndex = replayUrl.indexOf('?')
@@ -319,6 +327,7 @@ internal object LiveEpgParser {
         return try {
             SimpleDateFormat(pattern, Locale.getDefault()).format(time)
         } catch (ignored: IllegalArgumentException) {
+            LOG.d("LiveEpgParser", "catchup time pattern '$pattern' invalid")
             ""
         }
     }

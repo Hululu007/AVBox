@@ -353,6 +353,7 @@ private fun getDataColumn(context: Context, uri: Uri): String? {
         try {
             cursor?.close()
         } catch (ignored: Throwable) {
+            LOG.d("LocalConfigHelper", "close failed")
         }
     }
 }
@@ -456,10 +457,12 @@ private fun copyDocument(context: Context, source: Uri, target: File, limit: Lon
         try {
             output?.close()
         } catch (ignored: Throwable) {
+            LOG.d("LocalConfigHelper", "close failed")
         }
         try {
             input?.close()
         } catch (ignored: Throwable) {
+            LOG.d("LocalConfigHelper", "close failed")
         }
         if (!done && target.exists()) target.delete()
     }
@@ -485,6 +488,7 @@ private fun readBytes(context: Context, uri: Uri, limit: Long): ByteArray? {
         try {
             input?.close()
         } catch (ignored: Throwable) {
+            LOG.d("LocalConfigHelper", "close failed")
         }
     }
 }
@@ -504,6 +508,7 @@ private fun writeBytes(file: File, data: ByteArray): Boolean {
         try {
             output?.close()
         } catch (ignored: Throwable) {
+            LOG.d("LocalConfigHelper", "close failed")
         }
     }
 }
@@ -530,10 +535,12 @@ private fun copyFile(source: File, target: File): Boolean {
         try {
             output?.close()
         } catch (ignored: Throwable) {
+            LOG.d("LocalConfigHelper", "close failed")
         }
         try {
             input?.close()
         } catch (ignored: Throwable) {
+            LOG.d("LocalConfigHelper", "close failed")
         }
     }
 }
@@ -562,10 +569,12 @@ private fun getDisplayName(context: Context, uri: Uri): String {
             }
         }
     } catch (ignored: Throwable) {
+        LOG.d("LocalConfigHelper", "query display name failed, fallback default name")
     } finally {
         try {
             cursor?.close()
         } catch (ignored: Throwable) {
+            LOG.d("LocalConfigHelper", "close failed")
         }
     }
     return safeFileName(name)

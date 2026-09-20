@@ -5,6 +5,7 @@ import android.text.TextUtils;
 import android.util.Base64;
 
 import com.github.tvbox.osc.base.App;
+import com.github.tvbox.osc.util.LOG;
 
 import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
@@ -51,6 +52,7 @@ class ProtectedInitJar {
             Method get = clz.getMethod("get");
             init = get.invoke(null);
         } catch (Throwable ignored) {
+            LOG.d("ProtectedInitJar", "invoke get() failed");
         }
         bindContext(clz, init);
         if (!bindDexLoader(clz, init)) return false;
@@ -67,6 +69,7 @@ class ProtectedInitJar {
             context.set(init, App.getInstance());
             return;
         } catch (Throwable ignored) {
+            LOG.d("ProtectedInitJar", "bind field 'c' failed, try declared fields");
         }
         for (Field field : clz.getDeclaredFields()) {
             try {
@@ -74,6 +77,7 @@ class ProtectedInitJar {
                 field.setAccessible(true);
                 field.set(init, App.getInstance());
             } catch (Throwable ignored) {
+                LOG.d("ProtectedInitJar", "bind context field '" + field.getName() + "' failed");
             }
         }
     }
@@ -96,6 +100,7 @@ class ProtectedInitJar {
             }
             return bound;
         } catch (Throwable ignored) {
+            LOG.d("ProtectedInitJar", "bind DexClassLoader failed");
         }
         return false;
     }
@@ -105,6 +110,7 @@ class ProtectedInitJar {
             Method method = clz.getMethod(methodName);
             method.invoke(null);
         } catch (Throwable ignored) {
+            LOG.d("ProtectedInitJar", "invoke '" + methodName + "' failed");
         }
     }
 
@@ -113,6 +119,7 @@ class ProtectedInitJar {
             Method method = clz.getMethod("startGoProxy", Context.class);
             method.invoke(null, App.getInstance());
         } catch (Throwable ignored) {
+            LOG.d("ProtectedInitJar", "invoke startGoProxy failed");
         }
     }
 
@@ -148,6 +155,7 @@ class ProtectedInitJar {
                 close(zip);
             }
         } catch (Throwable ignored) {
+            LOG.d("ProtectedInitJar", "scan jar for protected dex failed");
         }
         return false;
     }
@@ -202,6 +210,7 @@ class ProtectedInitJar {
                 close(zip);
             }
         } catch (Throwable ignored) {
+            LOG.d("ProtectedInitJar", "scan dex native failed");
         }
         return false;
     }
@@ -247,6 +256,7 @@ class ProtectedInitJar {
         try {
             if (closeable != null) closeable.close();
         } catch (Throwable ignored) {
+            LOG.d("ProtectedInitJar", "close failed");
         }
     }
 

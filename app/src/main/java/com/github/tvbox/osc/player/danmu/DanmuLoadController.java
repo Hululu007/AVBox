@@ -255,7 +255,8 @@ public class DanmuLoadController {
         if (danmuView == null) return;
         try {
             danmuView.release();
-        } catch (Throwable ignored) {
+        } catch (Throwable th) {
+            LOG.e("DanmuLoadController", "danmu view release failed", th);
         }
         danmuView.setVisibility(View.GONE);
     }

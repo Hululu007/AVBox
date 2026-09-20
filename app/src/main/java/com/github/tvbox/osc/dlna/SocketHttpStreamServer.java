@@ -13,6 +13,8 @@ import org.fourthline.cling.transport.spi.StreamServer;
 import org.fourthline.cling.transport.spi.StreamServerConfiguration;
 import org.fourthline.cling.transport.spi.UpnpStream;
 
+import com.github.tvbox.osc.util.LOG;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -67,6 +69,7 @@ public class SocketHttpStreamServer implements StreamServer<SocketHttpStreamServ
         try {
             if (serverSocket != null) serverSocket.close();
         } catch (IOException ignored) {
+            LOG.d("SocketHttpStreamServer", "close server socket failed");
         }
     }
 
@@ -80,6 +83,7 @@ public class SocketHttpStreamServer implements StreamServer<SocketHttpStreamServ
             } catch (SocketException e) {
                 break;
             } catch (IOException ignored) {
+                LOG.d("SocketHttpStreamServer", "accept failed, keep serving");
             }
         }
     }
@@ -116,6 +120,7 @@ public class SocketHttpStreamServer implements StreamServer<SocketHttpStreamServ
                 try {
                     socket.close();
                 } catch (IOException ignored) {
+                    LOG.d("SocketHttpStreamServer", "close socket failed");
                 }
             }
         }

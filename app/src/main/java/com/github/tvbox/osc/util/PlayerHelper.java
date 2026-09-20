@@ -305,7 +305,8 @@ public class PlayerHelper {
                     headers.put(key, json.optString(key, ""));
                 }
             }
-        } catch (Throwable ignored) {
+        } catch (Throwable th) {
+            LOG.e("PlayerHelper", "play headers parse failed", th);
         }
     }
 

@@ -361,6 +361,7 @@
 }
 
 -assumenosideeffects class com.github.tvbox.osc.util.LOG {
+    public static *** d(...);
     public static *** i(...);
     public static *** e(...);
     public static *** longI(...);

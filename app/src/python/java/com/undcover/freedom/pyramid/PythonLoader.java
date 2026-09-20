@@ -12,6 +12,7 @@ import com.github.catvod.crawler.Spider;
 import com.github.catvod.crawler.SpiderNull;
 
 import com.github.catvod.net.OkHttp;
+import com.github.tvbox.osc.util.LOG;
 import com.github.tvbox.osc.util.OkGoHelper;
 
 
@@ -196,7 +197,8 @@ public class PythonLoader {
                     if (pending.isLoadSuccess()) {
                         spiders.putIfAbsent(key, pending);
                     }
-                } catch (Throwable ignored) {
+                } catch (Throwable th) {
+                    LOG.e("PyLoader", "python spider init failed", th);
                 }
             });
             return new SpiderNull();

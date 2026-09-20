@@ -55,6 +55,7 @@ public class ImgUtil {
                 JSONObject jsonObject = new JSONObject(bStyle);
                 return new Style((float) jsonObject.getDouble("ratio"), jsonObject.getString("type"));
             } catch (JSONException ignored) {
+                LOG.d("ImgUtil", "home style json invalid, use default grid");
             }
         }
         return null;

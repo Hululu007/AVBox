@@ -153,6 +153,7 @@ public class DefaultConfig {
             else
                 return defaultVal;
         } catch (Throwable th) {
+            LOG.d("DefaultConfig", "json key '" + key + "' not a plain string, use default");
         }
         return defaultVal;
     }
@@ -164,6 +165,7 @@ public class DefaultConfig {
             else
                 return defaultVal;
         } catch (Throwable th) {
+            LOG.d("DefaultConfig", "json key '" + key + "' not a number, use default");
         }
         return defaultVal;
     }
@@ -181,6 +183,7 @@ public class DefaultConfig {
                 }
             }
         } catch (Throwable th) {
+            LOG.d("DefaultConfig", "json key '" + key + "' not a string list, use empty");
         }
         return result;
     }

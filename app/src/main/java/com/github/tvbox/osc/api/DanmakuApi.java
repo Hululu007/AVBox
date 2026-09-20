@@ -594,6 +594,7 @@ public class DanmakuApi {
                 if (anime != null && isMovieType(anime) && anime.optJSONArray("episodes") != null) return true;
             }
         } catch (Throwable ignored) {
+            LOG.d("DanmakuApi", "search body parse failed, treat as not movie");
         }
         return false;
     }
@@ -707,6 +708,7 @@ public class DanmakuApi {
             if (text.startsWith("#")) return String.valueOf(Long.parseLong(text.substring(1), 16));
             if (text.startsWith("0x") || text.startsWith("0X")) return String.valueOf(Long.parseLong(text.substring(2), 16));
         } catch (Throwable ignored) {
+            LOG.d("DanmakuApi", "color '" + text + "' parse failed, keep raw");
         }
         return text;
     }

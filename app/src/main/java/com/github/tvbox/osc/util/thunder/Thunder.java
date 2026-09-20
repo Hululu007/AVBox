@@ -9,6 +9,7 @@ import com.github.tvbox.osc.bean.Movie;
 import com.github.tvbox.osc.util.FileUtils;
 import com.github.tvbox.osc.util.HawkConfig;
 import com.github.tvbox.osc.util.KV;
+import com.github.tvbox.osc.util.LOG;
 import com.xunlei.downloadlib.XLDownloadManager;
 import com.xunlei.downloadlib.XLTaskHelper;
 import com.xunlei.downloadlib.android.XLUtil;
@@ -79,7 +80,7 @@ public class Thunder {
                     threadPool.shutdownNow();
                     threadPool = null;
                 } catch (Throwable th) {
-
+                    LOG.e("Thunder", "thread pool shutdown failed", th);
                 }
             }
         }

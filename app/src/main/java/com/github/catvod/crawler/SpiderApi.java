@@ -10,6 +10,7 @@ import android.view.WindowManager;
 
 import com.github.tvbox.osc.server.ControlManager;
 import com.github.tvbox.osc.base.App;
+import com.github.tvbox.osc.util.LOG;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -53,6 +54,7 @@ public class SpiderApi {
         try {
             SpiderDebug.log(msg);
         } catch (Throwable ignored) {
+            // 日志桥自身兜底:此处在日志通道内,不再调日志以免递归
         }
     }
 
@@ -132,6 +134,7 @@ public class SpiderApi {
                 return JsonParser.parseString(trim);
             }
         } catch (Throwable ignored) {
+            LOG.d("SpiderApi", "result json invalid, keep as string");
         }
         return new JsonPrimitive(text);
     }

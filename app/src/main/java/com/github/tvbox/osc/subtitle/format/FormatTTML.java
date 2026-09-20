@@ -32,6 +32,7 @@ import com.github.tvbox.osc.subtitle.model.Style;
 import com.github.tvbox.osc.subtitle.model.Subtitle;
 import com.github.tvbox.osc.subtitle.model.Time;
 import com.github.tvbox.osc.subtitle.model.TimedTextObject;
+import com.github.tvbox.osc.util.LOG;
 
 import org.w3c.dom.Document;
 import org.w3c.dom.NamedNodeMap;
@@ -151,6 +152,7 @@ public class FormatTTML implements TimedTextFileFormat {
 						
 					} catch (NumberFormatException e){
 						//ignore the alpha
+						LOG.d("FormatTTML", "alpha parse failed, keep color without alpha");
 					}
 				}
 				
@@ -467,6 +469,7 @@ public class FormatTTML implements TimedTextFileFormat {
 						frameRate = Integer.parseInt(aux);
 					} catch (NumberFormatException e){
 						//should not happen, but if it does, use default value...
+						LOG.d("FormatTTML", "invalid ttp:frameRate, use default 25");
 					}
 				}
 				h = Integer.parseInt(parts[0]);
@@ -526,6 +529,7 @@ public class FormatTTML implements TimedTextFileFormat {
 				}
 			} catch (NumberFormatException e){
 				//incorrect format for offset time
+				LOG.d("FormatTTML", "offset time parse failed, ignored");
 			}
 		}
 		

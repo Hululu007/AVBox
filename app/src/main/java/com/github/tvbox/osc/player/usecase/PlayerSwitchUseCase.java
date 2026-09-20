@@ -64,6 +64,7 @@ public final class PlayerSwitchUseCase {
                 }
             }
         } catch (JSONException e) {
+            LOG.d("PlayerSwitchUseCase", "url is not a json array, keep raw");
         }
         return url;
     }

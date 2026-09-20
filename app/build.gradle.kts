@@ -89,6 +89,12 @@ android {
         checkReleaseBuilds = false
         abortOnError = false
     }
+
+    testOptions {
+        // 单测跑在纯 JVM:未 mock 的 android API(如 android.util.Log)默认抛 "not mocked",
+        // LOG 工具在 catch 分支打日志会踩到;置 true 后返回默认值,单测焦点保持在纯逻辑
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 // Kotlin jvmTarget 与 Java 21 编译等级对齐

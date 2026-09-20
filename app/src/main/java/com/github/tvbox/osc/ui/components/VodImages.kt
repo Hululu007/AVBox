@@ -4,6 +4,7 @@ import android.content.Context
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.request.crossfade
+import com.github.tvbox.osc.util.LOG
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import java.io.File
@@ -84,7 +85,8 @@ object VodImages {
                 val decoded = URLDecoder.decode(json, "UTF-8")
                 val obj = Gson().fromJson(decoded, JsonObject::class.java)
                 for (key in obj.keySet()) put(key, obj.get(key).asString)
-            } catch (_: Throwable) {
+            } catch (ignored: Throwable) {
+                LOG.d("VodImages", "pic url @Headers decode failed, skip extra headers")
             }
         }
         put("Cookie", grab("@Cookie"))
