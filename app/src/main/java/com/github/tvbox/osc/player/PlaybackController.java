@@ -4,33 +4,15 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.util.Base64;
 
-import android.annotation.TargetApi;
-import android.graphics.Bitmap;
-import android.graphics.Color;
-import android.net.http.SslError;
-import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
 import android.text.TextUtils;
-import android.view.View;
-import android.webkit.ConsoleMessage;
-import android.webkit.CookieManager;
-import android.webkit.JsPromptResult;
-import android.webkit.JsResult;
-import android.webkit.SslErrorHandler;
-import android.webkit.WebChromeClient;
-import android.webkit.WebResourceRequest;
-import android.webkit.WebResourceResponse;
-import android.webkit.WebSettings;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.lifecycle.Observer;
 
-import com.github.catvod.crawler.Spider;
 import com.github.tvbox.osc.player.ExoPlayer;
 import com.github.tvbox.osc.player.IjkMediaPlayer;
 import com.github.tvbox.osc.player.TrackInfo;
@@ -45,7 +27,6 @@ import com.github.tvbox.osc.bean.VodInfo;
 import com.github.tvbox.osc.cache.CacheManager;
 import com.github.tvbox.osc.event.RefreshEvent;
 import com.github.tvbox.osc.server.ControlManager;
-import com.github.tvbox.osc.util.AdBlocker;
 import com.github.tvbox.osc.util.DefaultConfig;
 import com.github.tvbox.osc.util.FileUtils;
 import com.github.tvbox.osc.util.HawkConfig;
@@ -54,16 +35,10 @@ import com.github.tvbox.osc.util.KV;
 import com.github.tvbox.osc.util.LOG;
 import com.github.tvbox.osc.util.MD5;
 import com.github.tvbox.osc.util.PlayerHelper;
-import com.github.tvbox.osc.util.VideoParseRuler;
-import com.github.tvbox.osc.util.parser.SuperParse;
 import com.github.tvbox.osc.util.thunder.Jianpian;
 import com.github.tvbox.osc.util.thunder.Thunder;
 import com.github.tvbox.osc.ui.player.PlayerTipBridge;
 import com.github.tvbox.osc.viewmodel.SourceViewModel;
-import com.lzy.okgo.OkGo;
-import com.lzy.okgo.callback.AbsCallback;
-import com.lzy.okgo.model.HttpHeaders;
-import com.lzy.okgo.model.Response;
 
 import org.greenrobot.eventbus.EventBus;
 import org.json.JSONArray;
@@ -72,43 +47,22 @@ import org.json.JSONObject;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Queue;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import xyz.doikki.videoplayer.player.AbstractPlayer;
 import xyz.doikki.videoplayer.player.VideoView;
 
 /**
- * 播放会话与派生数据层(播放服务化 Spec §2.1、§3-P1,`skill/avbox-playback-service-spec.md`)。
- *
- * <p>P1 第一步只搬"**会话数据 + 纯派生**":播什么(vod/sourceKey/sourceBean/播放器配置)、
- * 进度与字幕的缓存键、线路与剧集的匹配算法、清晰度列表、投屏地址改写、header 提取。
- * 这些逻辑没有视图副作用(唯一的 UI 联动由调用方完成:取到配置后自行刷新控制器),
- * 是最容易与页面解耦、也是 P2 起必须由服务持有的状态。
- *
- * <p>仍未搬迁(P1 后续步骤):取流/解析/嗅探(play/playUrl/goPlayUrl/initParse/WebView)、
- * 重试与换线决策(autoRetry/tryNextLine/超时)、弹幕与预载调度、媒体会话与通知。
- * 它们与 `MyVideoView`/`ComposeVideoController` 强耦合,需连同视图契约一起搬(见 Spec §3-P1 出口条件)。
- *
- * <p>命名与语义与改造前 `PlayContainer` 中同名成员逐字一致(行为等价是 P0/P1 的硬要求)。
+ * 播放会话与派生数据层:播什么(vod/sourceKey/sourceBean/播放器配置)、进度与字幕缓存键、
+ * 线路/剧集匹配、清晰度、投屏地址改写、header 提取;视图交互一律经 {@link PlaybackViewBridge}。
+ * 取流/解析调度见 {@link PlayUrlResolver},尝试/意图状态见 {@link PlaybackAttemptState}。
  */
 public class PlaybackController {
 
-    // ==================== 会话数据(原 PlayContainer 字段) ====================
+    // ==================== 会话数据 ====================
 
     private VodInfo vod;
     private JSONObject playerCfg;
@@ -141,43 +95,35 @@ public class PlaybackController {
      * 调用方随后需自行把 {@link #playerCfg()} 刷到控制器(原 `initPlayerCfg` 末尾那次调用)。
      */
     public void startSession(PlaybackSession session) {
-        // **会话边界清场**(2026-09-14 架构评审第 3 项):在途的解析/嗅探/取流/超时属于**上一个会话**,
-        // 它们的结果与超时都不能再作用到新会话上。过去这份收尾挂在"页面销毁"(`PlayContainer.hostDestroy`)
-        // 上,而共享调度层是引擎级的 —— 页面销毁时序与新页面 attach 的先后并不确定,"快速返回再进入"
-        // 时旧页面会把新页面刚发起的取流一起撤掉。收尾的正确位置是**会话边界**:新会话开始即清旧账。
+        // **会话边界清场**:在途的解析/嗅探/取流/超时属于上一个会话,其结果不得作用到新会话。
+        // 收尾必须放在会话边界而非"页面销毁":两者先后不确定,"快速返回再进入"时旧页面会把新会话
+        // 刚发起的取流一起撤掉。
         cancelInFlight();
-        // 同上属于"清上一个会话的旧账":上一条"播完待撤会话"的待判消息(见 handlePendingCompletionDrop)
-        // 在此作废,避免它落到刚开的这次会话上。
+        // 作废上一条"播完待撤会话"的待判消息(见 handlePendingCompletionDrop),避免落到新会话上。
         timeoutHandler.removeMessages(MSG_DROP_SESSION_AFTER_COMPLETED);
-        // 解析/嗅探代际复位(2026-09-15 Bug 7):上一会话的迟到回调不得作用到新会话
-        parseGeneration.set(0);
-        // 封面属于**上一个会话的内容**,换内容时必须清(2026-09-19):
-        // playArtwork 是"只写一次"的(见 updateMusicSession 的 isEmpty 守卫),currentArtwork 只在取流结果
-        // 里被覆盖 —— 影视源不给 cover 时两者都会残留上一首音乐的值,音乐页又按 currentArtwork→playArtwork
-        // →vod.pic 的顺序取值,于是"音乐 → 影视 → 再进音乐页"会显示上一首的封面。
-        // 同片接管(退出再进同一部)不能清,否则封面会白到下一次取流结果。
+        // 代际复位:上一会话的迟到回调不得作用到新会话
+        resolver.resetGen();
+        // 封面属于上一个会话的内容,换内容必须清:playArtwork 只写一次(见 updateMusicSession 的 isEmpty 守卫)、
+        // currentArtwork 只在取流结果里被覆盖 ⇒ 影视源不给 cover 时会残留上一首的值("音乐 → 影视 → 再进音乐页")。
+        // 同片接管不能清,否则封面会白到下一次取流结果。
         if (currentSession == null
                 || !TextUtils.equals(currentSession.playbackKey(), session.playbackKey())) {
             playArtwork = null;
             currentArtwork = null;
             // 换内容 ⇒ 上一份内容的"纯音频"确认作废(同片接管不清:内容没变)
-            audioOnlyConfirmed = false;
+            st.audioOnlyConfirmed = false;
         }
         this.currentSession = session;
         // 本次会话的内容尚未真正交给播放器:先清掉"已起播内容"标记 ——
         // 否则"切到 B 但取流失败(播放器里其实还是 A)"后重进 B,会被 D6 误判成同片接管(播错内容)
         startedPlaybackKey = null;
-        // 会话级状态的统一复位(2026-09-14 审查修复)。
+        // 会话级状态的统一复位。
         // 这些字段原来的复位点全在 play() 里,而 **D6 同片接管不走 play()** —— 退出页面再进同一部时
         // 会带着上一轮的陈旧值:
         //  · playbackStarted 陈旧 true ⇒ 续播失败被 errorWithRetry 静默吞掉(黑屏、无提示、不重试);
         //  · switchStopPending 残留 ⇒ 在途取流结果被静默丢弃;
         //  · m3u8 代理地址残留 ⇒ 投屏地址可能拿到上一部的源地址。
-        playbackStarted = false;
-        switchStopPending = false;
-        // 自动软解态属于**上一个会话**:新会话的 cfg 会在 initPlayerCfg 里按记录/全局设置重新取值,
-        // 这里清掉旧的"原值"即可(否则跨会话落库会回填上一轮的解码方式)
-        autoSwitchedDecodeOld = null;
+        st.beginSession();
         clearM3u8ProxyUrl();
         this.vod = session.vod();
         this.sourceKey = session.sourceKey();
@@ -198,7 +144,7 @@ public class PlaybackController {
         }
         try {
             if (!playerCfg.has("pl")) {
-                // sourceBean 可能为空(切源窗口期 / 源被删,2026-09-13 补判空):
+                // sourceBean 可能为空(切源窗口期 / 源被删):
                 // 原写法在这里 NPE,而本块 catch(Throwable) 是空的 —— 会静默跳过下面
                 // pr/ijk/sc/sp/st/et 全部设置,播放器配置只剩半截。改为退回全局播放器设置。
                 int sourcePlayerType = sourceBean == null ? -1 : sourceBean.getPlayerType();
@@ -208,7 +154,7 @@ public class PlaybackController {
                 playerCfg.put("pl", 2);
             }
             playerCfg.put("pr", KV.get(HawkConfig.PLAY_RENDER, 1));
-            // 解码方式(2026-09-15;2026-09-17 扩到 EXO,两个内核各记一份):以**全局设置**为准,只有用户在该内核下
+            // 解码方式(两个内核各记一份):以**全局设置**为准,只有用户在该内核下
             // 于本剧播放器里显式选过(ijkSet / exoSet,见 ComposeVideoController.onIjkClicked)才按剧记忆 ——
             // 否则播放记录里持久化的旧 "ijk"/"exo" 会一直压过设置页的新值,"设置里改成软解、这部剧却永远硬解"。
             if (playerCfg.optInt("ijkSet", 0) == 0) {
@@ -284,39 +230,7 @@ public class PlaybackController {
         }
     }
 
-    // ==================== 线路与剧集匹配(原 PlayContainer 同名工具) ====================
-
-    public List<String> lineFlagsInDisplayOrder() {
-        List<String> lineFlags = new ArrayList<>();
-        if (vod == null || vod.seriesMap == null) {
-            return lineFlags;
-        }
-        if (vod.seriesFlags != null) {
-            for (VodInfo.VodSeriesFlag flag : vod.seriesFlags) {
-                if (flag != null && !TextUtils.isEmpty(flag.name) && vod.seriesMap.containsKey(flag.name) && !lineFlags.contains(flag.name)) {
-                    lineFlags.add(flag.name);
-                }
-            }
-        }
-        for (String flag : vod.seriesMap.keySet()) {
-            if (!TextUtils.isEmpty(flag) && !lineFlags.contains(flag)) {
-                lineFlags.add(flag);
-            }
-        }
-        return lineFlags;
-    }
-
-    public int lineFlagIndex(List<String> lineFlags, String currentFlag) {
-        if (lineFlags == null || TextUtils.isEmpty(currentFlag)) {
-            return -1;
-        }
-        for (int i = 0; i < lineFlags.size(); i++) {
-            if (currentFlag.equals(lineFlags.get(i))) {
-                return i;
-            }
-        }
-        return -1;
-    }
+    // 线路/剧集匹配见 EpisodeMatcher
 
     @Nullable
     public VodInfo.VodSeries currentSeries(String flag, int index) {
@@ -331,79 +245,8 @@ public class PlaybackController {
         return currentList.get(safeIndex);
     }
 
-    public int sameEpisodeIndex(VodInfo.VodSeries currentSeries, List<VodInfo.VodSeries> targetList, int fallbackIndex) {
-        if (targetList == null || targetList.isEmpty()) {
-            return 0;
-        }
-        if (targetList.size() == 1) {
-            return 0;
-        }
-        if (currentSeries == null || TextUtils.isEmpty(currentSeries.name)) {
-            return Math.max(0, Math.min(fallbackIndex, targetList.size() - 1));
-        }
-        int currentEpisode = extractEpisodeNumber(currentSeries.name);
-        int matchedIndex = -1;
-        int bestScore = 0;
-        for (int i = 0; i < targetList.size(); i++) {
-            VodInfo.VodSeries targetSeries = targetList.get(i);
-            int score = episodeMatchScore(currentSeries.name, currentEpisode, targetSeries == null ? null : targetSeries.name);
-            if (score > bestScore) {
-                bestScore = score;
-                matchedIndex = i;
-            }
-        }
-        if (matchedIndex >= 0) {
-            return matchedIndex;
-        }
-        return Math.max(0, Math.min(fallbackIndex, targetList.size() - 1));
-    }
-
-    public int episodeMatchScore(String currentName, int currentEpisode, String targetName) {
-        if (TextUtils.isEmpty(currentName) || TextUtils.isEmpty(targetName)) {
-            return 0;
-        }
-        if (targetName.equalsIgnoreCase(currentName)) {
-            return 100;
-        }
-        if (currentEpisode >= 0 && extractEpisodeNumber(targetName) == currentEpisode) {
-            return 80;
-        }
-        String currentLower = currentName.toLowerCase(Locale.ROOT);
-        String targetLower = targetName.toLowerCase(Locale.ROOT);
-        if (currentEpisode < 0 && currentName.length() >= 2 && targetLower.contains(currentLower)) {
-            return 70;
-        }
-        if (currentEpisode < 0 && targetName.length() >= 2 && currentLower.contains(targetLower)) {
-            return 60;
-        }
-        return 0;
-    }
-
-    public int extractEpisodeNumber(String name) {
-        if (TextUtils.isEmpty(name)) {
-            return -1;
-        }
-        try {
-            String text = name.replaceAll("\\[.*?\\]|\\(.*?\\)", "");
-            text = text.replaceAll("\\b(19|20)\\d{2}\\b", "");
-            text = text.toLowerCase(Locale.ROOT).replaceAll("2160p|1080p|720p|480p|4k|h26[45]|x26[45]|mp4", "");
-            Matcher matcher = Pattern.compile("(?i)(?:ep|\\u7b2c|e|[\\-\\.\\s])\\s?(\\d{1,4})").matcher(text);
-            if (matcher.find()) {
-                return Integer.parseInt(matcher.group(1));
-            }
-            String number = text.replaceAll("\\D+", "");
-            if (!TextUtils.isEmpty(number)) {
-                return Integer.parseInt(number);
-            }
-        } catch (Exception ignored) {
-            LOG.d("PlaybackController", "episode number extract failed, name=" + name);
-        }
-        return -1;
-    }
-
     /**
      * 取流结果是否已过期(切集/换线/换源后,旧源在途结果不得拉起播放)。
-     * 判定口径与改造前逐字一致。
      */
     public boolean isStalePlayResult(JSONObject info) {
         if (vod == null || vod.seriesMap == null || TextUtils.isEmpty(progressKey)) return false;
@@ -475,7 +318,7 @@ public class PlaybackController {
     // ==================== 播放请求头 ====================
 
     /**
-     * 提取播放请求头(2026-09-13:与预载侧 `PreloadCoordinator.extractHeaders` 共用
+     * 提取播放请求头(与预载侧 `PreloadCoordinator.extractHeaders` 共用
      * `PlayerHelper.extractPlayHeaders` —— 两侧口径必须逐字一致,否则预载与播放的
      * keyOf(url,headers) 不匹配,共享 SimpleCache 的「下一集预载」永不命中)。
      */
@@ -567,10 +410,10 @@ public class PlaybackController {
         this.lyricCacheKey = lyricCacheKey;
     }
 
-    // ==================== 调度:重试与换线决策(P1 第二组) ====================
-    // 语义与改造前 PlayContainer 逐字一致;一切视图交互都经 PlaybackViewBridge。
+    // ==================== 调度:重试与换线决策 ====================
+    // 一切视图交互都经 PlaybackViewBridge。
 
-    /** 视图侧契约(页面内由 PlayContainer 提供匿名实现;P2 起由"服务→页面"的桥替代) */
+    /** 视图侧契约(页面内由 PlayContainer 提供匿名实现) */
     private PlaybackViewBridge view;
 
     public void setViewBridge(PlaybackViewBridge bridge) {
@@ -581,7 +424,7 @@ public class PlaybackController {
     private static final int MSG_RESOLVE_PLAY_URL_TIMEOUT = 101;
     private static final int MSG_SWITCH_LINE_PLAY_TIMEOUT = 102;
     /**
-     * 本集播完后的**延后一拍**撤会话判定(2026-09-19,见 {@link #handlePlayStateForMusicSession})。
+     * 本集播完后的**延后一拍**撤会话判定(见 {@link #handlePlayStateForMusicSession})。
      */
     private static final int MSG_DROP_SESSION_AFTER_COMPLETED = 103;
     private static final long RESOLVE_PLAY_URL_TIMEOUT_MS = 15 * 1000L;
@@ -597,10 +440,6 @@ public class PlaybackController {
                 case MSG_SWITCH_LINE_PLAY_TIMEOUT:
                     handleSwitchLinePlayTimeout();
                     return true;
-                case MSG_PARSE_TIMEOUT:
-                    stopParse();
-                    if (view != null) view.showErrorWithRetry("嗅探错误", false);
-                    return true;
                 case MSG_DROP_SESSION_AFTER_COMPLETED:
                     handlePendingCompletionDrop();
                     return true;
@@ -610,93 +449,98 @@ public class PlaybackController {
         }
     });
 
-    private int autoRetryCount = 0;
-    private long lastRetryTime = 0;
-    private boolean allowSwitchPlayer = true;
-    private boolean hasAutoSwitchedPlayer = false;
-    private int autoSwitchedPlayerType = -1;
-    /**
-     * 自动"硬解→软解"回退是否已用过(每次播放一次;见 trySoftDecodeFallback)。
-     * 兼任"用户显式选过解码 ⇒ 本次播放不再自动回退"的阻断标记(见 setAllowDecodeFallback)——
-     * 故只有"确有自动态可回滚"时才能清除它(见 restoreAutoSwitchedDecode 的判定)。
-     */
-    private boolean hasAutoSwitchedDecode = false;
-    /** 自动切软解前的 cfg.ijk(仅回滚/落库剔除用;null = 当前不处于"自动软解"态) */
-    private String autoSwitchedDecodeOld = null;
-    /** 自动软解改的是哪个解码键("ijk" / "exo",2026-09-17):回滚与落库剔除都按它还原 */
-    private String autoSwitchedDecodeKey = "ijk";
-    /** "起播后错误"自动重播是否已用过(每次播放/用户主动自救动作后各一次;见 retryAfterStartedError,2026-09-15) */
-    private boolean hasRetriedAfterStart = false;
-    private boolean allowAutoSwitchLine = true;
-    private boolean playbackStarted = false;
-    private long playTimeoutBasePosition = 0;
-    private final Set<String> triedLineFlags = new HashSet<>();
-    /** 用户手动点选线路:本次取流失败/超时不自动换线换源,直接报错停留(避免覆盖用户选择) */
-    private boolean userPickedLine = false;
-    private boolean reusePlayerOnSwitch;
-    private boolean releasePlayerOnSwitch;
+    /** 解析/嗅探调度(见 PlayUrlResolver) */
+    private final PlayUrlResolver resolver = new PlayUrlResolver(new PlayUrlResolver.Host() {
+        @Override
+        public PlaybackViewBridge view() {
+            return PlaybackController.this.view;
+        }
+
+        @Override
+        public SourceBean sourceBean() {
+            return PlaybackController.this.sourceBean();
+        }
+
+        @Override
+        public HashMap<String, String> webHeaderMap() {
+            return PlaybackController.this.webHeaderMap;
+        }
+
+        @Override
+        public void setWebHeaderMap(HashMap<String, String> headers) {
+            PlaybackController.this.webHeaderMap = headers;
+        }
+
+        @Override
+        public String webUserAgent() {
+            return PlaybackController.this.webUserAgent;
+        }
+
+        @Override
+        public void setWebUserAgent(String userAgent) {
+            PlaybackController.this.webUserAgent = userAgent;
+        }
+
+        @Override
+        public void playUrl(String url, HashMap<String, String> headers) {
+            PlaybackController.this.playUrl(url, headers);
+        }
+
+        @Override
+        public void playUrl(int gen, String url, HashMap<String, String> headers) {
+            PlaybackController.this.playUrl(gen, url, headers);
+        }
+    });
+
+    /** 尝试/换线/解码/会话标记状态(见 PlaybackAttemptState) */
+    private final PlaybackAttemptState st = new PlaybackAttemptState();
 
     // -------------------- 状态开关(供页面在既有流程点调用) --------------------
 
-    /**
-     * 新一次播放的清场(等价于改造前 play() 里的 playbackStarted/playTimeoutBasePosition/allowSwitchPlayer/
-     * hasAutoSwitchedPlayer 四处赋值;2026-09-15 追加 hasAutoSwitchedDecode —— 新一次播放允许再回退一次软解)。
-     */
+    /** 新一次播放的清场:重试阶梯 + 内核/解码自动态 + 起播标记(内容边界标记仍在调用方) */
     public void beginNewPlay() {
-        playbackStarted = false;
-        playTimeoutBasePosition = 0;
-        allowSwitchPlayer = true;
-        hasAutoSwitchedPlayer = false;
-        hasAutoSwitchedDecode = false;
-        hasRetriedAfterStart = false;
+        st.beginNewPlay();
         // 新内容开始 ⇒ 上一条"播完待撤会话"的判定作废(否则那条迟到的消息会打到本次新会话上)
         timeoutHandler.removeMessages(MSG_DROP_SESSION_AFTER_COMPLETED);
         // 换内容(换集/换线/换源/重播)⇒ 上一次确认的"纯音频"作废,由新内容自己重新确认
         // (自动重试不走本方法,见 retryAfterStartedError:同一内容的确认必须留着)
-        audioOnlyConfirmed = false;
+        st.audioOnlyConfirmed = false;
     }
 
     /** 换源点击即停:清"播放中"标记与复用开关,并置"在途结果作废"标记(下一次 play 清除) */
     public void markStoppedForSourceSwitch() {
-        playbackStarted = false;
-        playTimeoutBasePosition = 0;
-        reusePlayerOnSwitch = false;
-        releasePlayerOnSwitch = false;
-        switchStopPending = true;
+        st.stoppedForSourceSwitch();
     }
 
-    /** 取出并复位"复用播放器"意图(改造前 play() 开头的三行) */
+    /** 取出并复位"复用播放器"意图 */
     public boolean consumeReusePlayerOnSwitch() {
-        boolean reuse = reusePlayerOnSwitch && !releasePlayerOnSwitch;
-        reusePlayerOnSwitch = false;
-        releasePlayerOnSwitch = false;
-        return reuse;
+        return st.consumeReuseIntent();
     }
 
     public void setReusePlayerOnSwitch(boolean reuse) {
-        this.reusePlayerOnSwitch = reuse;
+        st.setReuseIntent(reuse);
     }
 
     public void setReleasePlayerOnSwitch(boolean release) {
-        this.releasePlayerOnSwitch = release;
+        st.setReleaseIntent(release);
     }
 
     /** 切集/换线:清空"已尝试线路" */
     public void clearTriedLines() {
-        triedLineFlags.clear();
+        st.clearTriedLines();
     }
 
     public void setUserPickedLine(boolean picked) {
-        this.userPickedLine = picked;
+        st.userPickedLine = picked;
     }
 
     public void setAllowSwitchPlayer(boolean allow) {
-        this.allowSwitchPlayer = allow;
+        st.allowSwitchPlayer = allow;
         if (!allow) {
-            // 用户手动切内核(2026-09-15):自动切内核态作废 —— ①用户的选择要能落库(playerCfgForPersist 不再回填原值)
+            // 用户手动切内核:自动切内核态作废 —— ①用户的选择要能落库(playerCfgForPersist 不再回填原值)
             // ②后续换线也不再自动回滚成"自动切换前的内核"(用户的选择优先)。
             // ⚠️ 调用方必须在 updatePlayerCfg()(落库)**之前**调用本方法,否则本次落库仍会带回填值。
-            autoSwitchedPlayerType = -1;
+            st.autoSwitchedPlayerType = -1;
         }
     }
 
@@ -706,12 +550,12 @@ public class PlaybackController {
      */
     public void setAllowDecodeFallback(boolean allow) {
         if (allow) return;
-        hasAutoSwitchedDecode = true;
-        autoSwitchedDecodeOld = null;
+        st.hasAutoSwitchedDecode = true;
+        st.autoSwitchedDecodeOld = null;
     }
 
     /**
-     * 落库用的播放器配置快照(2026-09-15):**自动容错态不得进入播放记录**。
+     * 落库用的播放器配置快照:**自动容错态不得进入播放记录**。
      *
      * <p>自动切内核(pl)与自动切软解(ijk)都只是本次会话的临时回退,但覆盖层任一设置改动都会经
      * {@code PlayContainer.updatePlayerCfg()} 把当时的 playerCfg 整体写进记录/发 EventBus ——
@@ -723,13 +567,13 @@ public class PlaybackController {
         if (playerCfg == null) return null;
         try {
             JSONObject copy = new JSONObject(playerCfg.toString());
-            if (autoSwitchedPlayerType >= 0) {
-                copy.put("pl", autoSwitchedPlayerType);
+            if (st.autoSwitchedPlayerType >= 0) {
+                copy.put("pl", st.autoSwitchedPlayerType);
             }
             // 只看"自动态是否仍在生效"(autoSwitchedDecodeOld),不看每次播放的阻断标记 hasAutoSwitchedDecode ——
             // 后者会被 beginNewPlay(换集)复位,若一并作为条件,换集后下一次落库就会把自动软解写进记录
-            if (autoSwitchedDecodeOld != null) {
-                copy.put(autoSwitchedDecodeKey, autoSwitchedDecodeOld);
+            if (st.autoSwitchedDecodeOld != null) {
+                copy.put(st.autoSwitchedDecodeKey, st.autoSwitchedDecodeOld);
             }
             return copy;
         } catch (Throwable th) {
@@ -738,7 +582,7 @@ public class PlaybackController {
     }
 
     /**
-     * 未按剧锁定时,让 cfg 的解码键跟随全局设置(2026-09-17,换集入口调用)。
+     * 未按剧锁定时,让 cfg 的解码键跟随全局设置(换集入口调用)。
      *
      * <p>背景:cfg 里的 "ijk"/"exo" 是**会话开始时**由 {@link #initPlayerCfg()} 从全局写下的副本;
      * 用户在换集期间去设置页改了解码方式,不刷新的话要等下一部片才生效(IJK 侧因有"推给存活内核"
@@ -750,8 +594,8 @@ public class PlaybackController {
      */
     private void syncDecodeFromGlobal() {
         if (playerCfg == null) return;
-        boolean autoIjk = autoSwitchedDecodeOld != null && "ijk".equals(autoSwitchedDecodeKey);
-        boolean autoExo = autoSwitchedDecodeOld != null && "exo".equals(autoSwitchedDecodeKey);
+        boolean autoIjk = st.autoSwitchedDecodeOld != null && "ijk".equals(st.autoSwitchedDecodeKey);
+        boolean autoExo = st.autoSwitchedDecodeOld != null && "exo".equals(st.autoSwitchedDecodeKey);
         try {
             if (playerCfg.optInt("ijkSet", 0) == 0 && !autoIjk) {
                 playerCfg.put("ijk", KV.get(HawkConfig.IJK_CODEC, "硬解码"));
@@ -765,29 +609,27 @@ public class PlaybackController {
         }
     }
 
-    /** 切内核/换解析前的重试计数复位(改造前 changeParse/replay 回调里的两行) */
+    /** 用户自救(重播/切解析/切内核/切解码)后:允许再兜一次底 */
     public void resetAutoRetryState() {
-        autoRetryCount = 0;
-        hasAutoSwitchedPlayer = false;
-        hasRetriedAfterStart = false;
+        st.userSelfRescue();
     }
 
     public void setPlaybackStarted(boolean started) {
-        this.playbackStarted = started;
+        st.playbackStarted = started;
     }
 
     public void setPlayTimeoutBasePosition(long position) {
-        this.playTimeoutBasePosition = position;
+        st.playTimeoutBasePosition = position;
     }
 
     /** 取流起播的基准位置(跳播/转圈判定用) */
     public long playTimeoutBasePosition() {
-        return playTimeoutBasePosition;
+        return st.playTimeoutBasePosition;
     }
 
     /** 是否首次取流(autoRetryCount==0):只有首次才记录 webPlayUrl 作为重播地址 */
     public boolean isFirstAttempt() {
-        return autoRetryCount == 0;
+        return st.autoRetryCount == 0;
     }
 
     public boolean isStartedPlayState(int state) {
@@ -795,18 +637,18 @@ public class PlaybackController {
     }
 
     public void markPlaybackStarted() {
-        playbackStarted = true;
+        st.playbackStarted = true;
         cancelPlayTimeout();
     }
 
     public boolean isPlaybackStarted() {
-        if (playbackStarted) return true;
+        if (st.playbackStarted) return true;
         if (view == null) return false;
         return isStartedPlayState(view.currentPlayState()) || hasPlaybackProgress(view.currentPosition()) || view.isPlaying();
     }
 
     private boolean hasPlaybackProgress(long progress) {
-        return progress > Math.max(playTimeoutBasePosition, 0) + 1000;
+        return progress > Math.max(st.playTimeoutBasePosition, 0) + 1000;
     }
 
     // -------------------- 三处超时 --------------------
@@ -822,7 +664,7 @@ public class PlaybackController {
     }
 
     public void startSwitchLinePlayTimeout() {
-        if (!allowAutoSwitchLine) {
+        if (!st.allowAutoSwitchLine) {
             cancelPlayTimeout();
             return;
         }
@@ -848,11 +690,11 @@ public class PlaybackController {
     /** 预览态启用/全屏禁用自动换线(全屏时用户在看画面,不该被换线打断) */
     public void setAutoSwitchLineEnabled(boolean enabled) {
         // 值未变就直接返回:页面每次进入/重进都会下发一遍,重复的"禁用"不能再去动在途取流超时与换线记录
-        if (allowAutoSwitchLine == enabled) return;
-        allowAutoSwitchLine = enabled;
+        if (st.allowAutoSwitchLine == enabled) return;
+        st.allowAutoSwitchLine = enabled;
         if (!enabled) {
             cancelPlayTimeout();
-            triedLineFlags.clear();
+            st.clearTriedLines();
         }
     }
 
@@ -860,16 +702,16 @@ public class PlaybackController {
 
     /** 自动重试回滚:把"自动切成别的内核"还原成用户配置(只改内存态 + 通知 UI) */
     private void restoreAutoSwitchedPlayer() {
-        if (autoSwitchedPlayerType < 0) return;
-        releasePlayerOnSwitch = true;
+        if (st.autoSwitchedPlayerType < 0) return;
+        st.releasePlayerOnSwitch = true;
         try {
-            LOG.i("echo-autoRetry restore player: " + playerCfg().optInt("pl", -1) + " -> " + autoSwitchedPlayerType);
-            playerCfg().put("pl", autoSwitchedPlayerType);
+            LOG.i("echo-autoRetry restore player: " + playerCfg().optInt("pl", -1) + " -> " + st.autoSwitchedPlayerType);
+            playerCfg().put("pl", st.autoSwitchedPlayerType);
             if (view != null) view.applyPlayerConfig(playerCfg());
         } catch (Throwable th) {
             th.printStackTrace();
         } finally {
-            autoSwitchedPlayerType = -1;
+            st.autoSwitchedPlayerType = -1;
         }
     }
 
@@ -882,19 +724,19 @@ public class PlaybackController {
      * 换线/超时等失败路径上把用户的阻断一并清掉,此后自动软解又会把用户显式选的硬解顶掉。
      */
     private void restoreAutoSwitchedDecode() {
-        if (autoSwitchedDecodeOld == null) return;
-        hasAutoSwitchedDecode = false;
+        if (st.autoSwitchedDecodeOld == null) return;
+        st.hasAutoSwitchedDecode = false;
         try {
             if (playerCfg != null) {
-                LOG.i("echo-autoRetry restore decode: " + playerCfg.optString(autoSwitchedDecodeKey, "") + " -> " + autoSwitchedDecodeOld);
-                playerCfg.put(autoSwitchedDecodeKey, autoSwitchedDecodeOld);
+                LOG.i("echo-autoRetry restore decode: " + playerCfg.optString(st.autoSwitchedDecodeKey, "") + " -> " + st.autoSwitchedDecodeOld);
+                playerCfg.put(st.autoSwitchedDecodeKey, st.autoSwitchedDecodeOld);
                 // 与 restoreAutoSwitchedPlayer 同款:同步覆盖层 UI(解码按钮文案/状态读的是 cfg)
                 if (view != null) view.applyPlayerConfig(playerCfg);
             }
         } catch (Throwable th) {
             th.printStackTrace();
         } finally {
-            autoSwitchedDecodeOld = null;
+            st.autoSwitchedDecodeOld = null;
         }
     }
 
@@ -911,7 +753,7 @@ public class PlaybackController {
     }
 
     /**
-     * 起播失败的"硬解→软解"回退(2026-09-15;2026-09-17 扩到 EXO;每次播放最多触发一次,软解态在本次会话内持续)。
+     * 起播失败的"硬解→软解"回退(每次播放最多触发一次,软解态在本次会话内持续)。
      *
      * <p>为什么必须做在**内核内部**而不是靠阶梯里的"切内核到 EXO":设备硬解不了的格式(HEVC 10bit/高 profile、
      * 老设备 AV1 等)最有效的兜底是软解 —— IJK 自带 ffmpeg 软解;EXO 走系统软件解码器(c2.android.*)。
@@ -926,8 +768,8 @@ public class PlaybackController {
      * 与自动切内核一致),但阻断标记会随 {@link #beginNewPlay()} 复位,即新一集仍可获得一次回退机会。
      */
     private boolean trySoftDecodeFallback() {
-        if (hasAutoSwitchedDecode || playerCfg == null) return false;
-        // 生效内核按**存活内核**判断(2026-09-17):cfg.pl 与实际内核可能不一致 —— DASH 源会强制 EXO
+        if (st.hasAutoSwitchedDecode || playerCfg == null) return false;
+        // 生效内核按**存活内核**判断:cfg.pl 与实际内核可能不一致 —— DASH 源会强制 EXO
         // (goPlayUrl → applyPlayerConfigToView(2))、rtmp 会在 MyVideoView.setUrl 里强制 IJK,
         // 按 cfg.pl 判定会把"软解"写到另一侧的键上,回退等于没生效
         int kernel = liveKernel();
@@ -942,9 +784,9 @@ public class PlaybackController {
             return false;
         }
         LOG.i("echo-autoRetry hard->soft decode: kernel=" + kernel + " " + webPlayUrl);
-        autoSwitchedDecodeOld = oldDecode;
-        autoSwitchedDecodeKey = decodeKey;
-        hasAutoSwitchedDecode = true;
+        st.autoSwitchedDecodeOld = oldDecode;
+        st.autoSwitchedDecodeKey = decodeKey;
+        st.hasAutoSwitchedDecode = true;
         // 覆盖层"解码"按钮的文案读的是 cfg,这里同步一次(与自动切内核一致,见 restoreAutoSwitchedPlayer)
         if (view != null) view.applyPlayerConfig(playerCfg);
         stopParse();
@@ -960,7 +802,7 @@ public class PlaybackController {
 
     /**
      * 起播后(已 PREPARED/PLAYING 过)报错的兜底:此前 errorWithRetry 对这类错误静默吞掉 ——
-     * 无提示、不重试,表现为"黑屏死在那"(2026-09-15 Bug 6 实锤:源上游不稳,播放中重拉 m3u8
+     * 无提示、不重试,表现为"黑屏死在那"(源上游不稳,播放中重拉 m3u8
      * 播放列表拿到网关 HTML 错误页)。这里自动"同内核同地址重播"一次;已试过或无可播地址时
      * 返回 false,由页面给可见提示。
      *
@@ -968,9 +810,9 @@ public class PlaybackController {
      * (手动重播/切内核/切解码/换解析)—— 用户的主动自救动作之后允许再兜一次底。
      */
     public boolean retryAfterStartedError() {
-        if (hasRetriedAfterStart) return false;
+        if (st.hasRetriedAfterStart) return false;
         if (TextUtils.isEmpty(webPlayUrl)) return false;
-        hasRetriedAfterStart = true;
+        st.hasRetriedAfterStart = true;
         LOG.i("echo-autoRetry retry after started error: " + webPlayUrl);
         if (view != null && view.isPageAlive()) {
             final PlaybackViewBridge aliveView = view;
@@ -980,7 +822,7 @@ public class PlaybackController {
         initParseLoadFound();
         // 复位"已起播"标记:重播若在起播前就再次失败,后续 errorWithRetry 应走 autoRetry 阶梯
         // (切内核/换线)而不是再次落入 started=true 的兜底分支(与 PlayContainer.replay 的复位一致)
-        playbackStarted = false;
+        st.playbackStarted = false;
         if (view != null) view.releasePlayer();
         if (view != null) playUrl(webPlayUrl, webHeaderMap);
         return true;
@@ -994,30 +836,27 @@ public class PlaybackController {
      */
     public boolean autoRetry() {
         long currentTime = System.currentTimeMillis();
-        if (currentTime - lastRetryTime > 60_000) {
+        if (currentTime - st.lastRetryTime > 60_000) {
             LOG.i("echo-reset-autoRetryCount");
-            autoRetryCount = 0;
-            allowSwitchPlayer = true;
-            hasAutoSwitchedPlayer = false;
-            triedLineFlags.clear();
+            st.resetAutoRetryLadder();
         }
-        lastRetryTime = currentTime;
+        st.lastRetryTime = currentTime;
         // ConcurrentLinkedQueue.size() 是 O(n) 遍历且弱一致(并发 add 时可能读到 0);isEmpty() 为 O(1) 且更准确
-        if (loadFoundVideoUrls != null && !loadFoundVideoUrls.isEmpty()) {
-            autoRetryFromLoadFoundVideoUrls();
+        if (resolver.hasFoundUrls()) {
+            resolver.consumeFoundUrl();
             return true;
         }
-        // ② 硬解→软解(2026-09-15):解码类起播失败覆盖面最广的兜底,排在换内核之前(先保住用户选的内核)
+        // ② 硬解→软解:解码类起播失败覆盖面最广的兜底,排在换内核之前(先保住用户选的内核)
         if (trySoftDecodeFallback()) return true;
         if (webPlayUrl != null) {
-            if (allowSwitchPlayer && !hasAutoSwitchedPlayer) {
+            if (st.allowSwitchPlayer && !st.hasAutoSwitchedPlayer) {
                 LOG.i("echo-autoRetry switch player and replay current url");
                 int playerType = playerCfg().optInt("pl", -1);
                 boolean switchSkipped = view != null && view.switchPlayerKernel();
-                hasAutoSwitchedPlayer = true;
-                allowSwitchPlayer = false;
+                st.hasAutoSwitchedPlayer = true;
+                st.allowSwitchPlayer = false;
                 if (!switchSkipped) {
-                    autoSwitchedPlayerType = playerType;
+                    st.autoSwitchedPlayerType = playerType;
                     stopParse();
                     initParseLoadFound();
                     if (view != null) view.releasePlayer();
@@ -1035,46 +874,41 @@ public class PlaybackController {
     public boolean tryNextLineIfEnabled() {
         restoreAutoSwitchedPlayer();
         restoreAutoSwitchedDecode();
-        if (allowAutoSwitchLine && KV.get(HawkConfig.AUTO_SWITCH_LINE, false)) return tryNextLine();
+        if (st.allowAutoSwitchLine && KV.get(HawkConfig.AUTO_SWITCH_LINE, false)) return tryNextLine();
         LOG.i("echo-autoRetry line switching disabled");
-        autoRetryCount = 0;
-        allowSwitchPlayer = true;
-        hasAutoSwitchedPlayer = false;
-        triedLineFlags.clear();
+        st.resetAutoRetryLadder();
         return false;
     }
 
     /** 切到"下一条未尝试过且有剧集"的线路,集号按集名匹配(换线不换集) */
     public boolean tryNextLine() {
         if (vod() == null || vod().seriesMap == null || vod().seriesMap.isEmpty()) {
-            autoRetryCount = 0;
-            triedLineFlags.clear();
+            st.linesExhausted();
             return false;
         }
         String currentFlag = vod().playFlag;
         int currentIndex = Math.max(vod().playIndex, 0);
         VodInfo.VodSeries currentSeries = currentSeries(currentFlag, currentIndex);
         if (!TextUtils.isEmpty(currentFlag)) {
-            triedLineFlags.add(currentFlag);
+            st.triedLineFlags.add(currentFlag);
         }
-        List<String> lineFlags = lineFlagsInDisplayOrder();
-        int currentLineIndex = lineFlagIndex(lineFlags, currentFlag);
+        List<String> lineFlags = EpisodeMatcher.lineFlagsInDisplayOrder(vod());
+        int currentLineIndex = EpisodeMatcher.lineFlagIndex(lineFlags, currentFlag);
         int startLineIndex = currentLineIndex >= 0 ? currentLineIndex + 1 : 0;
         String nextFlag = null;
         int nextIndex = 0;
         for (int i = startLineIndex; i < lineFlags.size(); i++) {
             String flag = lineFlags.get(i);
             List<VodInfo.VodSeries> seriesList = vod().seriesMap.get(flag);
-            if (!triedLineFlags.contains(flag) && seriesList != null && !seriesList.isEmpty()) {
+            if (!st.triedLineFlags.contains(flag) && seriesList != null && !seriesList.isEmpty()) {
                 nextFlag = flag;
-                nextIndex = sameEpisodeIndex(currentSeries, seriesList, currentIndex);
+                nextIndex = EpisodeMatcher.sameEpisodeIndex(currentSeries, seriesList, currentIndex);
                 break;
             }
         }
         if (nextFlag == null) {
             LOG.i("echo-autoRetry all lines exhausted");
-            triedLineFlags.clear();
-            autoRetryCount = 0;
+            st.linesExhausted();
             return view != null && view.onLinesExhausted();
         }
         final String flagToSwitch = nextFlag;
@@ -1087,11 +921,8 @@ public class PlaybackController {
         }
         vod().playFlag = flagToSwitch;
         vod().playIndex = nextIndex;
-        autoRetryCount = 0;
-        allowSwitchPlayer = true;
-        hasAutoSwitchedPlayer = false;
+        st.onLineSwitched();
         inheritProgressFrom(preProgressKey, preProgress);
-        reusePlayerOnSwitch = true;
         play(false);
         return true;
     }
@@ -1102,8 +933,8 @@ public class PlaybackController {
         LOG.i("echo-resolvePlayUrl timeout, try next line");
         cancelPlayRequest();
         stopParse();
-        if (userPickedLine) {
-            userPickedLine = false;
+        if (st.userPickedLine) {
+            st.userPickedLine = false;
             stopMusicSessionForFailedPlayback();
             showErrorTip("获取播放地址超时");
             return;
@@ -1118,8 +949,8 @@ public class PlaybackController {
         LOG.i("echo-resolvePlayUrl failed, try next line: " + err);
         cancelPlayRequest();
         stopParse();
-        if (userPickedLine) {
-            userPickedLine = false;
+        if (st.userPickedLine) {
+            st.userPickedLine = false;
             cancelPlayTimeout();
             stopMusicSessionForFailedPlayback();
             showErrorTip(err);
@@ -1133,7 +964,7 @@ public class PlaybackController {
 
     public void handleSwitchLinePlayTimeout() {
         int state = view == null ? -1 : view.currentPlayState();
-        LOG.i("echo-switchLinePlay timeout state: " + state + ", started: " + playbackStarted);
+        LOG.i("echo-switchLinePlay timeout state: " + state + ", started: " + st.playbackStarted);
         if (isPlaybackStarted()) {
             cancelPlayTimeout();
             if (view != null) view.hideTipOnUiThread();
@@ -1141,7 +972,7 @@ public class PlaybackController {
         }
         LOG.i("echo-switchLinePlay timeout, try next line");
         stopParse();
-        if (hasAutoSwitchedPlayer) {
+        if (st.hasAutoSwitchedPlayer) {
             if (!tryNextLineIfEnabled()) {
                 stopMusicSessionForFailedPlayback();
                 showErrorTip("播放超时");
@@ -1159,34 +990,15 @@ public class PlaybackController {
         if (view != null) view.showTip(err, false, true);
     }
 
-    // ==================== 取流状态与解析/嗅探(P1 第三组 3a) ====================
-    // 解析与取流结果是一个整体:WebView 嗅探地址、OkGo JSON 解析、super parse 都汇成
-    // playResultObserver 那一份"可播地址 + 头部 + 字幕/歌词/弹幕/清晰度"数据。
-    // play()/playUrl()/goPlayUrl() 仍在页面(直接操作 MyVideoView 与控制器 UI,见 Spec §3-P1 剩余项)。
+    // ==================== 取流状态与结果观察者 ====================
 
-    /** 待解析的原始地址与解析标记 */
-    private String webUrl;
-    private String parseFlag;
+
     /** 已解析出的可播地址与请求头(重试/换内核重播用) */
     private String webPlayUrl;
     private HashMap<String, String> webHeaderMap;
     private String webUserAgent;
 
-    /**
-     * 解析/嗅探代际:每次"新播放"(切集/换线/换源/重播)与每次"发起解析"(换解析器、重播兜底)自增。
-     * 回调在**发起时捕获**该值,起播前比对,不一致即丢弃(旧集地址不得拉起新播放)。
-     *
-     * <p>为什么必须有:`doParse` 与 WebView 嗅探的回调完成后是**直接** `playUrl` 的,不经过取流观察者
-     * (那条路已有请求序号 + {@link #isStalePlayResult});而 `stopParse()` 的
-     * `shutdown()/stopLoading()/cancelTag()` 都只能"不再新增",**拦不住已经在跑的任务**
-     * (type 2/3/4 是阻塞式爬虫;WebView 的迟到请求仍会进 `shouldInterceptRequest`)。
-     *
-     * <p>不能用 {@code progressKey}/{@code switchStopPending} 代替:前者在 `play()` 里就被新集覆盖,
-     * 旧解析发起时看到的已是新键;后者只在换源点击即停时置位,切集/换线不置位。
-     *
-     * <p>线程:`play()`/`doParse()` 均主线程,{@code checkIsVideo} 读自网络线程 → 用 AtomicInteger。
-     */
-    private final AtomicInteger parseGeneration = new AtomicInteger(0);
+
     /**
      * 最近一次**通过校验**的起播请求所属的代际(仅主线程读写):{@link #goPlayUrl} 入口签发,
      * 该方法的 UI 落地闭包用它比对 —— 排队期(回调 → runOnUi)若换了集,排队中的旧地址会被丢弃。
@@ -1224,26 +1036,7 @@ public class PlaybackController {
         return startedPlaybackKey;
     }
 
-    /** 嗅探 WebView(1×1 挂在页面内容视图上;视图由 view.newSniffWebView()/attachSniffWebView() 提供) */
-    private WebView mSysWebView;
-    /**
-     * 当前嗅探页所属的解析代际:{@link #loadUrl(String)} 投递导航前赋值(网络线程读,故 volatile),-1 = 无嗅探页。
-     * 用于判定 in-flight 请求是否属当前页 —— `stopLoading()`/`about:blank` 只能停止后续加载,
-     * 已经在途的请求仍会进 `shouldInterceptRequest`,旧页的必须丢弃。
-     */
-    private volatile int webSniffGeneration = -1;
-    // ⚠️ shouldInterceptRequest 在非 UI 线程执行且不保证串行:以下三个集合必须并发安全(2026-09-13 加固)
-    private final Map<String, Boolean> loadedUrls = new ConcurrentHashMap<>();
-    private volatile Queue<String> loadFoundVideoUrls = new ConcurrentLinkedQueue<>();
-    private volatile Map<String, HashMap<String, String>> loadFoundVideoUrlsHeader = new ConcurrentHashMap<>();
-    private final AtomicInteger loadFoundCount = new AtomicInteger(0);
-
-    private ExecutorService parseThreadPool;
-
-    private static final int MSG_PARSE_TIMEOUT = 100;
-    private static final long PARSE_TIMEOUT_MS = 20 * 1000;
-
-    /** 建立取流结果观察者(原 PlayContainer.initViewModel 的骨架;预载协调器仍归页面,见 Spec §3-P1 剩余项) */
+    /** 建立取流结果观察者(预载协调器仍归页面) */
     public void initFetch() {
         sourceViewModel = new SourceViewModel();
         playResultObserver = new Observer<JSONObject>() {
@@ -1256,7 +1049,7 @@ public class PlaybackController {
                             LOG.i("echo-ignore stale play result");
                             return;
                         }
-                        if (view != null && switchStopPending) {
+                        if (view != null && st.switchStopPending) {
                             // 换源点击即停后,旧源在途的取流结果不得再拉起播放
                             LOG.i("echo-ignore play result while source switching");
                             return;
@@ -1316,7 +1109,7 @@ public class PlaybackController {
                             return;
                         }
                         // 取流成功,手动选线标记完成使命,后续失败恢复走正常自动策略
-                        userPickedLine = false;
+                        st.userPickedLine = false;
                         String danmaku = info.optString("danmaku", "").trim();
                         final String danmuProgressKey = progressKey();
                         setWebUserAgent(null);
@@ -1463,664 +1256,53 @@ public class PlaybackController {
         if (view != null) view.checkDanmu(danmaku, onFailed);
     }
 
-    // -------------------- 解析入口 --------------------
+    // -------------------- 解析/嗅探门面(见 PlayUrlResolver) --------------------
 
     /** 按解析规则发起解析(直链/json/聚合/超级解析) */
     public void initParse(String flag, boolean useParse, String playUrl, final String url) {
-        parseFlag = flag;
-        webUrl = url;
-        ParseBean parseBean = null;
-        if (view != null) view.showParse(useParse);
-        if (useParse) {
-            parseBean = ApiConfig.get().getDefaultParse();
-        } else {
-            if (playUrl.startsWith("json:")) {
-                parseBean = new ParseBean();
-                parseBean.setType(1);
-                parseBean.setUrl(playUrl.substring(5));
-            } else if (playUrl.startsWith("parse:")) {
-                String parseRedirect = playUrl.substring(6);
-                for (ParseBean pb : ApiConfig.get().getParseBeanList()) {
-                    if (pb.getName().equals(parseRedirect)) {
-                        parseBean = pb;
-                        break;
-                    }
-                }
-            }
-            if (parseBean == null) {
-                parseBean = new ParseBean();
-                parseBean.setType(0);
-                parseBean.setUrl(playUrl);
-            }
-        }
-        doParse(parseBean);
+        resolver.initParse(flag, useParse, playUrl, url);
     }
 
-    JSONObject jsonParse(String input, String json) throws JSONException {
-        JSONObject jsonPlayData = new JSONObject(json);
-        JSONObject playData = jsonPlayData.optJSONObject("data");
-        if (playData == null) {
-            playData = jsonPlayData;
-        }
-        String url = playData.optString("url", jsonPlayData.optString("url", ""));
-        if (url.startsWith("//")) {
-            url = "http:" + url;
-        }
-        boolean parse = false;
-        if (url.startsWith("video://")) {
-            url = url.substring(8);
-            parse = true;
-        }
-        url = DefaultConfig.checkReplaceProxy(url);
-        if (!url.startsWith("http") && !url.startsWith("data:application")) {
-            return null;
-        }
-        parse = parse || playData.optInt("parse", jsonPlayData.optInt("parse", 0)) == 1;
-        JSONObject headers = new JSONObject();
-        HashMap<String, String> headerMap = extractHeaders(jsonPlayData);
-        HashMap<String, String> dataHeaderMap = extractHeaders(playData);
-        if (headerMap != null) putHeaders(headers, headerMap);
-        if (dataHeaderMap != null) putHeaders(headers, dataHeaderMap);
-        String ua = playData.optString("user-agent", jsonPlayData.optString("user-agent", ""));
-        if (ua.trim().length() > 0) {
-            headers.put("User-Agent", " " + ua);
-        }
-        String referer = playData.optString("referer", jsonPlayData.optString("referer", ""));
-        if (referer.trim().length() > 0) {
-            headers.put("Referer", " " + referer);
-        }
-        JSONObject taskResult = new JSONObject();
-        taskResult.put("header", headers);
-        taskResult.put("url", url);
-        taskResult.put("parse", parse ? 1 : 0);
-        return taskResult;
-    }
-
-    /** 停止解析/嗅探:取消解析超时、停 WebView、取消 OkGo 请求(含 M3U8 净化)、关线程池 */
-    public void stopParse() {
-        timeoutHandler.removeMessages(MSG_PARSE_TIMEOUT);
-        stopLoadWebView(false);
-        OkGo.getInstance().cancelTag("play");
-        OkGo.getInstance().cancelTag("json_jx");
-        // M3U8 净化的在途请求也要撤:结果被代际闸门丢弃后没人取消会一直持网到超时(默认 60s)
-        OkGo.getInstance().cancelTag("m3u8-1");
-        OkGo.getInstance().cancelTag("m3u8-2");
-        if (parseThreadPool != null) {
-            try {
-                parseThreadPool.shutdown();
-                parseThreadPool = null;
-            } catch (Throwable th) {
-                th.printStackTrace();
-            }
-        }
-    }
-
-    /** 重置嗅探结果容器(网络线程写入前调用;引用替换对旧对象无害、新对象立即生效) */
-    public void initParseLoadFound() {
-        loadFoundCount.set(0);
-        loadFoundVideoUrls = new ConcurrentLinkedQueue<>();
-        loadFoundVideoUrlsHeader = new ConcurrentHashMap<>();
-    }
-
-    /** 消费一个嗅探到的地址并起播(队列可能被并发消费/重置,取到 null 时直接放弃) */
-    void autoRetryFromLoadFoundVideoUrls() {
-        String videoUrl = loadFoundVideoUrls.poll();
-        if (videoUrl == null) return;
-        HashMap<String, String> header = loadFoundVideoUrlsHeader.get(videoUrl);
-        if (view != null) playUrl(videoUrl, header);
-    }
-
-    /**
-     * 本轮解析/嗅探是否仍然有效:回调在**发起时**捕获的 {@code gen} 与当前代际相等才放行。
-     *
-     * <p>不打日志(嗅探拦截在网络线程逐请求调用,旧页迟到请求会成百上千次命中;需要日志的调用方自行打)。
-     * public 供页面桥校验 M3U8 净化结果(见三参 {@code PlaybackViewBridge.playM3u8})。
-     */
-    public boolean isParseResultCurrent(int gen) {
-        return gen == parseGeneration.get();
-    }
-
+    /** 解析入口 */
     public void doParse(ParseBean pb) {
-        // 入口自增:作废上一轮解析(含换解析器、重播兜底里重新发起的解析);下面各回调统一捕获 gen
-        final int gen = parseGeneration.incrementAndGet();
-        stopParse();
-        initParseLoadFound();
-        if (pb.getType() == 4) {
-            parseMix(pb, true, gen);
-        } else if (pb.getType() == 0) {
-            if (view != null) view.showTip("正在嗅探播放地址", true, false);
-            timeoutHandler.removeMessages(MSG_PARSE_TIMEOUT);
-            timeoutHandler.sendEmptyMessageDelayed(MSG_PARSE_TIMEOUT, PARSE_TIMEOUT_MS);
-            if (pb.getExt() != null) {
-                // 解析ext
-                try {
-                    HashMap<String, String> reqHeaders = new HashMap<>();
-                    JSONObject jsonObject = new JSONObject(pb.getExt());
-                    HashMap<String, String> headerMap = extractHeaders(jsonObject);
-                    if (headerMap != null) {
-                        for (String key : headerMap.keySet()) {
-                            if (key.equalsIgnoreCase("user-agent")) {
-                                webUserAgent = headerMap.get(key).trim();
-                            } else {
-                                reqHeaders.put(key, headerMap.get(key));
-                            }
-                        }
-                        if (reqHeaders.size() > 0) webHeaderMap = reqHeaders;
-                    }
-                } catch (Throwable e) {
-                    e.printStackTrace();
-                }
-            }
-            loadWebView(pb.getUrl() + webUrl);
-        } else if (pb.getType() == 1) { // json 解析
-            if (view != null) view.showTip("正在解析播放地址", true, false);
-            // 解析ext
-            HttpHeaders reqHeaders = new HttpHeaders();
-            try {
-                JSONObject jsonObject = new JSONObject(pb.getExt());
-                HashMap<String, String> headerMap = extractHeaders(jsonObject);
-                if (headerMap != null) {
-                    for (String key : headerMap.keySet()) {
-                        reqHeaders.put(key, headerMap.get(key));
-                    }
-                }
-            } catch (Throwable e) {
-                e.printStackTrace();
-            }
-            OkGo.<String>get(pb.getUrl() + (view == null ? webUrl : view.encodeUrl(webUrl)))
-                    .tag("json_jx")
-                    .headers(reqHeaders)
-                    .execute(new AbsCallback<String>() {
-                        @Override
-                        public String convertResponse(okhttp3.Response response) throws Throwable {
-                            if (response.body() != null) {
-                                return response.body().string();
-                            } else {
-                                throw new IllegalStateException("网络请求错误");
-                            }
-                        }
-
-                        @Override
-                        public void onSuccess(Response<String> response) {
-                            // 切集/换源/换解析后,旧请求的结果不得再驱动播放或嗅探
-                            if (!isParseResultCurrent(gen)) return;
-                            String json = response.body();
-                            try {
-                                JSONObject rs = jsonParse(webUrl, json);
-                                HashMap<String, String> headers = extractHeaders(rs);
-                                if (rs.optInt("parse", 0) == 1) {
-                                    webHeaderMap = headers;
-                                    if (headers != null) {
-                                        webUserAgent = headerValue(headers, "user-agent");
-                                        if (webUserAgent != null) webUserAgent = webUserAgent.trim();
-                                    }
-                                    loadWebView(DefaultConfig.checkReplaceProxy(rs.getString("url")));
-                                } else {
-                                    if (view != null) playUrl(gen, rs.getString("url"), headers);
-                                }
-                            } catch (Throwable e) {
-                                e.printStackTrace();
-                                errorWithRetry("解析错误", false);
-                            }
-                        }
-
-                        @Override
-                        public void onError(Response<String> response) {
-                            super.onError(response);
-                            errorWithRetry("解析错误", false);
-                        }
-                    });
-        } else if (pb.getType() == 2) { // json 扩展
-            if (view != null) view.showTip("正在解析播放地址", true, false);
-            parseThreadPool = Executors.newSingleThreadExecutor();
-            LinkedHashMap<String, String> jxs = new LinkedHashMap<>();
-            for (ParseBean p : ApiConfig.get().getParseBeanList()) {
-                if (p.getType() == 1) {
-                    jxs.put(p.getName(), p.mixUrl());
-                }
-            }
-            parseThreadPool.execute(new Runnable() {
-                @Override
-                public void run() {
-                    // jsonExt 是阻塞爬虫(可跑数十秒):结果到达时先校验本轮
-                    if (!isParseResultCurrent(gen)) return;
-                    JSONObject rs = ApiConfig.get().jsonExt(pb.getUrl(), jxs, webUrl);
-                    if (rs == null || !rs.has("url") || rs.optString("url").isEmpty()) {
-                        if (isParseResultCurrent(gen) && view != null) view.showTip("解析错误", false, true);
-                    } else {
-                        HashMap<String, String> headers = extractHeaders(rs);
-                        if (rs.has("jxFrom") && view != null) {
-                            final String jxFrom = rs.optString("jxFrom");
-                            view.runOnUi(() -> view.toast("解析来自:" + jxFrom));
-                        }
-                        boolean parseWV = rs.optInt("parse", 0) == 1;
-                        if (parseWV) {
-                            String wvUrl = DefaultConfig.checkReplaceProxy(rs.optString("url", ""));
-                            loadUrl(gen, wvUrl);
-                        } else {
-                            if (view != null) playUrl(gen, rs.optString("url", ""), headers);
-                        }
-                    }
-                }
-            });
-        } else if (pb.getType() == 3) { // json 聚合
-            parseMix(pb, false, gen);
-        }
+        resolver.doParse(pb);
     }
 
-    private void errorWithRetry(String err, boolean finish) {
-        if (view != null) view.showErrorWithRetry(err, finish);
+    /** 停止解析/嗅探 */
+    public void stopParse() {
+        resolver.stopParse();
     }
 
-    /**
-     * 聚合解析(type 3/4):超级解析 = 嗅探与 json 并发;普通聚合 = jsonExtMix。
-     *
-     * @param gen 本轮解析代际({@link #doParse} 传入):各异步回调带它做校验,与当前代际不符即丢弃
-     */
-    private void parseMix(ParseBean pb, boolean isSuper, final int gen) {
-        if (view != null) view.showTip("正在解析播放地址", true, false);
-        parseThreadPool = Executors.newSingleThreadExecutor();
-        LinkedHashMap<String, HashMap<String, String>> jxs = new LinkedHashMap<>();
-        LinkedHashMap<String, String> json_jxs = new LinkedHashMap<>();
-        String extendName = "";
-        for (ParseBean p : ApiConfig.get().getParseBeanList()) {
-            HashMap<String, String> data = new HashMap<String, String>();
-            data.put("url", p.getUrl());
-            if (p.getUrl().equals(pb.getUrl())) {
-                extendName = p.getName();
-            }
-            data.put("type", p.getType() + "");
-            data.put("ext", p.getExt());
-            jxs.put(p.getName(), data);
-
-            if (p.getType() == 1) {
-                json_jxs.put(p.getName(), p.mixUrl());
-            }
-        }
-        String finalExtendName = extendName;
-        // BugReview #21:目标解析器在会话开始时构建并按调用传递,替代静态字段跨线程读取
-        SuperParse.ParseTargets parseTargets = SuperParse.buildTargets(jxs, parseFlag + "123");
-        parseThreadPool.execute(new Runnable() {
-            @Override
-            public void run() {
-                // 阻塞爬虫(可跑数十秒):结果到达时先校验本轮
-                if (!isParseResultCurrent(gen)) return;
-                if (isSuper) {
-                    // 并发执行 嗅探和json
-                    JSONObject rs = SuperParse.parse(jxs, parseFlag + "123", webUrl, parseTargets);
-                    if (!rs.has("url") || rs.optString("url").isEmpty()) {
-                        if (isParseResultCurrent(gen) && view != null) view.showTip("解析错误", false, true);
-                    } else {
-                        if (rs.has("parse") && rs.optInt("parse", 0) == 1) {
-                            if (rs.has("ua")) {
-                                webUserAgent = rs.optString("ua").trim();
-                            }
-                            if (view != null) view.showTip("超级解析中", true, false);
-                            final String mixParseUrl = DefaultConfig.checkReplaceProxy(rs.optString("url", ""));
-                            if (view != null) {
-                                view.runOnUi(() -> {
-                                    // 排队期可能已切集:旧页不得替换当前嗅探页、更不得带着旧超时
-                                    if (!isParseResultCurrent(gen)) return;
-                                    stopParse();
-                                    timeoutHandler.removeMessages(MSG_PARSE_TIMEOUT);
-                                    timeoutHandler.sendEmptyMessageDelayed(MSG_PARSE_TIMEOUT, PARSE_TIMEOUT_MS);
-                                    loadWebView(mixParseUrl);
-                                });
-                            }
-                            parseThreadPool.execute(new Runnable() {
-                                @Override
-                                public void run() {
-                                    JSONObject res = SuperParse.doJsonJx(parseTargets.jsonJx, webUrl);
-                                    rsJsonJX(gen, res, true);
-                                }
-                            });
-                        } else {
-                            rsJsonJX(gen, rs, false);
-                        }
-                    }
-                } else {
-                    JSONObject rs = ApiConfig.get().jsonExtMix(parseFlag + "111", pb.getUrl(), finalExtendName, jxs, webUrl);
-                    if (rs == null || !rs.has("url") || rs.optString("url").isEmpty()) {
-                        if (isParseResultCurrent(gen) && view != null) view.showTip("解析错误", false, true);
-                    } else {
-                        if (rs.has("parse") && rs.optInt("parse", 0) == 1) {
-                            if (rs.has("ua")) {
-                                webUserAgent = rs.optString("ua").trim();
-                            }
-                            final String mixParseUrl = DefaultConfig.checkReplaceProxy(rs.optString("url", ""));
-                            if (view != null) {
-                                view.runOnUi(() -> {
-                                    // 同上:排队期可能已切集
-                                    if (!isParseResultCurrent(gen)) return;
-                                    stopParse();
-                                    view.showTip("正在嗅探播放地址", true, false);
-                                    timeoutHandler.removeMessages(MSG_PARSE_TIMEOUT);
-                                    timeoutHandler.sendEmptyMessageDelayed(MSG_PARSE_TIMEOUT, PARSE_TIMEOUT_MS);
-                                    loadWebView(mixParseUrl);
-                                });
-                            }
-                        } else {
-                            rsJsonJX(gen, rs, false);
-                        }
-                    }
-                }
-            }
-        });
+    /** 重置嗅探结果容器 */
+    public void initParseLoadFound() {
+        resolver.initParseLoadFound();
     }
 
-    private void rsJsonJX(int gen, JSONObject rs, boolean isSuper) {
-        // 先校验本轮:否则切集后,上一轮遗留的 jsonJx 回调会关掉新集的嗅探页 / 起播旧地址
-        if (!isParseResultCurrent(gen)) return;
-        if (isSuper) {
-            if (rs == null || !rs.has("url")) return;
-            stopLoadWebView(false);
-        }
-        HashMap<String, String> headers = extractHeaders(rs);
-        if (rs.has("jxFrom") && view != null) {
-            final String jxFrom = rs.optString("jxFrom");
-            view.runOnUi(() -> view.toast("解析来自:" + jxFrom));
-        }
-        if (view != null) playUrl(gen, rs.optString("url", ""), headers);
-    }
-
-    // -------------------- WebView 嗅探 --------------------
-
-    void loadWebView(String url) {
-        if (mSysWebView == null) {
-            initWebView();
-        }
-        loadUrl(url);
-    }
-
-    void initWebView() {
-        if (view == null) return;
-        mSysWebView = view.newSniffWebView();
-        // 无页面(仅引擎/服务)时没有可挂载的内容视图:取流前的嗅探只有页面在时才有意义(见 P2 HeadlessView)
-        if (mSysWebView == null) return;
-        configWebViewSys(mSysWebView);
-    }
-
-    void loadUrl(String url) {
-        if (view == null || !view.isPageAlive()) return;
-        // 本次导航所属代际(在投递前赋值,不能放 runnable 内:否则旧页请求与新一轮导航之间有窗口期)
-        webSniffGeneration = parseGeneration.get();
-        view.runOnUi(new Runnable() {
-            @Override
-            public void run() {
-                if (mSysWebView != null) {
-                    mSysWebView.stopLoading();
-                    if (webUserAgent != null) {
-                        mSysWebView.getSettings().setUserAgentString(webUserAgent);
-                    }
-                    if (webHeaderMap != null) {
-                        mSysWebView.loadUrl(url, webHeaderMap);
-                    } else {
-                        mSysWebView.loadUrl(url);
-                    }
-                }
-            }
-        });
-    }
-
-    /** 带代际的嗅探页导航:type 2 的 WebView 分支在后台线程发起,排队期若已切集,不得把新集的嗅探页换掉 */
-    private void loadUrl(int gen, String url) {
-        if (view == null || !view.isPageAlive()) return;
-        webSniffGeneration = gen;
-        view.runOnUi(new Runnable() {
-            @Override
-            public void run() {
-                if (!isParseResultCurrent(gen)) return;
-                loadUrl(url);
-            }
-        });
-    }
-
-    /**
-     * 当前请求是否属于正在嗅探的页面:旧页的迟到请求(与 stopLoading/about:blank 并发的那些)一律丢弃,
-     * 否则会把上一集的地址塞进新一轮的命中队列。
-     *
-     * <p>⚠️ 必须是"页面所属代际"({@link #webSniffGeneration})与当前代际比,**不能**写成
-     * {@code isParseResultCurrent(parseGeneration.get())} —— 那是恒真自比较,闸门等于没装。
-     */
-    private boolean isSniffRequestOfCurrentRound() {
-        return webSniffGeneration >= 0 && webSniffGeneration == parseGeneration.get();
+    /** 本轮解析/嗅探是否仍有效(代际闸门) */
+    public boolean isParseResultCurrent(int gen) {
+        return resolver.isParseResultCurrent(gen);
     }
 
     public void stopLoadWebView(boolean destroy) {
-        if (view == null) return;
-        view.runOnUi(new Runnable() {
-            @Override
-            public void run() {
-                if (mSysWebView != null) {
-                    mSysWebView.stopLoading();
-                    mSysWebView.loadUrl("about:blank");
-                    if (destroy) {
-                        mSysWebView.clearCache(true);
-                        mSysWebView.removeAllViews();
-                        mSysWebView.destroy();
-                        mSysWebView = null;
-                        webSniffGeneration = -1;
-                    }
-                }
-            }
-        });
+        resolver.stopLoadWebView(destroy);
     }
 
-    boolean checkVideoFormat(String url) {
-        try {
-            if (url.contains("url=http") || url.contains(".html")) {
-                return false;
-            }
-            if (sourceBean() != null && sourceBean().getType() == 3) {
-                Spider sp = ApiConfig.get().getCSP(sourceBean());
-                if (sp != null && sp.manualVideoCheck()) {
-                    return sp.isVideoFormat(url);
-                }
-            }
-            return VideoParseRuler.checkIsVideoForParse(webUrl, url);
-        } catch (Exception e) {
-            return false;
-        }
-    }
 
     @SuppressLint("SetJavaScriptEnabled")
-    private void configWebViewSys(WebView webView) {
-        if (webView == null) {
-            return;
-        }
-        webView.setFocusable(false);
-        webView.setFocusableInTouchMode(false);
-        webView.clearFocus();
-        webView.setOverScrollMode(View.OVER_SCROLL_ALWAYS);
-        if (view == null || !view.isPageAlive()) return;
-        view.attachSniffWebView(webView);
-        /* 添加webView配置 */
-        final WebSettings settings = webView.getSettings();
-        settings.setNeedInitialFocus(false);
-        settings.setAllowContentAccess(true);
-        settings.setAllowFileAccess(true);
-        settings.setAllowUniversalAccessFromFileURLs(true);
-        settings.setAllowFileAccessFromFileURLs(true);
-        settings.setDatabaseEnabled(true);
-        settings.setDomStorageEnabled(true);
-        settings.setJavaScriptEnabled(true);
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
-            settings.setMediaPlaybackRequiresUserGesture(false);
-        }
-        settings.setBlockNetworkImage(true);
-        settings.setUseWideViewPort(true);
-        settings.setDomStorageEnabled(true);
-        settings.setJavaScriptCanOpenWindowsAutomatically(true);
-        settings.setSupportMultipleWindows(false);
-        settings.setLoadWithOverviewMode(true);
-        settings.setBuiltInZoomControls(true);
-        settings.setSupportZoom(false);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-        }
-        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
-        /* 添加webView配置 */
-        settings.setDefaultTextEncodingName("utf-8");
-        settings.setUserAgentString(webView.getSettings().getUserAgentString());
-
-        webView.setWebChromeClient(new WebChromeClient() {
-            @Override
-            public boolean onConsoleMessage(ConsoleMessage consoleMessage) {
-                return false;
-            }
-
-            @Override
-            public boolean onJsAlert(WebView view, String url, String message, JsResult result) {
-                return true;
-            }
-
-            @Override
-            public boolean onJsConfirm(WebView view, String url, String message, JsResult result) {
-                return true;
-            }
-
-            @Override
-            public boolean onJsPrompt(WebView view, String url, String message, String defaultValue, JsPromptResult result) {
-                return true;
-            }
-        });
-        SysWebClient mSysWebClient = new SysWebClient();
-        webView.setWebViewClient(mSysWebClient);
-        webView.setBackgroundColor(Color.BLACK);
-    }
-
-    private class SysWebClient extends WebViewClient {
-
-        @SuppressLint("WebViewClientOnReceivedSslError")
-        @Override
-        public void onReceivedSslError(WebView webView, SslErrorHandler sslErrorHandler, SslError sslError) {
-            sslErrorHandler.proceed();
-        }
-
-        @Override
-        public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-            return false;
-        }
-
-        @Override
-        public boolean shouldOverrideUrlLoading(WebView view, String url) {
-            return false;
-        }
-
-        @Override
-        public void onPageStarted(WebView view, String url, Bitmap favicon) {
-            super.onPageStarted(view, url, favicon);
-        }
-
-        @Override
-        public void onPageFinished(WebView view, String url) {
-            super.onPageFinished(view, url);
-            LOG.i("echo-onPageFinished url:" + url);
-            if (!url.equals("about:blank") && PlaybackController.this.view != null) {
-                PlaybackController.this.view.evaluateScript(url, view);
-            }
-        }
-
-        WebResourceResponse checkIsVideo(String url, HashMap<String, String> headers) {
-            if (url.endsWith("/favicon.ico")) {
-                if (url.startsWith("http://127.0.0.1")) {
-                    return new WebResourceResponse("image/x-icon", "UTF-8", null);
-                }
-                return null;
-            }
-
-            // 旧页面的迟到请求不得进入新一轮的结果队列(见 isSniffRequestOfCurrentRound)
-            if (!isSniffRequestOfCurrentRound()) {
-                return null;
-            }
-            boolean isFilter = VideoParseRuler.isFilter(webUrl, url);
-            if (isFilter) {
-                LOG.i("shouldInterceptLoadRequest filter:" + url);
-                return null;
-            }
-
-            boolean ad;
-            if (!loadedUrls.containsKey(url)) {
-                ad = AdBlocker.isAd(url);
-                loadedUrls.put(url, ad);
-            } else {
-                ad = Boolean.TRUE.equals(loadedUrls.get(url));
-            }
-
-            if (!ad) {
-                if (checkVideoFormat(url)) {
-                    loadFoundVideoUrls.add(url);
-                    loadFoundVideoUrlsHeader.put(url, headers);
-                    LOG.i("echo-loadFoundVideoUrl:" + url);
-                    if (loadFoundCount.incrementAndGet() == 1) {
-                        stopLoadWebView(false);
-                        SuperParse.stopJsonJx();
-                        url = loadFoundVideoUrls.poll();
-                        // ⚠️ 队列可能已被并发消费或被新一轮 initParseLoadFound 重置(字段 volatile),
-                        // poll 返回 null 时若继续走 getCookie/playUrl 会 NPE(2026-09-13 复查加固)
-                        if (url == null) return null;
-                        timeoutHandler.removeMessages(MSG_PARSE_TIMEOUT);
-                        String cookie = CookieManager.getInstance().getCookie(url);
-                        if (!TextUtils.isEmpty(cookie)) headers.put("Cookie", " " + cookie);//携带cookie
-                        if (view != null) playUrl(url, headers);
-                    }
-                }
-            }
-
-            return ad || loadFoundCount.get() > 0 ?
-                    AdBlocker.createEmptyResource() :
-                    null;
-        }
-
-        @Nullable
-        @Override
-        public WebResourceResponse shouldInterceptRequest(WebView view, String url) {
-            return null;
-        }
-
-        @Nullable
-        @Override
-        @TargetApi(Build.VERSION_CODES.LOLLIPOP)
-        public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
-            String url = request.getUrl().toString();
-            LOG.i("echo-shouldInterceptRequest url:" + url);
-            HashMap<String, String> webHeaders = new HashMap<>();
-            Map<String, String> hds = request.getRequestHeaders();
-            if (hds != null && hds.keySet().size() > 0) {
-                for (String k : hds.keySet()) {
-                    if (k.equalsIgnoreCase("user-agent")
-                            || k.equalsIgnoreCase("referer")
-                            || k.equalsIgnoreCase("origin")) {
-                        webHeaders.put(k, " " + hds.get(k));
-                    }
-                }
-            }
-            return checkIsVideo(url, webHeaders);
-        }
-    }
-
-    // ==================== 取流入口(P1 第三组 3b) ====================
+    // ==================== 取流入口 ====================
     // play/playUrl/goPlayUrl 是"调度 → 视图"的分界线:决策(外部播放器、dash 强制 EXO、纯音频渲染、
     // 进度继承、预载命中)在调度层,真正操作 MyVideoView 的连招交给 view.startVideoPlayback(...)。
 
-    /**
-     * 换源点击即停标记:[markStoppedForSourceSwitch] 置位,[play] 清除;抑制在途取流结果/超时/嗅探回调
-     * 把已停的旧源重新拉起(原 PlayContainer 字段,3b 随 play/goPlayUrl 一并迁入)。
-     */
-    private boolean switchStopPending;
-    /** 换源停播时记下的进度(键+毫秒):新源进度键不同,取流后写进新键缓存以接着看(见 play) */
-    private String pendingInheritKey;
-    private long pendingInheritProgress;
 
     public boolean isSwitchStopPending() {
-        return switchStopPending;
+        return st.switchStopPending;
     }
 
     /** 换源点击即停时记下"接着看"的进度(play 时写进新键) */
     public void setPendingInherit(String key, long progress) {
-        this.pendingInheritKey = key;
-        this.pendingInheritProgress = progress;
+        st.pendingInheritKey = key;
+        st.pendingInheritProgress = progress;
     }
 
     /**
@@ -2128,7 +1310,7 @@ public class PlaybackController {
      *
      * <p>单独抽成方法是因为 D6「同片接管」**不经过** {@link #play(boolean)} —— 播放器里已经是这一集,
      * 不再取流重播;而标题原先只在 play() 里下发,导致"退出详情页 → 重新进入同一部"顶栏标题为空
-     * (2026-09-14 用户反馈的"标题不显示观看的影视")。接管路径必须自己补一次。
+     * (顶栏标题为空的场景)。接管路径必须自己补一次。
      */
     public void publishTitle() {
         if (view == null || vod() == null) return;
@@ -2144,21 +1326,21 @@ public class PlaybackController {
      */
     public void play(boolean reset) {
         // 新播放是用户显式请求(换源落地/回滚重播):解除换源停播抑制
-        switchStopPending = false;
+        st.switchStopPending = false;
         // 入口即失效(见 parseGeneration):上一集的在途结果不得再拉起播放。必须在下面的 early return 之前
-        parseGeneration.incrementAndGet();
-        // 预载失效事件(切集/换线/换源/重播):作废在途预解析与预载数据,稳定播放后重新评估(规格 §6)
+        resolver.nextGen();
+        // 预载失效事件(切集/换线/换源/重播):作废在途预解析与预载数据,稳定播放后重新评估
         invalidatePreload();
         if (view != null) view.hidePreloadReadyTip();
         if (vod() == null) return;
         boolean reusePlayer = consumeReusePlayerOnSwitch();
-        switchingPlayback = true;
-        audioPlayback = false;
+        st.switchingPlayback = true;
+        st.audioPlayback = false;
         if (view != null) {
             view.onNewPlayStarted();
             view.clearArtwork();
         }
-        // 逐级判空 + 集号 clamp(与 goPlayUrl 的 BugReview #33 同源防护):历史恢复的线路在
+        // 逐级判空 + 集号 clamp(与 goPlayUrl 同源防护):历史恢复的线路在
         // 当前源不存在、或源更新后集数变少时,裸链式取值会 NPE/IOOBE 直接崩在主线程;
         // 走失败链路(自动换线兜底)而不是崩溃
         VodInfo.VodSeries vs = currentSeries(vod().playFlag, vod().playIndex);
@@ -2202,12 +1384,12 @@ public class PlaybackController {
         startResolvePlayUrlTimeout();
         // 换源点击即停前记下的进度:新源进度键不同,写进新键缓存接着看(新键已有历史记录则不覆盖);
         // 回滚原源时键相同,停播 release 已落盘,该方法会直接跳过
-        if (pendingInheritProgress > 0 && !TextUtils.isEmpty(pendingInheritKey)) {
-            inheritProgressFrom(pendingInheritKey, pendingInheritProgress);
-            LOG.i("echo-switchSource inherit progress " + pendingInheritProgress + "ms from " + pendingInheritKey);
+        if (st.pendingInheritProgress > 0 && !TextUtils.isEmpty(st.pendingInheritKey)) {
+            inheritProgressFrom(st.pendingInheritKey, st.pendingInheritProgress);
+            LOG.i("echo-switchSource inherit progress " + st.pendingInheritProgress + "ms from " + st.pendingInheritKey);
         }
-        pendingInheritKey = null;
-        pendingInheritProgress = 0;
+        st.pendingInheritKey = null;
+        st.pendingInheritProgress = 0;
         // 重新播放清除现有进度
         if (reset) {
             CacheManager.delete(MD5.string2MD5(progressKey()), 0);
@@ -2233,7 +1415,7 @@ public class PlaybackController {
             return;
         }
         // p2p 取流是异步回调(可能数十秒):同样带发起时的代际,切集后旧地址不得起播
-        final int thunderGen = parseGeneration.get();
+        final int thunderGen = resolver.currentGen();
         if (Thunder.play(vs.url, new Thunder.ThunderCallback() {
             @Override
             public void status(int code, String info) {
@@ -2274,7 +1456,7 @@ public class PlaybackController {
      * <p>自动重试/重播兜底/自动换线走的都是 2 参 {@link #playUrl}(与 goPlayUrl 同帧同代际)⇒ 不会误杀。
      */
     private void playUrl(int gen, String url, HashMap<String, String> headers) {
-        if (!isParseResultCurrent(gen)) {
+        if (!resolver.isParseResultCurrent(gen)) {
             LOG.i("echo-ignore stale parse result");
             return;
         }
@@ -2317,20 +1499,20 @@ public class PlaybackController {
         }
         if (view == null || !view.isPageAlive()) return;
         // 调用方与解析回调同帧或同线程 ⇒ 本地址归属当前轮,在排队前签发代际(见 playUrlGeneration 注释)
-        playUrlGeneration = parseGeneration.get();
+        playUrlGeneration = resolver.currentGen();
         final String finalUrl = url;
         view.runOnUi(new Runnable() {
             @Override
             public void run() {
-                if (switchStopPending) {
+                if (st.switchStopPending) {
                     // 换源点击即停后,已排队的取流结果(含嗅探/解析回调)不得再拉起播放
                     LOG.i("echo-ignore goPlayUrl while source switching");
                     return;
                 }
-                if (playUrlGeneration != parseGeneration.get()) {
+                if (playUrlGeneration != resolver.currentGen()) {
                     // 上一轮的产物(排队期已切集/换线/换源/重播)⇒ 丢弃,并撤掉旧链超时(否则到期会触发一次换线)
                     LOG.i("echo-ignore goPlayUrl of stale parse result");
-                    timeoutHandler.removeMessages(MSG_PARSE_TIMEOUT);
+                    resolver.cancelParseTimeout();
                     return;
                 }
                 // 地址在归属确认之后才记录,否则被丢弃的旧地址会留在 webPlayUrl 上被 autoRetry 拿去重播
@@ -2342,7 +1524,7 @@ public class PlaybackController {
                     int playerType = playerCfg().getInt("pl");
                     if (playerType >= 10) {
                         view.releasePlayer();
-                        // BugReview #33:历史恢复的线路在当前源不存在、或换源与切集交错时,
+                        // 历史恢复的线路在当前源不存在、或换源与切集交错时,
                         // seriesMap 链式取值可能 NPE,逐级判空后回退仅用片名
                         List<VodInfo.VodSeries> series = (vod() == null || vod().seriesMap == null) ? null : vod().seriesMap.get(vod().playFlag);
                         VodInfo.VodSeries vs = (series == null || vod().playIndex < 0 || vod().playIndex >= series.size()) ? null : series.get(vod().playIndex);
@@ -2368,7 +1550,7 @@ public class PlaybackController {
                 } else {
                     view.applyPlayerConfigToView(0);
                 }
-                // 纯音频 URL 预判(2026-09-13):音乐直链没有视频帧,SurfaceView 渲染会"洞穿"应用窗口 ——
+                // 纯音频 URL 预判:音乐直链没有视频帧,SurfaceView 渲染会"洞穿"应用窗口 ——
                 // 任务快照里播放器区域变白、回前台透视桌面(详见 MyVideoView.switchRenderToTexture)。
                 // 这里直接改用 TextureView 起播,补住「起播 → 轨道信息就绪」之间退后台的空窗;
                 // 误判(音频后缀实为视频)无功能损失,TextureView 照常渲染画面。
@@ -2392,7 +1574,7 @@ public class PlaybackController {
         }
     }
 
-    // ==================== 预载调度(P1 第四组 4a) ====================
+    // ==================== 预载调度 ====================
     // 目标评估时机(正片稳定/缓冲让路/缓冲结束补枪)、结果取用与冷却期都在 PreloadCoordinator;
     // 调度层负责"何时喂快照、何时取结果、何时作废",页面只提供快照(需上下文与真实内核实例)与 Toast。
 
@@ -2446,36 +1628,20 @@ public class PlaybackController {
         }
     }
 
-    // ==================== 音乐会话/媒体通知(P1 第四组 4b) ====================
-    // 通知与媒体会话的"何时更新、何时停"属于调度;页面提供上下文、宿主(PlaybackHostApi)、
-    // 播放状态读取与封面挂载。通知栏的播放/暂停/上一集/下一集/拖动都打回 PlaybackHostApi。
+    // ==================== 音乐会话/媒体通知 ====================
 
-    /** 取流/起播期间不更新通知(避免"旧集通知 → 新集"的中间态) */
-    private boolean switchingPlayback;
 
     /**
-     * 页面在"本集播完会自动续下一集"时提前登记切换中(须在 {@link #play(boolean)} 之前调)。
+     * 本集播完会自动续下一集时提前登记切换中(须在 {@link #play(boolean)} 之前调)。
      *
-     * <p>状态事件同步派发给所有监听器且引擎监听先注册,故 STATE_PLAYBACK_COMPLETED 到达时
-     * {@link #updateMusicSession} 会先跑:此刻 {@link #switchingPlayback} 仍为 false 就会按"播完"
-     * 撤掉会话与通知(表现:一首放完,通知消失,下一首在放却没通知)。清位同 {@code play()} 内部那次。
-     *
-     * <p>⚠️ 2026-09-19:仅靠"提前登记"不足以覆盖**本集自然播完自动续播**这条路径(登记发生在
-     * COMPLETED 之后),故播完分支已改为延后一拍判定({@link #handlePendingCompletionDrop});
-     * 本方法顺带撤销那条待判消息,二者配合才完整。
+     * <p>⚠️ 事件同步派发且引擎监听先注册,故 COMPLETED 到达时 {@link #updateMusicSession} 先跑:
+     * 此刻仍为 false 就会按"播完"撤掉会话与通知(表现:一首放完通知消失,下一首在放却没通知)。
+     * 自然播完那条路径靠 {@link #handlePendingCompletionDrop} 延后一拍判定,本方法顺带撤销该消息。
      */
     public void beginSwitchPlayback() {
-        switchingPlayback = true;
+        st.switchingPlayback = true;
         timeoutHandler.removeMessages(MSG_DROP_SESSION_AFTER_COMPLETED);
     }
-    /** 是否维护了媒体会话(有音频轨就维护;影视同样,见 updateMusicSession) */
-    private boolean audioPlayback;
-    /**
-     * 本次会话确认过"纯音频"的粘滞标记:轨道信息随时可能读不到(内核重建/播放器 ERROR),
-     * 实时读取失败不能让退后台判定翻转成影视。复位点仅内容边界({@link #beginNewPlay()} 与 startSession)。
-     * 不得用于封面判定(封面须实时读取,否则影视被压成海报)。
-     */
-    private boolean audioOnlyConfirmed;
     /** 纯音频封面地址(影视绝不设置:否则视频被压成海报) */
     private String playArtwork;
     /** 当前集的弹幕地址(取流结果或弹幕搜索的产物;退页面重进时页面要重新拿一份) */
@@ -2504,7 +1670,7 @@ public class PlaybackController {
     }
 
     /**
-     * 页面退出(返回上一级 / 回首页)的统一收尾 —— **用户 2026-09-14 选定"退页面即停"**(与 fongmi 默认语义一致)。
+     * 页面退出(返回上一级 / 回首页)的统一收尾:**"退页面即停"**(与 fongmi 默认语义一致)。
      *
      * <p>停播本身由引擎做(并且**保留播放器实例**,不 release,以保住"跨页不重建内核"的收益);
      * 这里负责把"还在跑的东西"收干净:撤在途取流与三处超时、清会话标记、停媒体会话(撤通知 + 放 wake/wifi 锁)。
@@ -2525,20 +1691,18 @@ public class PlaybackController {
     }
 
     public void stopPlaybackForPageExit() {
-        switchingPlayback = false;
-        audioPlayback = false;
+        st.clearSessionFlags();
         // 与 onHostDestroy 同属会话边界:一并作废"播完待撤会话"的待判消息
         timeoutHandler.removeMessages(MSG_DROP_SESSION_AFTER_COMPLETED);
         cancelInFlight();
-        // 页面退出即"没有正在播的源"(原 PlayContainer.hostDestroy 里的那句,同样属于共享状态)
+        // 页面退出即"没有正在播的源"
         ApiConfig.get().setCurrentPlaySourceKey("");
         stopMusicSession();
     }
 
     /** 起播失败/换源点击即停:清会话标记并停掉通知 */
     public void stopMusicSessionForFailedPlayback() {
-        switchingPlayback = false;
-        audioPlayback = false;
+        st.clearSessionFlags();
         timeoutHandler.removeMessages(MSG_DROP_SESSION_AFTER_COMPLETED);
         stopMusicSession();
     }
@@ -2551,8 +1715,7 @@ public class PlaybackController {
 
     /** 页面销毁:清会话标记 + 停通知 + 收预载(对应原 hostDestroy 的音乐/预载段) */
     public void onHostDestroy() {
-        switchingPlayback = false;
-        audioPlayback = false;
+        st.clearSessionFlags();
         timeoutHandler.removeMessages(MSG_DROP_SESSION_AFTER_COMPLETED);
         // 引擎已释放:三处超时消息若留着,到期仍会走"换线/报错"链路并打到视图桥(见 detach 的桥切换)
         cancelPlayTimeout();
@@ -2562,11 +1725,9 @@ public class PlaybackController {
         destroyPreload();
     }
 
-    /**
-     * 退后台是否保留播放:本次会话确认过纯音频才保留(粘滞确认见 {@link #audioOnlyConfirmed})。
-     */
+    /** 退后台是否保留播放:本次会话确认过纯音频才保留(粘滞标记见 {@link PlaybackAttemptState#audioOnlyConfirmed}) */
     public boolean isConfirmedAudioOnly() {
-        return Boolean.TRUE.equals(isAudioOnlyPlayback()) || audioOnlyConfirmed;
+        return Boolean.TRUE.equals(isAudioOnlyPlayback()) || st.audioOnlyConfirmed;
     }
 
     /**
@@ -2575,24 +1736,24 @@ public class PlaybackController {
      * @return true = 切换集期间本集已播完(仅保留会话,调用方应直接 return,不再走弹幕等后续逻辑)
      */
     public boolean handlePlayStateForMusicSession(int playState) {
-        if (switchingPlayback) {
+        if (st.switchingPlayback) {
             if (playState == VideoView.STATE_PLAYBACK_COMPLETED) {
                 LOG.i("echo-music keep session while resolving next episode");
                 return true;
             } else if (playState == VideoView.STATE_ERROR) {
                 // 只解除"切换中"抑制:在此清 audioPlayback 会让后续既不能重试也不能重建会话
-                switchingPlayback = false;
+                st.switchingPlayback = false;
             } else if (isStartedPlayState(playState)) {
                 // 起播成功:有音频轨则维护会话/通知(影视同样,见 updateMusicSession 的语义拆分)
-                if (hasPlayableAudio() || audioPlayback) {
-                    switchingPlayback = false;
-                    audioPlayback = true;
+                if (hasPlayableAudio() || st.audioPlayback) {
+                    st.switchingPlayback = false;
+                    st.audioPlayback = true;
                 }
             }
         }
-        if (!switchingPlayback) {
+        if (!st.switchingPlayback) {
             if (playState == VideoView.STATE_PLAYBACK_COMPLETED) {
-                // ⚠️ **不能在此直接 updateMusicSession()**(2026-09-19 真机根因修复)。
+                // ⚠️ **不能在此直接 updateMusicSession()**。
                 // 引擎的状态监听器注册在页面之前(见 PlaybackEngine.createPlayerView 与
                 // MusicPlayerActivity.initView),所以 COMPLETED 到达时**本方法总是先跑**,
                 // 而"要续播下一集"的登记(beginSwitchPlayback)在页面监听器里(onSongCompleted
@@ -2603,7 +1764,7 @@ public class PlaybackController {
                 //      ⇒ 系统拒绝(真机原文 Service.startForeground() not allowed due to
                 //      mAllowStartForeground false)⇒ **通知永久回不来**;
                 //   ③ audioPlayback 被清 ⇒ 退后台判定也不再豁免。
-                // 真机(vivo V2425A / Android 16,2026-09-19)复现:后台播完一首自动切歌,19 秒后
+                // 真机复现:后台播完一首自动切歌,19 秒后
                 // 通知消失、连两次 startForeground 被拒、回到页面点击无反应。
                 // 改为**延后一拍**再判:让同一次状态分发里页面的 beginSwitchPlayback() 有机会先执行。
                 timeoutHandler.removeMessages(MSG_DROP_SESSION_AFTER_COMPLETED);
@@ -2624,12 +1785,12 @@ public class PlaybackController {
      * ③ 页面是否已不存活。
      */
     private void handlePendingCompletionDrop() {
-        if (switchingPlayback) {
+        if (st.switchingPlayback) {
             LOG.i("echo-music completion drop skipped: page registered switching");
             return;
         }
         if (view == null) return;
-        // ⚠️ 必须与 updateMusicSession 同一道支持性前置(2026-09-19 审查回归修复):旧路径的撤会话
+        // ⚠️ 必须与 updateMusicSession 同一道支持性前置:旧路径的撤会话
         // 是经 updateMusicSession 走的,那里有 `if (!PlaybackService.isSupported(context)) return;`。
         // 本方法直接调 stopSession 会绕过它 —— 在 isSupported()==false 的设备(电视盒子 / API<26)
         // 上就变成"每次播完都去 release 一个 onCreate 建好、与页面同生命周期的 MediaSessionCompat
@@ -2657,11 +1818,11 @@ public class PlaybackController {
         }
         LOG.i("echo-music session drop after completed (deferred): no next episode registered");
         PlaybackService.stopSession(view.context(), view.playbackHost());
-        audioPlayback = false;
+        st.audioPlayback = false;
     }
 
     /**
-     * 当前媒体是否有音频轨(2026-09-13 由"是否纯音频"拆出)。
+     * 当前媒体是否有音频轨(与"是否纯音频"是两个判定)。
      *
      * <p>拆分的理由:两件事被混在了一个判定里 ——
      * ① **要不要建 MediaSession / 前台服务通知**(用户要求播放影视也能下拉看到)→ 只要**有音频轨**即可;
@@ -2705,7 +1866,7 @@ public class PlaybackController {
     }
 
     /**
-     * 渲染类型与轨道类型对齐(2026-09-13,双向兜底):
+     * 渲染类型与轨道类型对齐(双向兜底):
      * 确认纯音频 → 热切 TextureView(URL 预判漏网的无后缀音乐直链);确认有视频轨 → 按用户设置恢复渲染视图
      * (回放走复用路径时 fork 的 replay 不重建 RenderView,纯音频热切后播视频集会一直留在 TextureView)。
      * 轨道信息未知(null:未起播/不支持)时两边都不动,避免误切。
@@ -2721,21 +1882,18 @@ public class PlaybackController {
     }
 
     /**
-     * 维护媒体会话与前台通知(有音频轨就维护,影视/音乐一视同仁;拿到轨道信息前沿用上次判定)。
+     * 维护媒体会话与前台通知(有音频轨就维护,影视/音乐一视同仁)。
      *
-     * <p>⚠️ 封面(artworkView)盖在渲染 Surface 之上,只能给「纯音频」兜底,绝不能给影视占位
-     * (影视一旦 setArtwork,视频被压成海报)。三个条件缺一不可:①确定纯音频(实时读轨道,
-     * **不能用** {@link #audioOnlyConfirmed} 粘滞标记);②画面未就绪;③audioPlayback(既有门槛)。
-     * 2026-09-13 回归修复:此前只判 audioPlayback → 压住所有视频。
+     * <p>⚠️ 封面只给「纯音频」兜底,绝不能给影视占位(一旦 setArtwork,视频被压成海报):①实时读轨道确定纯音频
+     * (**不能用** {@link PlaybackAttemptState#audioOnlyConfirmed} 粘滞标记);②画面未就绪;③audioPlayback。
      *
-     * <p>本方法是通知/会话的唯一入口:audioPlayback 在此**只置位不清零**(清零只在会话边界),
-     * 否则一次读取失败就会让通知永久消失(撤会话会连带清该标记,而重建只认 STATE_PLAYING 事件)。
+     * <p>audioPlayback 在此**只置位不清零**(清零只在会话边界),否则一次读取失败会让通知永久消失。
      */
     public void updateMusicSession() {
         if (view == null || !view.isPageAlive()) return;
         Context context = view.context();
         if (!PlaybackService.isSupported(context)) return;
-        if (switchingPlayback) return;
+        if (st.switchingPlayback) return;
         TrackInfo trackInfo = currentTrackInfo();
         Boolean hasAudio = trackInfo != null && !trackInfo.getAudio().isEmpty();
         Boolean audioOnly = trackInfo == null || trackInfo.getAudio().isEmpty()
@@ -2743,21 +1901,21 @@ public class PlaybackController {
         // 只置位不清零:"读到轨道列表但 audio 为空"≠"没有音频"(Exo 在 IDLE/重取流期、音频渲染器
         // 未选中时同样给空 audio 列表),据此清零会让通知与退后台判定双双失效。清零只在会话边界。
         if (Boolean.TRUE.equals(hasAudio)) {
-            audioPlayback = true;
-            if (Boolean.TRUE.equals(audioOnly)) audioOnlyConfirmed = true;
+            st.audioPlayback = true;
+            if (Boolean.TRUE.equals(audioOnly)) st.audioOnlyConfirmed = true;
         }
         int state = view.currentPlayState();
         LOG.i("echo-music session gate: state=" + state + " playing=" + view.isPlaying()
-                + " hasAudio=" + hasAudio + " audioOnly=" + audioOnly + " audioPlayback=" + audioPlayback
-                + " audioOnlyConfirmed=" + audioOnlyConfirmed + " switching=" + switchingPlayback
+                + " hasAudio=" + hasAudio + " audioOnly=" + audioOnly + " audioPlayback=" + st.audioPlayback
+                + " audioOnlyConfirmed=" + st.audioOnlyConfirmed + " switching=" + st.switchingPlayback
                 + " pos=" + view.currentPosition());
-        if (audioPlayback && Boolean.TRUE.equals(audioOnly)
+        if (st.audioPlayback && Boolean.TRUE.equals(audioOnly)
                 && !isStartedPlayState(state)
                 && TextUtils.isEmpty(playArtwork) && vod() != null && !TextUtils.isEmpty(vod().pic)) {
             playArtwork = vod().pic;
             view.setArtwork(playArtwork);
         }
-        if ((state == VideoView.STATE_ERROR && audioOnlyConfirmed) && retryAfterStartedError()) {
+        if ((state == VideoView.STATE_ERROR && st.audioOnlyConfirmed) && retryAfterStartedError()) {
             // 已确认纯音频的会话遇可重试错误:同地址重播一次并**保留会话**(撤会话会连锁清 audioPlayback,
             // 而重建只认 STATE_PLAYING 事件 ⇒ 后台失败后点播放再也不出通知)。重试无路可走则照旧撤会话。
             // ⚠️ 判据不得放宽成 audioPlayback:影视也带音轨,会抢在详情页 errorWithRetry 之前
@@ -2765,14 +1923,14 @@ public class PlaybackController {
             LOG.i("echo-music session keep: auto retry after started error (audio-only)");
             return;
         }
-        if (vod() == null || !audioPlayback
+        if (vod() == null || !st.audioPlayback
                 || state == VideoView.STATE_ERROR
                 || state == VideoView.STATE_PLAYBACK_COMPLETED) {
-            LOG.i("echo-music session drop: vod=" + (vod() != null) + " audioPlayback=" + audioPlayback
+            LOG.i("echo-music session drop: vod=" + (vod() != null) + " audioPlayback=" + st.audioPlayback
                     + " state=" + state + " (ERROR=" + VideoView.STATE_ERROR
                     + " COMPLETED=" + VideoView.STATE_PLAYBACK_COMPLETED + ")");
             PlaybackService.stopSession(context, view.playbackHost());
-            audioPlayback = false;
+            st.audioPlayback = false;
             return;
         }
         // 通知权限兜底(启动时已在 MainActivity 申请过一次):覆盖"启动那次被拒、后来手动开启"的路径
