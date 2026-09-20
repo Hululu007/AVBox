@@ -99,6 +99,8 @@ internal class LivePlayViewModel : ViewModel() {
     var tsDuration by mutableIntStateOf(0)
     var channelInfoUi by mutableStateOf(ChannelInfoUi())
     val expandedGroups = mutableStateListOf<Int>()
+    var currentChannelGroupIndex by mutableIntStateOf(0)
+    var currentLiveChannelIndex by mutableIntStateOf(-1)
 
     /** 切组/切配置的请求代号:响应回来时对不上就作废(用户可能连点了好几次) */
     private var liveConfigRequestId = 0

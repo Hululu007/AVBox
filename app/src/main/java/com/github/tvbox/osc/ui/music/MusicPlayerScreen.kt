@@ -89,6 +89,7 @@ import com.github.tvbox.osc.R
 import com.github.tvbox.osc.player.ui.CastSheet
 import com.github.tvbox.osc.ui.components.AVBoxBottomSheet
 import com.github.tvbox.osc.ui.components.LocalTopBarGlassBackdrop
+import com.github.tvbox.osc.ui.components.ScallopShape
 import com.github.tvbox.osc.ui.components.TopBarActionBox
 import com.github.tvbox.osc.ui.components.glassTopBarSurface
 import com.github.tvbox.osc.ui.player.PlayerTipBridge
@@ -99,7 +100,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.PI
-import kotlin.math.cos
 import kotlin.math.sin
 
 @Composable
@@ -837,34 +837,6 @@ private class EggShape(
 }
 
 private val ScallopIconShape: Shape = ScallopShape()
-
-private class ScallopShape(
-    private val lobes: Int = 13,
-    private val depth: Float = 0.07f,
-    private val stepsPerLobe: Int = 24,
-) : Shape {
-
-    override fun createOutline(
-        size: Size,
-        layoutDirection: LayoutDirection,
-        density: Density,
-    ): Outline {
-        val path = Path()
-        val cx = size.width / 2f
-        val cy = size.height / 2f
-        val radius = minOf(cx, cy) / (1f + depth)
-        val total = lobes * stepsPerLobe
-        for (i in 0..total) {
-            val angle = i.toFloat() / total * TWO_PI
-            val r = radius * (1f + depth * cos(lobes * angle))
-            val x = cx + r * cos(angle)
-            val y = cy + r * sin(angle)
-            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
-        }
-        path.close()
-        return Outline.Generic(path)
-    }
-}
 
 private val TWO_PI = (2f * PI).toFloat()
 

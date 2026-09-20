@@ -4,7 +4,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,23 +19,20 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.player.state.LockVisibility
 import com.github.tvbox.osc.player.state.PlayerActions
 import com.github.tvbox.osc.player.state.PlayerUiState
 
 /**
- * 浮层组（照搬旧 tv_pause_container / tv_slide_progress_text / tv_progress_container /
+ * 浮层组（照搬旧 tv_slide_progress_text / tv_progress_container /
  * loading / tv_play_load_net_speed / tv_back / tv_lock / play_speed_3_container）。
  * 视觉：提示类浮层（seek 提示 / 亮度音量提示）统一为 M3 surface 药丸 —— 半透明
  * `surfaceContainer`(90%) + 4dp 轻投影、无描边、内容自适应（2026-09-13 用户定稿，
@@ -63,28 +59,13 @@ private fun HintPill(modifier: Modifier, content: @Composable () -> Unit) {
 }
 
 /**
- * 暂停浮层：左上标题(3行) + 中央播放图标。
- * 中央图标与控制菜单中央组同尺寸同素材（60dp / player_ic_play），位置严格同心；
- * 点按直接恢复播放（免二次点击），点图标以外区域仍由控制器手势唤出菜单。
+ * 暂停浮层：仅中央播放键（60dp 半透明圆底，点按即续播，免二次点击）。
+ * 退后台触发的暂停不显示（pauseOverlayVisible 排除 lifecyclePaused）——避免被系统任务快照拍出"已暂停"假象。
  */
 @Composable
 fun PlayerPauseLayer(state: PlayerUiState, actions: PlayerActions) {
     if (!state.pauseOverlayVisible) return
     Box(Modifier.fillMaxSize()) {
-        Text(
-            text = state.pauseTitle,
-            color = Color.White,
-            fontSize = playerTextSize(R.dimen.ts_20),
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(
-                    start = playerDim(R.dimen.vs_20) * 2,
-                    top = playerDim(R.dimen.vs_20) + playerDim(R.dimen.vs_10),
-                )
-        )
-        // 中央：半透明圆底 + 播放图标（固定 60dp，与中央控制组同款）；点按即播放
         Box(
             Modifier
                 .align(Alignment.Center)

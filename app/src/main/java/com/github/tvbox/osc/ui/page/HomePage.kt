@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -100,6 +101,10 @@ import com.github.tvbox.osc.ui.theme.cardContainer
 import com.github.tvbox.osc.util.HomeSettings
 import com.kyant.capsule.ContinuousCapsule
 
+private val HomeSourceCapsuleMaxWidth = 240.dp
+
+private val HomeTopBarControlSpacing = 8.dp
+
 @Composable
 fun HomePage(vm: HomeViewModel, bottomPadding: Dp = 0.dp) {
     val context = LocalContext.current
@@ -131,18 +136,19 @@ fun HomePage(vm: HomeViewModel, bottomPadding: Dp = 0.dp) {
 
     var showSourceSheet by remember { mutableStateOf(false) }
     var showSearchSettings by remember { mutableStateOf(false) }
-    var policyTick by remember { mutableStateOf(0) }
 
     AppTopBarScaffold(
         collapseEnabled = false,
         titleContent = {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier
-                        .widthIn(max = 240.dp)
+                        .widthIn(
+                            max = minOf(
+                                HomeSourceCapsuleMaxWidth,
+                                maxWidth - HomeTopBarControlSpacing,
+                            ),
+                        )
                         .glassTopBarSurface(ContinuousCapsule, MaterialTheme.colorScheme.cardContainer)
                         .heightIn(min = 40.dp)
                         .clickable { showSourceSheet = true }
@@ -198,7 +204,7 @@ fun HomePage(vm: HomeViewModel, bottomPadding: Dp = 0.dp) {
                     tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(HomeTopBarControlSpacing))
             Box(
                 modifier = Modifier
                     .size(40.dp)
@@ -374,10 +380,9 @@ fun HomePage(vm: HomeViewModel, bottomPadding: Dp = 0.dp) {
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
             ) {
                 item {
-                    SettingsGroup(title = "卡片点击状态:进入搜索 / 进入详情(按源自动判断,点标记可手动改)") {
+                    SettingsGroup(title = null) {
                         sources.forEachIndexed { index, bean ->
                             val selected = bean.key == currentSource?.key
-                            val policy = remember(bean.key, policyTick) { VodCardPolicy.policyOf(bean.key) }
                             val position = when {
                                 sources.size == 1 -> SettingsCardPosition.SINGLE
                                 index == 0 -> SettingsCardPosition.FIRST
@@ -396,15 +401,6 @@ fun HomePage(vm: HomeViewModel, bottomPadding: Dp = 0.dp) {
                                             vm.switchSource(bean)
                                         }
                                         dismissAnimated()
-                                    },
-                                    trailing = {
-                                        CardPolicyPill(
-                                            policy = policy,
-                                            modifier = Modifier.padding(end = 6.dp),
-                                        ) {
-                                            VodCardPolicy.setPolicy(bean.key, policy.toggled())
-                                            policyTick++
-                                        }
                                     },
                                 )
                             }
@@ -481,24 +477,6 @@ fun HomePullRefreshIndicator(
 
 private fun handleCardClick(vm: HomeViewModel, video: Movie.Video, context: android.content.Context) {
     context.dispatchVodCardClick(video, onAction = { vm.handleAction(it) })
-}
-
-@Composable
-private fun CardPolicyPill(policy: SourceCardPolicy, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Text(
-        text = policy.label,
-        style = MaterialTheme.typography.labelMedium,
-        color = if (policy == SourceCardPolicy.DETAIL) {
-            MaterialTheme.colorScheme.primary
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant
-        },
-        modifier = modifier
-            .clip(RoundedCornerShape(18.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainer)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-    )
 }
 
 @Composable

@@ -92,6 +92,12 @@ public class VideoView<P extends AbstractPlayer> extends FrameLayout
     public static final int STATE_START_ABORT = 8;//开始播放中止
     protected int mCurrentPlayState = STATE_IDLE;//当前播放器的状态
 
+    /**
+     * seek 前处于暂停:内核围绕 seek 会发缓冲/首帧回调把播放状态顶离 PAUSED,而 setPlayState(STATE_PAUSED)
+     * 只在 pause() 里 ⇒ 暂停语义丢失(暂停浮层不再出现、中央播放暂停图标与实际画面不一致)。改变播放意图的动作清除。
+     */
+    private boolean mPausedBeforeSeek;
+
     public static final int PLAYER_NORMAL = 10;        // 普通播放器
     public static final int PLAYER_FULL_SCREEN = 11;   // 全屏播放器
     public static final int PLAYER_TINY_SCREEN = 12;   // 小屏播放器
@@ -296,6 +302,8 @@ public class VideoView<P extends AbstractPlayer> extends FrameLayout
     }
 
     protected void startPrepare(boolean reset, boolean rebindRenderView) {
+        // 新一次起播(replay 也走这里):seek 前的暂停记忆随之作废,否则会把在播的新内容按回暂停
+        mPausedBeforeSeek = false;
         if (reset) {
             mMediaPlayer.reset();
             //重新设置option，media player reset之后，option会失效
@@ -332,6 +340,7 @@ public class VideoView<P extends AbstractPlayer> extends FrameLayout
      * 播放状态下开始播放
      */
     protected void startInPlaybackState() {
+        mPausedBeforeSeek = false;
         mMediaPlayer.start();
         setPlayState(STATE_PLAYING);
         if (mAudioFocusHelper != null && !isMute()) {
@@ -347,6 +356,8 @@ public class VideoView<P extends AbstractPlayer> extends FrameLayout
     public void pause() {
         if (isInPlaybackState()
                 && mMediaPlayer.isPlaying()) {
+            // 只在暂停真正生效时清:无效的 pause()(内核本就没在播)不能把"暂停记忆"提前丢掉
+            mPausedBeforeSeek = false;
             mMediaPlayer.pause();
             setPlayState(STATE_PAUSED);
             if (mAudioFocusHelper != null && !isMute()) {
@@ -399,6 +410,7 @@ public class VideoView<P extends AbstractPlayer> extends FrameLayout
     }
 
     private void resumePlay(){
+        mPausedBeforeSeek = false;
         mMediaPlayer.start();
         setPlayState(STATE_PLAYING);
         if (mAudioFocusHelper != null && !isMute()) {
@@ -442,6 +454,7 @@ public class VideoView<P extends AbstractPlayer> extends FrameLayout
      * 释放播放器
      */
     public void release() {
+        mPausedBeforeSeek = false;
         //焦点监听与 IDLE 无关:stopPlaybackKeepPlayer 置 IDLE 后再 release 也必须清,否则 listener 残留在系统里
         if (mAudioFocusHelper != null) {
             mAudioFocusHelper.abandonFocus();
@@ -569,8 +582,24 @@ public class VideoView<P extends AbstractPlayer> extends FrameLayout
     @Override
     public void seekTo(long pos) {
         if (isInPlaybackState()) {
+            // 暂停中的 seek:内核不会因此续播,但随后的缓冲回调会把状态顶离 PAUSED,先记下
+            if (mCurrentPlayState == STATE_PAUSED) {
+                mPausedBeforeSeek = true;
+            }
             mMediaPlayer.seekTo(pos);
         }
+    }
+
+    /**
+     * seek 期间的缓冲/首帧回调是否仍按"暂停"呈现:返回 true 时调用方不得再改播放状态。
+     * 用户 seek 后自己点了播放(start/resume)会先清掉标记,不会被误按回暂停。
+     */
+    private boolean keepPausedStateAfterSeek() {
+        if (!mPausedBeforeSeek) return false;
+        if (mCurrentPlayState != STATE_PAUSED) {
+            setPlayState(STATE_PAUSED);
+        }
+        return true;
     }
 
     /**
@@ -631,14 +660,17 @@ public class VideoView<P extends AbstractPlayer> extends FrameLayout
     public void onInfo(int what, int extra) {
         switch (what) {
             case AbstractPlayer.MEDIA_INFO_BUFFERING_START:
-                setPlayState(STATE_BUFFERING);
+                if (!keepPausedStateAfterSeek()) setPlayState(STATE_BUFFERING);
                 break;
             case AbstractPlayer.MEDIA_INFO_BUFFERING_END:
-                setPlayState(STATE_BUFFERED);
+                if (!keepPausedStateAfterSeek()) setPlayState(STATE_BUFFERED);
                 break;
             case AbstractPlayer.MEDIA_INFO_RENDERING_START: // 视频/音频开始渲染
-                setPlayState(STATE_PLAYING);
-                mPlayerContainer.setKeepScreenOn(true);
+                // 暂停中的 seek 也会渲染出新位置的帧,不能据此判成"在播"
+                if (!keepPausedStateAfterSeek()) {
+                    setPlayState(STATE_PLAYING);
+                    mPlayerContainer.setKeepScreenOn(true);
+                }
                 break;
             case AbstractPlayer.MEDIA_INFO_VIDEO_ROTATION_CHANGED:
                 if (mRenderView != null) mRenderView.setVideoRotation(extra);
@@ -723,6 +755,7 @@ public class VideoView<P extends AbstractPlayer> extends FrameLayout
      * @param headers 请求头
      */
     public void setUrl(String url, Map<String, String> headers) {
+        mPausedBeforeSeek = false;
         mAssetFileDescriptor = null;
         mUrl = url;
         mHeaders = headers;

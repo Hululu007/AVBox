@@ -77,6 +77,10 @@ private val HomeFilterChipFitSlack = 2.dp
 
 private val HomeFilterChipPadding = 14.dp
 
+private val HomeGridItemSpacing = 16.dp
+
+private val HomeGridContentTopPadding = 4.dp
+
 @Composable
 fun HomeGridLayout(
     vm: HomeViewModel,
@@ -148,16 +152,22 @@ fun HomeGridLayout(
                 contentPadding = PaddingValues(
                     start = 16.dp,
                     end = 16.dp,
-                    top = 4.dp,
+                    top = HomeGridContentTopPadding,
                     bottom = 88.dp + bottomPadding,
                 ),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(HomeGridItemSpacing),
             ) {
                 if (tabSort != null && tabSort.filters.isNotEmpty()) {
                     item(key = "chips_${tabSort.id}", span = { GridItemSpan(maxLineSpan) }) {
-                        HomeFilterChipsRow(sort = tabSort) { selection ->
-                            tabPartition?.let { vm.applyFilter(it, selection) }
+                        Box(
+                            modifier = Modifier.padding(
+                                top = HomeGridItemSpacing - HomeGridContentTopPadding,
+                            ),
+                        ) {
+                            HomeFilterChipsRow(sort = tabSort) { selection ->
+                                tabPartition?.let { vm.applyFilter(it, selection) }
+                            }
                         }
                     }
                 }
@@ -284,6 +294,10 @@ private fun HomeSortTabRow(
     showFilter: Boolean,
     onFilter: () -> Unit,
 ) {
+    if (sorts.isEmpty()) {
+        Spacer(modifier = Modifier.fillMaxWidth().height(HomeGridTabRowHeight))
+        return
+    }
     val selectedIndex = sorts.indexOfFirst { it.id == selectedId }.coerceAtLeast(0)
     Row(
         modifier = Modifier

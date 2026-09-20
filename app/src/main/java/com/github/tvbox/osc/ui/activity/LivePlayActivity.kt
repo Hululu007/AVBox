@@ -124,8 +124,8 @@ class LivePlayActivity : BaseActivity() {
     private var liveController: ComposeLiveController? = null
     private val mHandler = Handler(Looper.getMainLooper())
     private val liveChannelGroupList = ArrayList<LiveChannelGroup>()
-    internal var currentChannelGroupIndex = 0
-    internal var currentLiveChannelIndex = -1
+    internal var currentChannelGroupIndex: Int by VmVar(LivePlayViewModel::currentChannelGroupIndex)
+    internal var currentLiveChannelIndex: Int by VmVar(LivePlayViewModel::currentLiveChannelIndex)
     internal var currentLiveLookBackIndex = -1
     private var currentLiveChangeSourceTimes = 0
     private var allowLiveSwitchPlayer = true
@@ -419,6 +419,7 @@ class LivePlayActivity : BaseActivity() {
             currentLiveChannelIndex = liveChannelIndex
             currentLiveChannelItem = getLiveChannels(currentChannelGroupIndex)?.get(currentLiveChannelIndex)
             KV.put(HawkConfig.LIVE_CHANNEL, currentLiveChannelItem?.channelName ?: "")
+            scrollTick++
         }
         channelName = currentLiveChannelItem
         currentLiveLookBackIndex = -1

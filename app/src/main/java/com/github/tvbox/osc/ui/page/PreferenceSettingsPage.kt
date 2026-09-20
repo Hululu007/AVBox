@@ -65,6 +65,45 @@ fun PreferenceSettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel =
             SettingsGroup(title = null) {
                 SettingsCard(SettingsCardPosition.FIRST) {
                     SettingsSwitchRow(
+                        title = "历史合并",
+                        checked = state.historyMerge,
+                        onCheckedChange = {
+                            HistoryMerge.setEnabled(it)
+                            vm.refresh()
+                            EventBus.getDefault().post(RefreshEvent(RefreshEvent.TYPE_HISTORY_REFRESH))
+                        },
+                    )
+                }
+                SettingsCard(SettingsCardPosition.MIDDLE) {
+                    SettingsSwitchRow(
+                        title = "无痕模式",
+                        checked = state.incognito,
+                        onCheckedChange = { vm.put(HawkConfig.INCOGNITO, it) },
+                    )
+                }
+                SettingsCard(SettingsCardPosition.MIDDLE) {
+                    SettingsSwitchRow(
+                        title = "禁用手势控制",
+                        subtitle = "开启后将禁用手势控制亮度和音量",
+                        checked = state.gestureControlDisabled,
+                        onCheckedChange = { vm.put(HawkConfig.GESTURE_CONTROL_DISABLED, it) },
+                    )
+                }
+                SettingsCard(SettingsCardPosition.LAST) {
+                    SettingsSwitchRow(
+                        title = "禁用导航动画",
+                        subtitle = "开启后将禁用底部导航的侧滑动画",
+                        checked = state.navAnimationDisabled,
+                        onCheckedChange = { vm.put(HawkConfig.NAV_ANIMATION_DISABLED, it) },
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(28.dp))
+
+            SettingsGroup(title = null) {
+                SettingsCard(SettingsCardPosition.FIRST) {
+                    SettingsSwitchRow(
                         title = "自动换线",
                         checked = state.autoSwitchLine,
                         onCheckedChange = { vm.put(HawkConfig.AUTO_SWITCH_LINE, it) },
@@ -134,45 +173,6 @@ fun PreferenceSettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel =
                                 vm.put(HawkConfig.SEARCH_THREADS, sliderThreads)
                             }
                         },
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(28.dp))
-
-            SettingsGroup(title = null) {
-                SettingsCard(SettingsCardPosition.FIRST) {
-                    SettingsSwitchRow(
-                        title = "历史合并",
-                        checked = state.historyMerge,
-                        onCheckedChange = {
-                            HistoryMerge.setEnabled(it)
-                            vm.refresh()
-                            EventBus.getDefault().post(RefreshEvent(RefreshEvent.TYPE_HISTORY_REFRESH))
-                        },
-                    )
-                }
-                SettingsCard(SettingsCardPosition.MIDDLE) {
-                    SettingsSwitchRow(
-                        title = "无痕模式",
-                        checked = state.incognito,
-                        onCheckedChange = { vm.put(HawkConfig.INCOGNITO, it) },
-                    )
-                }
-                SettingsCard(SettingsCardPosition.MIDDLE) {
-                    SettingsSwitchRow(
-                        title = "禁用手势控制",
-                        subtitle = "开启后将禁用手势控制亮度和音量",
-                        checked = state.gestureControlDisabled,
-                        onCheckedChange = { vm.put(HawkConfig.GESTURE_CONTROL_DISABLED, it) },
-                    )
-                }
-                SettingsCard(SettingsCardPosition.LAST) {
-                    SettingsSwitchRow(
-                        title = "禁用导航动画",
-                        subtitle = "开启后将禁用底部导航的侧滑动画",
-                        checked = state.navAnimationDisabled,
-                        onCheckedChange = { vm.put(HawkConfig.NAV_ANIMATION_DISABLED, it) },
                     )
                 }
             }

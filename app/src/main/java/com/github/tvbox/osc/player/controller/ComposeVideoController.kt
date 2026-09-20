@@ -28,7 +28,6 @@ import com.github.tvbox.osc.player.state.PlayerActions
 import com.github.tvbox.osc.player.state.PlayerUiState
 import com.github.tvbox.osc.util.GestureHelper
 import com.github.tvbox.osc.player.state.SelectDialogState
-import com.github.tvbox.osc.player.ui.PlayerFocusTargets
 import com.github.tvbox.osc.player.ui.PlayerOverlay
 import com.github.tvbox.osc.player.usecase.M3u8PurifyUseCase
 import com.github.tvbox.osc.player.usecase.PlayerSwitchUseCase
@@ -38,7 +37,6 @@ import com.github.tvbox.osc.ui.theme.AVBoxTheme
 import com.github.tvbox.osc.util.DanmuHelper
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.PlayerHelper
-import com.github.tvbox.osc.util.ScreenUtils
 import com.github.tvbox.osc.util.SubtitleHelper
 import com.github.tvbox.osc.util.KV
 import com.github.tvbox.osc.util.PlaybackProgress
@@ -96,7 +94,6 @@ class ComposeVideoController @JvmOverloads constructor(
     // ============================================================
 
     private lateinit var state: PlayerUiState
-    private lateinit var uiFocus: PlayerFocusTargets
 
     // —— 原生字幕视图（§5.4：PlayContainer 直接操作，保留 View 引用） ——
     private lateinit var mSubtitleView: SimpleSubtitleView
@@ -176,7 +173,6 @@ class ComposeVideoController @JvmOverloads constructor(
     override fun initView() {
         super.initView()
         state = PlayerUiState()
-        uiFocus = PlayerFocusTargets()
 
         audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         gestureDetector = GestureDetector(context, this)
@@ -192,7 +188,6 @@ class ComposeVideoController @JvmOverloads constructor(
         state.sysTimeVisible = display == View.VISIBLE
         state.netSpeedSideVisible = display == View.VISIBLE
         state.seekTimeVisible = display == View.VISIBLE
-        state.isTv = ScreenUtils.isTv(context)
         state.isPortrait =
             resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
         updateDanmuBtnState()
@@ -242,7 +237,7 @@ class ComposeVideoController @JvmOverloads constructor(
             setContent {
                 // 视频覆盖层挂在纯黑播放页:状态栏图标外观仍由宿主 Activity 断言,主题不接管
                 AVBoxTheme(manageStatusBarIcons = false) {
-                    PlayerOverlay(state, this@ComposeVideoController, uiFocus)
+                    PlayerOverlay(state, this@ComposeVideoController)
                 }
             }
         }
@@ -567,7 +562,6 @@ class ComposeVideoController @JvmOverloads constructor(
 
     private fun showBottom() {
         applyShowBottom()
-        state.focusNextToken++
     }
 
     /** 等价旧 msg 1002（逐行照搬可见性规则，§7.8） */
@@ -582,7 +576,7 @@ class ComposeVideoController @JvmOverloads constructor(
         } else {
             state.netSpeedSideVisible = false
         }
-        state.backVisible = !(state.isTv || state.isPortrait)
+        state.backVisible = !state.isPortrait
         showLockView()
         keepControlsAlive()
     }
@@ -622,8 +616,7 @@ class ComposeVideoController @JvmOverloads constructor(
             state.lockState = LockVisibility.GONE
             return
         }
-        state.lockState =
-            if (ScreenUtils.isTv(context)) LockVisibility.HIDDEN else LockVisibility.SHOWN
+        state.lockState = LockVisibility.SHOWN
         uiHandler.removeCallbacks(lockHideRunnable)
         if (isLocked()) {
             uiHandler.postDelayed(lockHideRunnable, LOCK_HIDE_DELAY_MS)
@@ -750,12 +743,10 @@ class ComposeVideoController @JvmOverloads constructor(
 
     override fun setTitle(playTitleInfo: String) {
         state.title = playTitleInfo
-        state.pauseTitle = playTitleInfo
     }
 
-    override fun setUrlTitle(playTitleInfo: String) {
-        state.pauseTitle = playTitleInfo
-    }
+    /** 暂停浮层已删,保留接口兼容 */
+    override fun setUrlTitle(playTitleInfo: String) = Unit
 
     override fun setHasDanmu(hasDanmu: Boolean) {
         updateDanmuBtnState()
@@ -773,10 +764,7 @@ class ComposeVideoController @JvmOverloads constructor(
         isGestureEnabled = gestureEnabled
     }
 
-    /**
-     * 暂停浮层由 pauseOverlayVisible 派生（paused 且底栏隐藏），无需直接隐藏。
-     * 退后台暂停另经 [setLifecyclePaused] 抑制浮层（避免被系统任务快照拍出"已暂停"假象）。
-     */
+    /** 旧暂停浮层根已并入 Compose 层,View 版无需隐藏 */
     override fun hidePauseRoot() = Unit
 
     override fun setLifecyclePaused(paused: Boolean) {
@@ -859,11 +847,6 @@ class ComposeVideoController @JvmOverloads constructor(
     override fun onPreLongClicked() {
         if (!fastClickAllowed("pre_long")) return
         listener?.showEpisodeDialog()
-        hideBottom()
-    }
-
-    override fun onRetryClicked() {
-        listener?.replay(true)
         hideBottom()
     }
 

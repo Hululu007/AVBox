@@ -244,7 +244,7 @@ class DetailViewModel : ViewModel() {
             restoreFallbackEpisode(info)
             resetEngineState(keepChips = true)
             val playingList = info.seriesMap?.get(info.playFlag)
-            if (playingList != null) {
+            if (!playingList.isNullOrEmpty()) {
                 info.playIndex = info.playIndex.coerceIn(0, playingList.size - 1)
                 for (flag in info.seriesFlags) {
                     flag.selected = flag.name == info.playFlag

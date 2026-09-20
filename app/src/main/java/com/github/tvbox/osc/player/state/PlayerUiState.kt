@@ -52,8 +52,6 @@ class PlayerUiState {
 
     // —— 1 秒轮询（替代 myRunnable2） ——
     var title: String by mutableStateOf("")
-    /** 仅暂停浮层标题（setUrlTitle 只改暂停浮层，旧实现如此） */
-    var pauseTitle: String by mutableStateOf("")
     var videoSize: String by mutableStateOf("")
     var sysTime: String by mutableStateOf("")
     /** 电量百分比（0~100；读不到为 -1 不显示），随 1s 轮询刷新 */
@@ -88,7 +86,6 @@ class PlayerUiState {
     var screenDisplayOn: Boolean by mutableStateOf(false)
     var showParseRow: Boolean by mutableStateOf(false)
     var isPortrait: Boolean by mutableStateOf(true)
-    var isTv: Boolean by mutableStateOf(false)
     var playerType: Int by mutableStateOf(2)
     /** 直播源（duration==0）时隐藏倍速与片头尾按钮 */
     var liveButtonsVisible: Boolean by mutableStateOf(true)
@@ -104,8 +101,6 @@ class PlayerUiState {
     var timeEndText: String by mutableStateOf("片尾")
     /** 解析列表版本号：setDefaultParse 后自增以驱动重绘 */
     var parseListVersion: Int by mutableStateOf(0)
-    /** showBottom 时请求 play_next 聚焦的令牌（自增触发 LaunchedEffect） */
-    var focusNextToken: Int by mutableStateOf(0)
 
     /** 尺寸/倍速/播放器选择弹窗（阶段 7：替代 View 版 SelectDialog），null = 不显示 */
     var selectDialog: SelectDialogState? by mutableStateOf(null)
@@ -133,10 +128,10 @@ class PlayerUiState {
     val danmuSearchBtnVisible: Boolean get() = danmuSearchAvailable
     val castBtnVisible: Boolean get() = android.os.Build.VERSION.SDK_INT >= 30
 
-    /** 退后台暂停标记(2026-09-13,见 PlayerControlApi.setLifecyclePaused):此暂停不画暂停浮层 */
+    /** 退后台暂停标记(PlayerControlApi.setLifecyclePaused):此暂停不画中央播放键 */
     var lifecyclePaused: Boolean by mutableStateOf(false)
 
-    /** 暂停浮层可见（旧实现：paused 且底栏隐藏时显示；生命周期暂停不算 —— 否则退后台瞬间的浮层会被系统任务快照拍进"后台管理"卡片） */
+    /** 暂停浮层可见:暂停中且底栏已收起;生命周期暂停不算(避免任务快照拍到"已暂停"假象) */
     val pauseOverlayVisible: Boolean
         get() = playState == VideoView.STATE_PAUSED && !controlsVisible && !lifecyclePaused
 
@@ -226,7 +221,6 @@ interface PlayerActions {
     fun onNextLongClicked()
     fun onPreClicked()
     fun onPreLongClicked()
-    fun onRetryClicked()
     /** 播放/暂停切换（底栏「播放」按钮 + 中央控制组中间按钮） */
     fun onPlayPauseClicked()
     fun onRefreshClicked()

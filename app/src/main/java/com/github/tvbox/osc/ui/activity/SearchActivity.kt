@@ -470,7 +470,18 @@ fun SearchScreen(vm: SearchViewModel = viewModel()) {
                 query = query,
                 onQueryChange = { query = it },
                 onSearch = { submit(query) },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 4.dp),
+                trailing = {
+                    LayoutSwitchAction(
+                        selected = resultLayout,
+                        onSelect = {
+                            resultLayout = it
+                            SearchSettings.setResultLayout(it)
+                        },
+                    )
+                },
             )
         },
         navigationIcon = {
@@ -488,15 +499,6 @@ fun SearchScreen(vm: SearchViewModel = viewModel()) {
                     modifier = Modifier.size(22.dp),
                 )
             }
-        },
-        actions = {
-            LayoutSwitchAction(
-                selected = resultLayout,
-                onSelect = {
-                    resultLayout = it
-                    SearchSettings.setResultLayout(it)
-                },
-            )
         },
     ) { topPad, _ ->
         if (results.isEmpty() && !running && sitesEmpty) {

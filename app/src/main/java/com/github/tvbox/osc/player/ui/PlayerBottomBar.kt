@@ -3,7 +3,6 @@ package com.github.tvbox.osc.player.ui
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -27,9 +26,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.focusProperties
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -37,11 +33,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onKeyEvent
-import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
@@ -63,7 +54,7 @@ private val PreviewPlayPauseBox = 40.dp
 
 /**
  * 底部菜单（图二布局：进度行在上、菜单行在下）：
- * - 菜单用 FlowRow 自动铺开（SpaceBetween），不再横向滚动；已裁剪 下一集/上一集/重置/屏显
+ * - 菜单用 FlowRow 自动铺开（SpaceBetween），不再横向滚动；已裁剪 下一集/上一集/重播/重置/屏显
  *   （上/下一集移至中央控制组，重置经片头/片尾长按可达）；
  * - 左右边距按窗口宽度分档（compact 16dp / ≥600dp 24dp，`playerEdgePadding()`）；上下边距 10dp / 16dp；
  * - 预览态（竖屏详情页）进度行左侧多一颗播放/暂停钮（2026-09-13 用户要求），与进度条、
@@ -75,7 +66,6 @@ private val PreviewPlayPauseBox = 40.dp
 fun PlayerBottomBar(
     state: PlayerUiState,
     actions: PlayerActions,
-    focus: PlayerFocusTargets,
     modifier: Modifier = Modifier,
 ) {
     if (!state.controlsVisible) return
@@ -118,7 +108,6 @@ fun PlayerBottomBar(
             PlayerSeekRow(
                 state = state,
                 actions = actions,
-                focus = focus,
                 modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
             )
             Text(
@@ -140,12 +129,6 @@ fun PlayerBottomBar(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            PlayerMenuButton(
-                "重播",
-                onClick = actions::onRetryClicked,
-                // 播放按钮已移除，showBottom 默认焦点改落在首个底栏按钮（替代 mNextBtn.requestFocus()）
-                focusRequester = focus.nextBtn,
-            )
             PlayerMenuButton("刷新", onClick = actions::onRefreshClicked)
             PlayerMenuButton(
                 state.scaleBtnText,
@@ -212,7 +195,7 @@ fun PlayerBottomBar(
 
         // —— 解析行（旧 parse_root + mGridParseView）；预览态不显示，与菜单行同规则 ——
         if (state.showParseRow && !state.previewMode) {
-            val parseList = remember(state.parseListVersion) { ApiConfig.get().parseBeanList }
+            val parseList = remember(state.parseListVersion) { ApiConfig.get().parseBeanList.toList() }
             Row(
                 Modifier.padding(top = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -230,7 +213,6 @@ fun PlayerBottomBar(
                         PlayerMenuButton(
                             item.name,
                             onClick = { actions.onParseSelected(index) },
-                            focusRequester = if (index == 0) focus.parseFirst else null,
                             textColor = if (item.isDefault) Color(0xFF02F8E1) else Color.White,
                             textSizeId = R.dimen.ts_20,
                         )
@@ -296,7 +278,7 @@ private fun PreviewPlayPauseButton(state: PlayerUiState, actions: PlayerActions)
 /**
  * 自绘进度条：视觉照搬 shape_player_control_vod_seek（轨道 #4DFFFFFF / 缓冲 #66FFFFFF /
  * 进度 #FF4081，圆角 2dp）与 CircleThumbDrawable（12dp 白圆 + #FF4081 2dp 描边，激活 16dp）。
- * 交互：触摸拖拽/点按、TV 方向键步进、鼠标滚轮步进（旧 SeekBar 三种方式等价）。
+ * 交互：触摸拖拽/点按、鼠标滚轮步进。
  * 性能（2026-09-14 BugFix）：progress/buffered 在 Canvas 绘制块内读取 state，
  * 拖拽每帧/播放每秒只重绘本进度条，不触发 PlayerSeekRow 重组。
  */
@@ -304,43 +286,16 @@ private fun PreviewPlayPauseButton(state: PlayerUiState, actions: PlayerActions)
 private fun PlayerSeekRow(
     state: PlayerUiState,
     actions: PlayerActions,
-    focus: PlayerFocusTargets,
     modifier: Modifier,
 ) {
-    val enabled = state.duration > 0
-    var focused by remember { mutableStateOf(false) }
     var draggingLocal by remember { mutableStateOf(false) }
     var dragProgress by remember { mutableStateOf(0f) }
 
-    // thumbActive 随焦点/拖拽起止翻转，低频，组合期读取无妨
-    val thumbActive = focused || draggingLocal || state.dragging
+    // thumbActive 随拖拽起止翻转，低频，组合期读取无妨
+    val thumbActive = draggingLocal || state.dragging
 
     var seekModifier = modifier
         .height(playerDim(R.dimen.vs_30))
-        .onFocusChanged {
-            focused = it.isFocused
-            if (it.isFocused) actions.keepControlsAlive()
-        }
-        .focusProperties {
-            up = if (state.showParseRow && !state.previewMode) focus.parseFirst else focus.nextBtn
-        }
-        .focusable(enabled = enabled)
-        .onKeyEvent { event ->
-            if (!enabled) return@onKeyEvent false
-            if (event.type == KeyEventType.KeyDown) {
-                when (event.key) {
-                    Key.DirectionLeft -> {
-                        actions.onSeekStep(-1); true
-                    }
-                    Key.DirectionRight -> {
-                        actions.onSeekStep(1); true
-                    }
-                    else -> false
-                }
-            } else {
-                false
-            }
-        }
         .pointerInput(Unit) {
             // 鼠标滚轮步进（旧 onGenericMotionEvent ACTION_SCROLL）
             awaitPointerEventScope {

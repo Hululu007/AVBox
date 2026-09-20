@@ -106,8 +106,6 @@ public class HawkConfig {
     public static final String DANMU_API = "danmu_api";
     /** 弹幕接口是否用内置默认(原为 DanmakuApi 内的字面量键,2026-09-13 KV 迁移时集中登记) */
     public static final String DANMU_API_USE_DEFAULT = "danmu_api_use_default";
-    // 源级卡片点击策略(2026-09-11):HashMap<sourceKey, "detail">,缺省即"搜索"
-    public static final String SOURCE_CARD_POLICY = "source_card_policy";
     // 源名快照(2026-09-14):HashMap<sourceKey, 源显示名>。历史记录只存 sourceKey 不存源名,
     // 换源/冷启动后源不在当前配置里时,历史卡片靠这份快照兜底显示记录时的完整源名(含 emoji)
     public static final String SOURCE_NAME_CACHE = "source_name_cache";

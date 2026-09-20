@@ -25,8 +25,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -66,7 +64,6 @@ fun DanmuSettingSheet(sheet: DanmuSettingSheetState, onDismiss: () -> Unit) {
                 var size by remember { mutableIntStateOf(Math.round(DanmuHelper.getSizeScale() * 10)) }
                 var line by remember { mutableIntStateOf(DanmuHelper.getMaxLine()) }
                 var alpha by remember { mutableIntStateOf(Math.round(DanmuHelper.getAlpha() * 100)) }
-                val searchFocus = remember { FocusRequester() }
 
                 SheetLabelRow("在线弹幕") {
                     SheetButton(
@@ -76,8 +73,6 @@ fun DanmuSettingSheet(sheet: DanmuSettingSheetState, onDismiss: () -> Unit) {
                             sheet.onOpenSearch()
                         },
                         modifier = Modifier.weight(1f),
-                        focusRequester = searchFocus,
-                        autoFocus = true,
                     )
                 }
                 SheetLabelRow("弹幕颜色") {

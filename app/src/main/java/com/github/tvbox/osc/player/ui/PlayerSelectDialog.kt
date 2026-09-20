@@ -10,10 +10,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.github.tvbox.osc.R
@@ -21,9 +19,9 @@ import com.github.tvbox.osc.player.state.SelectDialogState
 
 /**
  * 播放器选择弹窗(倍速/画面尺寸/内核等列表选择):
- * 480mm 宽 M3 面板(surfaceContainer + 28dp 圆角)+ 标题 + 竖向列表(最高 vs_410),
- * 条目沿用 [SheetButton](surfaceBright 底 / 选中 primaryContainer / 聚焦 primary 描边)。
- * 行为:点击已选中项不响应、点击其他项回调后收起、初始聚焦默认选中项。
+ * 480mm 宽 M3 面板(surfaceContainer + 18dp 圆角)+ 标题 + 竖向列表(最高 vs_410),
+ * 条目沿用 [SheetButton](surfaceBright 底 / 选中 primaryContainer)。
+ * 行为:点击已选中项不响应、点击其他项回调后收起。
  */
 @Composable
 fun PlayerSelectDialog(
@@ -70,14 +68,10 @@ private fun SelectDialogItem(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    // 初始聚焦默认选中项（旧 TvRecyclerView.setSelection(select)）
-    val focusRequester = remember { FocusRequester() }
     SheetButton(
         text = text,
         selected = selected,
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-        focusRequester = focusRequester,
-        autoFocus = selected,
     )
 }

@@ -33,9 +33,13 @@ object SearchSettings {
         KV.put(KEY_EXACT_MATCH, enabled)
     }
 
-    /** 搜索结果展示方式:横排(各源分区 + 横向卡片行)/ 竖排(左侧站点栏 + 右侧结果) */
+    /** 搜索结果展示方式:竖排(左侧站点栏 + 右侧结果,**默认**)/ 横排(各源分区 + 横向卡片行) */
     fun resultLayout(): SearchLayout =
-        if (KV.get(KEY_RESULT_LAYOUT, "") == VALUE_LAYOUT_VERTICAL) SearchLayout.Vertical else SearchLayout.Horizontal
+        if (KV.get(KEY_RESULT_LAYOUT, VALUE_LAYOUT_VERTICAL) == VALUE_LAYOUT_HORIZONTAL) {
+            SearchLayout.Horizontal
+        } else {
+            SearchLayout.Vertical
+        }
 
     fun setResultLayout(layout: SearchLayout) {
         KV.put(

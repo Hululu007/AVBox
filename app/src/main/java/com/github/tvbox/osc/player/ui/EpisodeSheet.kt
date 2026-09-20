@@ -66,7 +66,7 @@ fun EpisodeSheet(sheet: EpisodeSheetState, onDismiss: () -> Unit) {
                     // 侧边面板形态:面板贴屏幕上下边,只圆起始侧;圆角档与对话框一致
                     .background(
                         MaterialTheme.colorScheme.surfaceContainer,
-                        RoundedCornerShape(topStart = 28.dp, bottomStart = 28.dp),
+                        RoundedCornerShape(topStart = 18.dp, bottomStart = 18.dp),
                     )
                     .padding(start = playerDim(R.dimen.vs_30), top = playerDim(R.dimen.vs_24),
                         end = playerDim(R.dimen.vs_30), bottom = playerDim(R.dimen.vs_24)),

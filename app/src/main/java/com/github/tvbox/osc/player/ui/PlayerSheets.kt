@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.ContextWrapper
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,15 +27,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
@@ -53,15 +49,15 @@ import com.github.tvbox.osc.R
  * 播放器面板公共骨架:面板容器/标题/按钮/标签行/chips/步进/输入框/加载指示。
  * 具体面板见 DanmuSheets / SubtitleSheets / CastSheet / EpisodeSheet,同为播放器 Dialog 形态。
  *
- * 视觉走 M3 语义色与形状:面板 `surfaceContainer` + 28dp 圆角(extraLarge)+ 轻投影;
- * 选项 `surfaceBright`,选中 `primaryContainer`、聚焦 primary 描边;提示文字 `onSurfaceVariant`。
+ * 视觉走 M3 语义色与形状:面板 `surfaceContainer` + 18dp 圆角 + 轻投影;
+ * 选项 `surfaceBright`,选中 `primaryContainer`;提示文字 `onSurfaceVariant`。
  * 字号/尺寸仍用 AutoSize(mm) 档(playerDim/playerTextSize):覆盖层按屏宽等比缩放,
- * 换成 M3 固定 sp 会在电视上明显偏小。
- * 交互不变:TV 确认键经 tvConfirmKey(部分盒子不派发确认键,普通 clickable 收不到)、触摸点按、初始聚焦默认项。
+ * 换成 M3 固定 sp 会在小屏上明显偏小。
+ * 交互:触摸点按。
  */
 
-/** M3 形状档:对话框面板 28dp(extraLarge)、内部选项/输入框 12dp(medium) */
-private val PanelShape = RoundedCornerShape(28.dp)
+/** M3 形状档:对话框面板 18dp、内部选项/输入框 12dp(medium) */
+private val PanelShape = RoundedCornerShape(18.dp)
 private val ItemShape = RoundedCornerShape(12.dp)
 
 /** 聚焦描边宽度(M3 焦点提示:primary 描边 + 底色调档) */
@@ -71,7 +67,7 @@ private val FocusStroke = 2.dp
 // 公共骨架组件
 // ---------------------------------------------------------------------------
 
-/** 对话框面板:M3 dialog 形态 —— 28dp 圆角、`surfaceContainer` 底、无描边 + 6dp 阴影 */
+/** 对话框面板:M3 dialog 形态 —— 18dp 圆角、`surfaceContainer` 底、无描边 + 6dp 阴影 */
 @Composable
 internal fun SheetPanel(
     width: Dp,
@@ -105,53 +101,36 @@ internal fun SheetTitle(text: String, alignStart: Boolean = false) {
     )
 }
 
-/** 面板按钮:M3 选项样式 —— `surfaceBright` 底、选中 `primaryContainer`、聚焦 primary 描边;TV 确认键 + 触摸点按双通道。*/
+/** 面板按钮:M3 选项样式 —— `surfaceBright` 底、选中 `primaryContainer`;触摸点按。*/
 @Composable
 internal fun SheetButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     selected: Boolean = false,
-    focusRequester: FocusRequester? = null,
-    autoFocus: Boolean = false,
 ) {
-    var focused by remember { mutableStateOf(false) }
-    val container = when {
-        selected -> MaterialTheme.colorScheme.primaryContainer
-        focused -> MaterialTheme.colorScheme.surfaceContainerHighest
-        else -> MaterialTheme.colorScheme.surfaceBright
+    val container = if (selected) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceBright
     }
     val m = modifier
-        .onFocusChanged { focused = it.isFocused }
-        .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-        .focusable()
         .background(container, ItemShape)
-        .then(
-            if (focused) Modifier.border(FocusStroke, MaterialTheme.colorScheme.primary, ItemShape)
-            else Modifier
-        )
-        .tvConfirmKey(onClick, null)
         .pointerInput(onClick) { detectTapGestures(onTap = { onClick() }) }
         .height(playerDim(R.dimen.vs_50))
     Box(modifier = m, contentAlignment = Alignment.Center) {
         Text(
             text = text,
-            color = when {
-                selected -> MaterialTheme.colorScheme.onPrimaryContainer
-                focused -> MaterialTheme.colorScheme.primary
-                else -> MaterialTheme.colorScheme.onSurface
+            color = if (selected) {
+                MaterialTheme.colorScheme.onPrimaryContainer
+            } else {
+                MaterialTheme.colorScheme.onSurface
             },
             fontSize = playerTextSize(R.dimen.ts_20),
-            fontWeight = if (selected || focused) FontWeight.Medium else FontWeight.Normal,
+            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-    }
-    if (autoFocus) {
-        LaunchedEffect(Unit) {
-            androidx.compose.runtime.withFrameNanos { _ -> }
-            runCatching { focusRequester?.requestFocus() }
-        }
     }
 }
 

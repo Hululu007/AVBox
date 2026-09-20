@@ -159,9 +159,6 @@ public final class KVKeySpec implements KVDecoder.TypeRegistry {
         // 又被 KV.get(key)(quiet 副本)静默吞成 null,症状=直播源配置的 UA/Referer/header 全部失效
         register(HawkConfig.LIVE_WEB_HEADER, new TypeToken<HashMap<String, String>>() {
         });
-        // 源级卡片点击策略:HashMap<sourceKey, "detail">
-        register(HawkConfig.SOURCE_CARD_POLICY, new TypeToken<HashMap<String, String>>() {
-        });
         // 嵌套泛型:HashMap<点播源地址, HashMap<sourceKey, "1">>,读侧必须显式 Type
         register(HawkConfig.SOURCES_FOR_SEARCH, new TypeToken<HashMap<String, HashMap<String, String>>>() {
         });

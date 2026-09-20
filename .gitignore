@@ -104,6 +104,7 @@ output-metadata.json
 .trae/
 .catpaw/
 .opencode/
+.workbuddy-ai/
 .qoder/
 git推送命令.txt
 # Python 构建缓存

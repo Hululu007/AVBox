@@ -65,7 +65,6 @@ import coil3.compose.AsyncImage
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.bean.Movie
 import com.github.tvbox.osc.ui.components.PressableCard
-import com.github.tvbox.osc.ui.components.TopBarActionBox
 import com.github.tvbox.osc.ui.components.glassTopBarSurface
 import com.github.tvbox.osc.ui.theme.cardContainer
 import com.kyant.capsule.ContinuousCapsule
@@ -102,6 +101,7 @@ internal fun SearchField(
     onQueryChange: (String) -> Unit,
     onSearch: () -> Unit,
     modifier: Modifier = Modifier,
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     Row(
         modifier = modifier
@@ -156,6 +156,10 @@ internal fun SearchField(
                     .size(18.dp),
             )
         }
+        if (trailing != null) {
+            Spacer(modifier = Modifier.width(4.dp))
+            trailing()
+        }
     }
 }
 
@@ -173,10 +177,15 @@ internal fun LayoutSwitchAction(
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box {
-        TopBarActionBox(
-            iconRes = R.drawable.ic_more_vert,
+        Icon(
+            painter = painterResource(R.drawable.ic_more_vert),
             contentDescription = "结果展示方式",
-            onClick = { expanded = true },
+            tint = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .clickable { expanded = true }
+                .padding(4.dp)
+                .size(22.dp),
         )
         DropdownMenu(
             expanded = expanded,

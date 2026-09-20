@@ -58,6 +58,7 @@ import com.github.tvbox.osc.ui.components.AVBoxOptionSheet
 import com.github.tvbox.osc.ui.components.SettingsCard
 import com.github.tvbox.osc.ui.components.SettingsCardPosition
 import com.github.tvbox.osc.ui.components.SettingsGroup
+import com.github.tvbox.osc.ui.components.SettingsOptionMenuRow
 import com.github.tvbox.osc.ui.components.SettingsRow
 import com.github.tvbox.osc.ui.activity.ConfigManageActivity
 import com.github.tvbox.osc.ui.activity.PlaySettingsActivity
@@ -287,33 +288,25 @@ fun SettingsPage(vm: SettingsViewModel = viewModel(), bottomPadding: Dp = 0.dp) 
 
             SettingsGroup(title = null) {
                 SettingsCard(SettingsCardPosition.FIRST) {
-                    SettingsRow(
+                    SettingsOptionMenuRow(
                         title = "默认启动页",
                         subtitle = "首次打开应用的所在位置",
                         iconRes = R.drawable.ic_settings_start,
                         valueText = if (state.defaultLoadLive) "直播" else "点播",
-                        onClick = {
-                            openOptions(
-                                "默认启动页",
-                                listOf("点播", "直播"),
-                                if (state.defaultLoadLive) 1 else 0,
-                            ) { idx -> vm.put(HawkConfig.DEFAULT_LOAD_LIVE, idx == 1) }
-                        },
+                        options = listOf("点播", "直播"),
+                        selectedIndex = if (state.defaultLoadLive) 1 else 0,
+                        onSelect = { idx -> vm.put(HawkConfig.DEFAULT_LOAD_LIVE, idx == 1) },
                     )
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {
-                    SettingsRow(
+                    SettingsOptionMenuRow(
                         title = "历史记录上限",
                         subtitle = "最多保留多少条记录",
                         iconRes = R.drawable.ic_settings_history,
                         valueText = HistoryHelper.getHistoryNumName(state.historyNumIndex),
-                        onClick = {
-                            openOptions(
-                                "历史记录上限",
-                                listOf(0, 1, 2).map { HistoryHelper.getHistoryNumName(it) },
-                                state.historyNumIndex,
-                            ) { idx -> vm.put(HawkConfig.HISTORY_NUM, idx) }
-                        },
+                        options = listOf(0, 1, 2).map { HistoryHelper.getHistoryNumName(it) },
+                        selectedIndex = state.historyNumIndex,
+                        onSelect = { idx -> vm.put(HawkConfig.HISTORY_NUM, idx) },
                     )
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {
@@ -330,18 +323,14 @@ fun SettingsPage(vm: SettingsViewModel = viewModel(), bottomPadding: Dp = 0.dp) 
                     )
                 }
                 SettingsCard(SettingsCardPosition.LAST) {
-                    SettingsRow(
+                    SettingsOptionMenuRow(
                         title = "DOH",
                         subtitle = "安全DNS",
                         iconRes = R.drawable.ic_settings_doh,
                         valueText = OkGoHelper.dnsHttpsList.getOrNull(state.dohIndex) ?: "关闭",
-                        onClick = {
-                            openOptions(
-                                "DOH",
-                                OkGoHelper.dnsHttpsList,
-                                state.dohIndex,
-                            ) { idx -> vm.put(HawkConfig.DOH_URL, idx) }
-                        },
+                        options = OkGoHelper.dnsHttpsList,
+                        selectedIndex = state.dohIndex,
+                        onSelect = { idx -> vm.put(HawkConfig.DOH_URL, idx) },
                     )
                 }
             }
@@ -353,13 +342,14 @@ fun SettingsPage(vm: SettingsViewModel = viewModel(), bottomPadding: Dp = 0.dp) 
                             title = "接口线路",
                             valueText = currentLineName(state),
                             onClick = {
+                                val lines = state.apiLines
                                 openOptions(
                                     "接口线路",
-                                    state.apiLines.map { HistoryHelper.getApiLineName(it) },
+                                    lines.map { HistoryHelper.getApiLineName(it) },
                                     currentLineIndex(state),
                                 ) { idx ->
-                                    val newApi = HistoryHelper.getApiLineUrl(state.apiLines[idx])
-                                    if (newApi.isNotEmpty()) {
+                                    val newApi = lines.getOrNull(idx)?.let { HistoryHelper.getApiLineUrl(it) }
+                                    if (!newApi.isNullOrEmpty()) {
                                         val oldApi = KV.get(HawkConfig.API_URL, "")
                                         val followLive = ApiConfig.isLiveFollowVod()
                                         KV.put(HawkConfig.API_URL, newApi)
