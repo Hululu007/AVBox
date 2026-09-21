@@ -24,6 +24,7 @@ import com.github.tvbox.osc.bean.SourceBean;
 import com.github.tvbox.osc.server.ControlManager;
 import com.github.tvbox.osc.util.AES;
 import com.github.tvbox.osc.util.AdBlocker;
+import com.github.tvbox.osc.util.ApiLineSignal;
 import com.github.tvbox.osc.util.DefaultConfig;
 import com.github.tvbox.osc.util.FileUtils;
 import com.github.tvbox.osc.util.HawkConfig;
@@ -528,6 +529,8 @@ public class ApiConfig {
             // 旧的直播仓列表已不对应当前直播源,必须一起作废,否则「配置切换」会列出上一仓的子源
             HistoryHelper.clearLiveApiLineList();
         }
+        // 仓关系刚成立:界面(换仓入口/使用中标记)靠这个信号就地重读,不然要等页面重建
+        ApiLineSignal.INSTANCE.notifyChanged();
         return true;
     }
 
@@ -560,6 +563,7 @@ public class ApiConfig {
         HistoryHelper.setLiveApiHistory(apiUrl);
         loadedLiveConfigUrl = "";
         clearLiveConfigResult();
+        ApiLineSignal.INSTANCE.notifyChanged();
         return true;
     }
 

@@ -126,6 +126,7 @@ public class HistoryHelper {
     public static void clearApiLineList() {
         KV.put(HawkConfig.API_LINE_LIST, new ArrayList<String>());
         KV.put(HawkConfig.API_LINE_SOURCE, "");
+        ApiLineSignal.INSTANCE.notifyChanged();
     }
 
     /** 点播仓列表(每项 "名字\t链接"),空列表表示当前不是多仓点播源 */
@@ -167,6 +168,7 @@ public class HistoryHelper {
     public static void clearLiveApiLineList() {
         KV.put(HawkConfig.LIVE_API_LINE_LIST, new ArrayList<String>());
         KV.put(HawkConfig.LIVE_API_LINE_SOURCE, "");
+        ApiLineSignal.INSTANCE.notifyChanged();
     }
 
     /**

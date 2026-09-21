@@ -1561,3 +1561,18 @@ P1 最后两组。至此**调度层(会话/取流/解析/嗅探/重试/换线/�
 - **刻意否掉的方案**:把可见条件放宽成 `isApiLineSource(activeUrl) || isApiLineUrl(activeUrl)`。这能绕过"仓地址 ≠ 子源地址"的错配,但**解决不了根因二** —— 异步完成时依然没有重组;更要命的是它会让按钮在 `Ready` 之前就出现,而那一刻 `repoEntries` 还是空的 ⇒ 用户点开是个空 sheet(比"暂时看不见"更糟)。
 - **验证**:`:app:compileDebugKotlin` / `:app:testDebugUnitTest`(**199 用例 / 0 失败**)/ `:app:assembleDebug` 全部通过。**未装机** —— 改动是 Compose 状态刷新时序,现有纯逻辑单测覆盖不到。**真机待验**:①添加点播仓源后**停在配置管理页不动**,数秒内右上角应自行出现「换仓」圆钮,且订阅卡上的仓地址那条显示「使用中」;②切到直播段添加直播仓源 → 进直播页 → 返回配置管理页,换仓钮应出现;③管理模式下右上仍是「编辑/删除」,不受刷新影响。
 - **文档同步**:`avbox-mobile-ui-spec.md` §4.7「换仓入口」新增可见性刷新条目;§6.9 补一条通用规则(「首次组合读一次 KV」+「异步写 KV」= 页面不刷新 → 标准配方 = ON_RESUME + boot Ready 双通道,且只重读"当前态"不重读用户可编辑列表)。
+
+## 返工:换仓入口的刷新触发器选错了(2026-09-21 同日九轮)
+
+- **现象**:上一轮按「ON_RESUME + boot 落地 Ready」补了刷新,用户真机反馈**完全没效果** —— 添加并启用多仓源后,仍要退出配置管理页再进才出现换仓控件。
+- **返工前的两次误判(记下来免得重犯)**:
+  - ① 先怀疑 `AnimatedContent` 的 content 不随"捕获值变化"重跑(因为 `canSwitchRepo` 是在 `AnimatedContent` 之外算好再被 content lambda 捕获的)。**去 Gradle 缓存的源码包查证后否掉**:`animation-android-1.12.0-sources.jar` 的 `AnimatedContent.kt` 里,`Transition.AnimatedContent` 在**过渡静止**(`currentState == targetState && pendingTargetState == null`)时会执行 `if (contentMap.size != 1 || contentMap.containsKey(currentState)) contentMap.clear()`,紧接着下面那段 `if (targetState !in contentMap || ...)` 因 map 刚被清空而成立,**用当前这轮的 `content` lambda 重新填充** ⇒ 每次重组都会拿到新 lambda,内容不会滞留。**方法教训:Compose 新 API 的行为不要靠回忆下结论,缓存里的 `-sources.jar` 就是权威(本项目文档里早有这条约定)。**
+  - ② 一度想改成"在 content lambda 里读状态"或"放宽可见条件到 `isApiLineSource`",都是绕开根因的补丁,已否。
+- **真因:触发器晚了。** `AppBootstrap.startInit()` 的 `_state.value = Boot.Ready` 在 **`awaitLoadConfig()` + `awaitLoadJar()` 两段之后**,而多仓改写(`ApiConfig.switchApiCollectionIfNeeded`)只发生在**第一段**里 ⇒ 拿 `Ready` 当"改写完成"的信号,实际要等 jar 全部下载装载完(几秒到几十秒),用户根本等不到;若加载落进 `Boot.Error` 则**永不触发**。所以第一版"看起来修了等于没修"。
+- **修法:由改写点直接发信号。**
+  - 新增 `util/ApiLineSignal.kt`:`MutableStateFlow<Int>` 单调自增 + `notifyChanged()`(用 StateFlow 而非 `mutableStateOf`,让 `util` 层不依赖 Compose)。
+  - 发信号的位置 = **所有会改变"当前源是否来自仓"这个结论的地方**:`ApiConfig.switchApiCollectionIfNeeded`(点播仓改写)、`ApiConfig.switchLiveApiCollectionIfNeeded`(直播仓改写)、`HistoryHelper.clearApiLineList()` / `clearLiveApiLineList()`(集中在 clear 里,一次覆盖 `clearVodConfig` / `clearApiConfig` / `clearApiLinesIfUnmatched` / `applyVodSource` 四个调用点)。
+  - 消费侧:`ConfigManagePage` 用 `LaunchedEffect(apiLineVersion) { refreshActiveSnapshot() }` 取代原来的 `LaunchedEffect(boot)`;`SettingsPage` 的「接口线路」行同样把 `LaunchedEffect(boot)` 换成 `LaunchedEffect(apiLineVersion) { vm.refreshState() }`。`ON_RESUME` 两条都保留(兜"改写发生在别的页面"—— 直播仓要进直播页拉配置时才改写)。
+- **Java 侧踩点**:`ApiConfig` 在 `com.github.tvbox.osc.api` 包,`ApiLineSignal` 在 `util` 包 ⇒ **必须显式 import**(`HistoryHelper` 与它同包才不用)。第一次编译报 `程序包ApiLineSignal不存在` 就是这个。
+- **验证**:`:app:compileDebugKotlin` / `:app:compileDebugJavaWithJavac` / `:app:testDebugUnitTest`(**199 用例 / 0 失败**)/ `:app:assembleDebug` 全通过(APK 09:34 重建)。**本机无 adb 设备,真机待验**:①添加并启用点播多仓源后**停在配置管理页不动**,应在仓 JSON 拉取完成那一刻(约一次网络往返,不必等 jar)出现「换仓」圆钮;②仓地址那条订阅卡应同时显示「使用中」;③切到直播段添加直播仓源 → 进直播页 → 返回,换仓钮应出现。
+- **文档同步**:spec §4.7 与 §4.3 订正触发器(删掉"改写先于 Ready 所以能兜住"的错误结论)、§6.9 通用规则改为"信号由改写点发,不要反推加载完成"。

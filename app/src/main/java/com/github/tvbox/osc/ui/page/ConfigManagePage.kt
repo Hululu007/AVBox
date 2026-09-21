@@ -78,6 +78,7 @@ import com.github.tvbox.osc.ui.components.SettingsSwitchRow
 import com.github.tvbox.osc.ui.components.TopBarActionBox
 import com.github.tvbox.osc.ui.components.glassSurface
 import com.github.tvbox.osc.ui.theme.cardContainer
+import com.github.tvbox.osc.util.ApiLineSignal
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.HistoryHelper
 import com.github.tvbox.osc.util.KV
@@ -192,9 +193,9 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
      * 多仓的地址改写由异步 loadConfig 完成(仓地址 → 仓内首条子源),它不产生任何 Compose 状态
      * 变化 ⇒ 这几份"只在首次组合读一次"的当前态不会自更新,换仓入口与"使用中"标记要退出重进才正确。
      *
-     * <p>故补两条幂等刷新:回到本页(直播仓的改写发生在直播页拉取配置时)、boot 落地 Ready
-     * (点播仓的改写在本页后台完成,且先于 Ready)。只重读"当前态"而**不**重读订阅列表 ——
-     * 列表的增删改都同步写 KV,重读只会与 manageMode 的勾选集错位。
+     * <p>刷新靠两条:改写点发的 [ApiLineSignal](等"加载完成"不可靠 —— 点播的完成态要等 jar 装载也跑完,
+     * 那时改写早已结束);ON_RESUME 兜"改写发生在别的页面"(直播仓要进直播页拉配置时才改写)。
+     * 只重读"当前态"而**不**重读订阅列表 —— 列表的增删改都同步写 KV,重读只会与 manageMode 的勾选集错位。
      */
     fun refreshActiveSnapshot() {
         activeUrl = KV.get(HawkConfig.API_URL, "")
@@ -202,9 +203,9 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
         liveFollow = ApiConfig.isLiveFollowVod()
     }
 
-    val boot by AppBootstrap.state.collectAsState()
+    val apiLineVersion by ApiLineSignal.version.collectAsState()
+    LaunchedEffect(apiLineVersion) { refreshActiveSnapshot() }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { refreshActiveSnapshot() }
-    LaunchedEffect(boot) { if (boot is AppBootstrap.Boot.Ready) refreshActiveSnapshot() }
 
     val isVod = mode == ConfigMode.Vod
     val currentItems = if (isVod) vodItems else liveItems

@@ -67,6 +67,7 @@ import com.github.tvbox.osc.ui.activity.PlaySettingsActivity
 import com.github.tvbox.osc.ui.activity.PreferenceSettingsActivity
 import com.github.tvbox.osc.ui.activity.PreloadSettingsActivity
 import com.github.tvbox.osc.ui.activity.ThemeSettingsActivity
+import com.github.tvbox.osc.util.ApiLineSignal
 import com.github.tvbox.osc.util.FileUtils
 import com.github.tvbox.osc.util.HistoryHelper
 import com.github.tvbox.osc.util.HistoryMerge
@@ -218,15 +219,15 @@ fun SettingsPage(vm: SettingsViewModel = viewModel(), bottomPadding: Dp = 0.dp) 
     // 2026-09-21:接口线路的可见性、当前线路名、各行的值全都来自 KV,而 loadState() 只在 ViewModel
     // 构造时读一次 —— 切到多仓源后配置是**异步**加载并改写 API_URL 的,用户切完就退回设置页时
     // 会读到"仓地址 + 空线路列表"的旧快照,「接口线路」这行永远不出现。补两条刷新途径:
-    // ①回到本页(从配置管理页返回会触发宿主 Activity 的 ON_RESUME);②多仓改写发生在 boot Ready
-    // 之前,故再按 boot 状态兜一次(覆盖"人已经停在设置页、加载才完成")。两条都幂等,
-    // 且都只走 refreshState()(缓存大小仍按原样只在 ON_RESUME 刷一次,不做多余的目录遍历)。
+    // ①改写点发的 ApiLineSignal(精确到改写完成那一刻);②回到本页(宿主 Activity 的 ON_RESUME,
+    // 覆盖"改写发生在别的页面")。两条都幂等,且都只走 refreshState()(缓存大小仍按原样只在
+    // ON_RESUME 刷一次,不做多余的目录遍历)。
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         vm.refreshState()
         vm.refreshCacheSize()
     }
-    val boot by AppBootstrap.state.collectAsState()
-    LaunchedEffect(boot) { if (boot is AppBootstrap.Boot.Ready) vm.refreshState() }
+    val apiLineVersion by ApiLineSignal.version.collectAsState()
+    LaunchedEffect(apiLineVersion) { vm.refreshState() }
     val context = LocalContext.current
     var optionSheet by remember { mutableStateOf<OptionSheetState?>(null) }
     val versionName = remember {
