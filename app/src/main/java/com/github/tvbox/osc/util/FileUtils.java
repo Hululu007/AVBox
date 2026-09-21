@@ -211,6 +211,106 @@ public class FileUtils {
         }
     }
 
+    /**
+     * 启动自检:清掉私有目录里"假的原生库",避免爬虫把应用拖进**开机必崩的死循环**(2026-09-21)。
+     *
+     * <p>背景(真机实测):某第三方仓的子源爬虫在 {@code GoProxy.<clinit>} 里从云存储下载
+     * {@code libwexproxy.so};该对象已被删除,CDN 返回 313 字节的 XML 报错({@code <Error><Code>NoSuchKey}),
+     * 而爬虫把这段报错**原样写进 .so 文件**再 {@code System.load} ⇒
+     * {@code UnsatisfiedLinkError: has bad ELF magic: 3c3f786d}({@code 3c3f786d} 就是 ASCII 的 {@code <?xm})。
+     *
+     * <p>致命之处在于它会**自锁**:坏文件留在私有目录里,该爬虫每次冷启动都会再 load 一次,
+     * 于是进一次崩一次 —— 用户连"换源"这个操作都做不了,只能清数据。而这些 jar 的 class initializer
+     * 跑在爬虫自己的线程上,我们无法 try/catch 接住,所以只能在**加载之前**把坏文件清掉。
+     *
+     * <p>判据刻意收窄到"ELF 魔数不符":合法的原生库必以 {@code 0x7F 'E' 'L' 'F'} 开头,
+     * 不符的一定是下载失败留下的垃圾(报错页/半截内容),删掉只有好处 ——
+     * 爬虫下次需要时会重新下载,远端修好后自然恢复。**绝不按大小/时间做任何猜测性删除。**
+     *
+     * <p>命名范围也刻意收窄(与实测到的两种落地名一致,且都是原生库专名):
+     * {@code *.so} 与 {@code .lib*} —— 后者是爬虫"先写临时名再 load"的形态
+     * (实测 {@code .libwexproxyMZVs13PWOs}、{@code .libLoadNiMaz3tbtfmq2v})。
+     * 像 {@code .wexstring} / {@code .wexcofig.json} 这类非 .so 的资源**不碰**。
+     *
+     * <p>扫描范围 = 私有 files 目录树(爬虫把库释放到 {@code files/TV/}、{@code files/AiWex/} 这类子目录里),
+     * 只读不写、失败不抛。
+     *
+     * @return 删掉的坏文件个数
+     */
+    public static int repairBogusNativeLibs() {
+        try {
+            return repairBogusNativeLibs(new File(getFilePath()));
+        } catch (Throwable e) {
+            LOG.i("native-lib-repair failed: " + e.getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * 扫描指定目录树并清掉假原生库,返回删除个数。
+     * 公开重载是为了可测:单测在临时目录里造"ELF 头 / XML 报错 / 非 .so 资源"三种样本,
+     * 不碰 App.getInstance() 与任何 Android 存储(工程开了 returnDefaultValues,碰了也测不出真假)。
+     */
+    public static int repairBogusNativeLibs(File root) {
+        try {
+            return repairBogusNativeLibs(root, 0);
+        } catch (Throwable e) {
+            LOG.i("native-lib-repair failed: " + e.getMessage());
+            return 0;
+        }
+    }
+
+    /** ELF 魔数:0x7F 后跟 ASCII 的 "ELF" */
+    private static final byte[] ELF_MAGIC = {0x7F, 'E', 'L', 'F'};
+
+    /** 目录深度上限:爬虫目录层级很浅(实测 1 层),限制深度避免在大目录上白跑 */
+    private static final int REPAIR_MAX_DEPTH = 3;
+
+    private static int repairBogusNativeLibs(File dir, int depth) {
+        if (dir == null || depth > REPAIR_MAX_DEPTH) return 0;
+        File[] files = dir.listFiles();
+        if (files == null) return 0;
+        int repaired = 0;
+        for (File file : files) {
+            if (file.isDirectory()) {
+                repaired += repairBogusNativeLibs(file, depth + 1);
+                continue;
+            }
+            if (!looksLikeNativeLib(file.getName())) continue;
+            if (hasElfMagic(file)) continue;
+            // 先记大小再删:删掉之后 length() 恒为 0,日志就失去"当初坏文件多大"这条排查信息
+            long size = file.length();
+            // 只读文件也要能删(加固库常是 400),deleteSingle 会先解除只读
+            deleteSingle(file);
+            if (!file.exists()) {
+                repaired++;
+                LOG.i("native-lib-repair removed bogus " + file.getAbsolutePath() + " size=" + size);
+            }
+        }
+        return repaired;
+    }
+
+    /** 名字像原生库才检查:{@code *.so} 或爬虫的临时名 {@code .lib*} */
+    private static boolean looksLikeNativeLib(String name) {
+        if (name == null || name.isEmpty()) return false;
+        String lower = name.toLowerCase();
+        return lower.endsWith(".so") || lower.startsWith(".lib");
+    }
+
+    /** 读前 4 字节比对 ELF 魔数;读不到(不存在/无权限)一律当作"不是合法库"留给调用方决定 */
+    private static boolean hasElfMagic(File file) {
+        try (FileInputStream in = new FileInputStream(file)) {
+            byte[] magic = new byte[ELF_MAGIC.length];
+            if (in.read(magic) != ELF_MAGIC.length) return false;
+            for (int i = 0; i < ELF_MAGIC.length; i++) {
+                if (magic[i] != ELF_MAGIC[i]) return false;
+            }
+            return true;
+        } catch (Throwable e) {
+            return false;
+        }
+    }
+
     public static void cleanPlayerCache() {
         String ijkCachePath = getCachePath() + "/ijkcaches/";
         String thunderCachePath = getCachePath() + "/thunder/";

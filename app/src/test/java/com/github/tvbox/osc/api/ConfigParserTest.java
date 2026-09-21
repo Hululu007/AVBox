@@ -198,6 +198,38 @@ public class ConfigParserTest {
         assertTrue(ConfigParser.parseApiCollection(null).isEmpty());
     }
 
+    /**
+     * 2026-09-21 直播多仓:直播与点播共用同一条多仓判定。
+     *
+     * <p>存在理由:直播侧补 {@code urls} 分流后,"哪些正文算仓库"变成两条加载路径的公共前提 ——
+     * 判宽了会把用户带 sites 的正常直播配置整段换成仓里的第一条,判窄了仓地址继续报"解析失败"。
+     * 同时锁住"仓库正文里不能带 sites"这条边界。
+     */
+    @Test
+    public void isDepotJson_matchesOnlyUrlsWithoutSites() {
+        assertTrue(ConfigParser.isDepotJson(json("{\"urls\":[{\"name\":\"仓A\",\"url\":\"http://a/1\"}]}")));
+        // 空 urls 不算仓库:进去只会切到不存在的子源
+        assertFalse(ConfigParser.isDepotJson(json("{\"urls\":[]}")));
+        // urls 不是数组(字符串/对象)都不算
+        assertFalse(ConfigParser.isDepotJson(json("{\"urls\":\"http://a/1\"}")));
+        assertFalse(ConfigParser.isDepotJson(json("{\"urls\":{\"url\":\"http://a/1\"}}")));
+        // 带 sites 的正常配置优先,即使同时带 urls
+        assertFalse(ConfigParser.isDepotJson(json("{\"sites\":[],\"urls\":[\"http://a/1\"]}")));
+        // 直播正常配置
+        assertFalse(ConfigParser.isDepotJson(json("{\"lives\":[]}")));
+        assertFalse(ConfigParser.isDepotJson(null));
+    }
+
+    /** 仓库里 {@code name} 缺失/类型不对时用 url 兜底当显示名,不能让整条源丢掉 */
+    @Test
+    public void parseApiCollection_toleratesBadNameAndEmptyEntries() {
+        ArrayList<String> lines = ConfigParser.parseApiCollection(
+                "{\"urls\":[{\"url\":\"http://a/1\",\"name\":123},{\"name\":\"空地址\"},\"http://c/3\"]}");
+        assertEquals(2, lines.size());
+        assertEquals("http://a/1\thttp://a/1", lines.get(0));
+        assertEquals("http://c/3\thttp://c/3", lines.get(1));
+    }
+
     // ---------- 直播多源与 hosts ----------
 
     @Test

@@ -142,6 +142,18 @@ public final class KVKeySpec implements KVDecoder.TypeRegistry {
         });
         register(HawkConfig.API_LINE_LIST, new TypeToken<ArrayList<String>>() {
         });
+        // 直播侧多仓列表:与点播同一个 "名字\t链接" 行格式,但独立键,元素类型必须同样显式登记
+        register(HawkConfig.LIVE_API_LINE_LIST, new TypeToken<ArrayList<String>>() {
+        });
+        // 启动看门狗标记:boot_loading_jar 是当前加载中的 jar 地址(可能带 "直播" 前缀,故按 String 存)
+        register(HawkConfig.BOOT_LOADING_JAR, "");
+        register(HawkConfig.BOOT_SAFE_DISABLED, "");
+        register(HawkConfig.BOOT_VOD_SOURCE, "");
+        register(HawkConfig.BOOT_LIVE_SOURCE, "");
+        // 0L 是 Long 哨兵:尝试次数与加载时刻必须按 long 解码,否则读回来对不上类型
+        register(HawkConfig.BOOT_LOADING_COUNT, 0L);
+        register(HawkConfig.BOOT_LAST_ATTEMPT_AT, 0L);
+        register(HawkConfig.BOOT_LOAD_START_ELAPSED, 0L);
         // 配置管理订阅源:每项 "名字\t链接"
         register(HawkConfig.SUBSCRIBE_LIST, new TypeToken<ArrayList<String>>() {
         });

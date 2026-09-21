@@ -14,6 +14,7 @@ import com.github.catvod.crawler.pyLoader;
 import com.github.catvod.crawler.python.IPyLoader;
 import com.github.tvbox.osc.base.App;
 import com.github.tvbox.osc.bean.SourceBean;
+import com.github.tvbox.osc.util.BootGuard;
 import com.github.tvbox.osc.util.DefaultConfig;
 import com.github.tvbox.osc.util.FileUtils;
 import com.github.tvbox.osc.util.LOG;
@@ -102,12 +103,20 @@ final class SpiderLoader {
         jarLoadExecutor.execute(new Runnable() {
             @Override
             public void run() {
+                // 启动看门狗(2026-09-21):这里是所有 jar 装载的唯一收口(缓存命中与下载成功都走它),
+                // 所以只需要在这里记一次"正在加载谁"—— 爬虫在自己的线程上闪退时,我们靠这个标记
+                // 知道是哪个源把应用崩掉的(详见 BootGuard 注释里的自锁场景)。
+                if (file != null) BootGuard.onJarLoadStart(file.getAbsolutePath());
                 boolean success = false;
                 try {
                     success = file != null && file.exists() && jarLoader.load(file.getAbsolutePath());
                 } catch (Throwable th) {
                     LOG.e("echo---jar Loader threw exception: " + th.getMessage());
                 }
+                // 装载成功**不**清计数(2026-09-21):爬虫的 <clinit> 跑在自己的线程上,
+                // 这里报成功之后 28ms 它才崩 —— 早清等于擦掉唯一证据。改由 BootGuard
+                // 在"连续存活满 60 秒"后清(那时才真的算稳定源)。
+                if (success) BootGuard.scheduleStableRunReset();
                 final boolean result = success;
                 mainHandler.post(new Runnable() {
                     @Override

@@ -589,7 +589,13 @@ private fun SettingsSheet(activity: LivePlayActivity) {
                 val items = group.liveSettingItems ?: return@forEach
                 item(key = "sg" + group.groupIndex) {
                     SettingsGroup(
-                        title = if (group.groupIndex == 6) group.groupName + "（长按可删除）" else group.groupName,
+                        // 2026-09-21 多仓:仓列表来自仓地址、不允许单独删除,所以标题里的"长按可删除"
+                        // 只在配置历史模式显示 —— 否则用户长按只会得到一句拒绝提示
+                        title = if (group.groupIndex == 6 && !activity.isLiveApiLineMode()) {
+                            group.groupName + "（长按可删除）"
+                        } else {
+                            group.groupName
+                        },
                     ) {
                         items.forEachIndexed { index, item ->
                             val position = when {

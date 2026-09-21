@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -57,15 +58,19 @@ import androidx.compose.ui.unit.dp
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.ui.activity.ConfigManageActivity
+import com.github.tvbox.osc.ui.components.AVBoxBottomSheet
 import com.github.tvbox.osc.ui.components.CapsuleSegmentedButton
 import com.github.tvbox.osc.ui.components.LoadState
 import com.github.tvbox.osc.ui.components.AppTopBarScaffold
 import com.github.tvbox.osc.ui.components.LoadStateBox
+import com.github.tvbox.osc.ui.components.LocalSheetDismiss
 import com.github.tvbox.osc.ui.components.SegmentOption
 import com.github.tvbox.osc.ui.components.SegmentStyle
 import com.github.tvbox.osc.ui.components.SettingsCard
 import com.github.tvbox.osc.ui.components.SettingsCardPosition
+import com.github.tvbox.osc.ui.components.SettingsGroup
 import com.github.tvbox.osc.ui.components.SettingsIconBadge
+import com.github.tvbox.osc.ui.components.SettingsOptionRow
 import com.github.tvbox.osc.ui.components.SettingsSwitchRow
 import com.github.tvbox.osc.ui.components.TopBarActionBox
 import com.github.tvbox.osc.ui.components.glassSurface
@@ -130,9 +135,17 @@ private fun badgeText(name: String, url: String): String = when {
 private fun applyVodSource(item: SubscribeSource): Boolean {
     val followLive = ApiConfig.isLiveFollowVod()
     val oldApi = KV.get(HawkConfig.API_URL, "")
+    // 跟随态下"直播当前跟着谁":LIVE_API_URL 为空,实际生效地址就是点播地址
+    val oldFollowTarget = KV.get(HawkConfig.LIVE_API_URL, "").ifEmpty { oldApi }
     HistoryHelper.setApiHistory(item.url)
     KV.put(HawkConfig.API_URL, item.url)
-    if (followLive) KV.put(HawkConfig.LIVE_API_URL, "")
+    if (followLive) {
+        KV.put(HawkConfig.LIVE_API_URL, "")
+        // 跟随态下直播源会跟着点播源一起变,旧直播仓列表随之失效(2026-09-21)。
+        // ⚠️ 只在**直播确实被改动**时才清:否则"直播是独立仓源 + 点播换到别的源"会被误清,
+        // 把用户的独立直播仓列表弄丢(直播设置「配置切换」组会退回配置历史)。
+        if (item.url != oldFollowTarget) HistoryHelper.clearLiveApiLineList()
+    }
     if (!HistoryHelper.isApiLineHistory(item.url)) HistoryHelper.clearApiLineList()
     if (oldApi == item.url) {
         ApiConfig.get().invalidateLiveConfig()
@@ -145,11 +158,14 @@ private fun applyVodSource(item: SubscribeSource): Boolean {
 private fun applyLiveSource(item: SubscribeSource) {
     HistoryHelper.setLiveApiHistory(item.url)
     KV.put(HawkConfig.LIVE_API_URL, item.url)
+    // 多仓(2026-09-21):换到仓列表之外的地址即退出仓模式,否则「配置切换」会继续列上一仓的子源
+    if (!HistoryHelper.isLiveApiLineHistory(item.url)) HistoryHelper.clearLiveApiLineList()
     ApiConfig.get().invalidateLiveConfig()
 }
 
 private fun applyLiveFollowVod() {
     KV.put(HawkConfig.LIVE_API_URL, "")
+    HistoryHelper.clearLiveApiLineList()
     ApiConfig.get().invalidateLiveConfig()
 }
 
@@ -167,6 +183,7 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
     var editTarget by remember { mutableStateOf<SubscribeSource?>(null) }
     var manageMode by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf(emptySet<String>()) }
+    var repoSheetOpen by remember { mutableStateOf(false) }
 
     val isVod = mode == ConfigMode.Vod
     val currentItems = if (isVod) vodItems else liveItems
@@ -189,8 +206,20 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
 
     BackHandler(enabled = manageMode) { exitManageMode() }
 
+    /**
+     * 这一条源是不是"正在使用"。
+     *
+     * <p>2026-09-21 多仓:光比地址本身不够 —— 仓生效后 {@code API_URL} 已被改写成仓里第一条子源的
+     * 地址,订阅列表里那条仓地址永远匹配不上,表现为"切到仓之后退出再进来,所有源都显示未使用"。
+     * 所以还要认"它正是当前仓的来源地址"这一种关系。
+     */
     fun isInUse(url: String): Boolean =
-        if (isVod) url == activeUrl else !liveFollow && url == liveActiveUrl
+        if (isVod) {
+            url == activeUrl || HistoryHelper.isApiLineSourceOf(url, activeUrl)
+        } else {
+            (!liveFollow && url == liveActiveUrl) ||
+                (!liveFollow && HistoryHelper.isLiveApiLineSourceOf(url, liveActiveUrl))
+        }
 
     fun switchToVod(item: SubscribeSource) {
         if (activeUrl == item.url) return
@@ -210,6 +239,24 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
         liveFollow = false
         Toast.makeText(context, "已切换到:" + item.name, Toast.LENGTH_SHORT).show()
     }
+
+    // ---------- 换仓(2026-09-21) ----------
+    // 多仓生效后启动地址已被改写成"仓里的某个子源",订阅卡与「使用中」都不再指向用户当初填的仓地址,
+    // 所以换仓需要一个独立入口:右上角图标 → bottom sheet 列出仓里的全部子源。
+    // 列表直接取仓模式判定的同一份数据(isApiLineUrl / isLiveApiLineMode),不另建一套状态。
+
+    /** 当前源是否来自多仓 —— 不是仓源就没有可换的子源,入口整体隐藏 */
+    val canSwitchRepo = if (isVod) {
+        HistoryHelper.isApiLineUrl(activeUrl)
+    } else {
+        ApiConfig.get().isLiveApiLineMode() && HistoryHelper.isLiveApiLineUrl(liveActiveUrl)
+    }
+
+    /** 仓里的子源条目("名字\t链接");与「配置切换」组里的仓列表是同一份 */
+    val repoEntries = if (isVod) HistoryHelper.getApiLines() else HistoryHelper.getLiveApiLines()
+
+    /** 当前生效的子源地址:换仓列表据此打选中标记 */
+    val repoActiveUrl = if (isVod) activeUrl else liveActiveUrl
 
     fun followLiveNow() {
         applyLiveFollowVod()
@@ -325,11 +372,25 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
                         )
                     }
                 } else {
-                    TopBarActionBox(
-                        iconRes = R.drawable.ic_subscribe_add,
-                        contentDescription = if (isVod) "添加订阅" else "添加直播源",
-                        onClick = { addDialogOpen = true },
-                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        // 「换仓」入口(2026-09-21):仅在**当前源来自多仓**时出现 ——
+                        // 不是仓源时没有可换的子源,按钮出现只会让人白点一次。
+                        if (canSwitchRepo) {
+                            TopBarActionBox(
+                                iconRes = R.drawable.ic_switch_repo,
+                                contentDescription = "换仓",
+                                onClick = { repoSheetOpen = true },
+                            )
+                        }
+                        TopBarActionBox(
+                            iconRes = R.drawable.ic_subscribe_add,
+                            contentDescription = if (isVod) "添加订阅" else "添加直播源",
+                            onClick = { addDialogOpen = true },
+                        )
+                    }
                 }
             }
         },
@@ -343,6 +404,7 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
                 selectedValue = mode,
                 onOptionSelected = { mode = it },
                 style = SegmentStyle.Track,
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(start = 16.dp, end = 16.dp, top = topPad + 8.dp),
@@ -404,7 +466,17 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
                         }
                         items(mOrdered, key = { "${m.name}#$it" }) { value ->
                             val item = parseSubscribe(value)
-                            val inUse = if (mIsVod) item.url == activeUrl else !liveFollow && item.url == liveActiveUrl
+                            // 2026-09-21 多仓:与上面 isInUse 同一套判定 —— 之前只比地址本身,
+                            // 点了带"使用中"标记的仓卡会因为 activeUrl(仓地址)与 API_URL(仓里首条)
+                            // 不等而误判成"未使用",再点一次又白跑一遍完整换源流程
+                            val inUse = if (mIsVod) {
+                                item.url == activeUrl || HistoryHelper.isApiLineSourceOf(item.url, activeUrl)
+                            } else {
+                                !liveFollow && (
+                                    item.url == liveActiveUrl ||
+                                        HistoryHelper.isLiveApiLineSourceOf(item.url, liveActiveUrl)
+                                    )
+                            }
                             SubscribeCard(
                                 modifier = Modifier.animateItem(),
                                 item = item,
@@ -475,6 +547,91 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
                 (context as? ConfigManageActivity)?.launchLocalConfig { api -> onPicked(api) }
             },
         )
+    }
+
+    if (repoSheetOpen) {
+        RepoSwitchSheet(
+            entries = repoEntries,
+            activeUrl = repoActiveUrl,
+            onDismiss = { repoSheetOpen = false },
+            onSelect = { url ->
+                val name = HistoryHelper.getApiLineName(
+                    repoEntries.firstOrNull { HistoryHelper.getApiLineUrl(it) == url }.orEmpty(),
+                )
+                if (isVod) {
+                    // 点播:与在订阅列表里点同一条源等价 —— switchToVod 里已经处理了
+                    // "是否落在仓里"的仓列表保留判定,所以换完仓后入口仍在
+                    switchToVod(SubscribeSource(name, url))
+                } else {
+                    switchToLive(SubscribeSource(name, url))
+                }
+            },
+        )
+    }
+}
+
+/**
+ * 「换仓」bottom sheet(2026-09-21):列出当前仓里的全部子源,点一条即切换。
+ *
+ * <p>样式与设置页的 `AVBoxOptionSheet` 保持一致(同一套 `SettingsGroup` / `SettingsCard` /
+ * `SettingsOptionRow`),但每条多带一行地址 —— 仓里常有同名子源,只给名字无法分辨。
+ */
+@Composable
+private fun RepoSwitchSheet(
+    entries: List<String>,
+    activeUrl: String,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit,
+) {
+    val dismissAnimated = LocalSheetDismiss.current
+    // 与 AVBoxOptionSheet 同款防连点:点一次后锁住,避免快速双击触发两次换源
+    var accepted by remember { mutableStateOf(false) }
+    AVBoxBottomSheet(
+        onDismissRequest = onDismiss,
+        title = "换仓",
+        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+    ) {
+        SettingsGroup(
+            title = null,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+        ) {
+            entries.forEachIndexed { index, entry ->
+                val url = HistoryHelper.getApiLineUrl(entry)
+                SettingsCard(
+                    position = when {
+                        entries.size <= 1 -> SettingsCardPosition.SINGLE
+                        index == 0 -> SettingsCardPosition.FIRST
+                        index == entries.size - 1 -> SettingsCardPosition.LAST
+                        else -> SettingsCardPosition.MIDDLE
+                    },
+                    color = MaterialTheme.colorScheme.surfaceBright,
+                ) {
+                    SettingsOptionRow(
+                        title = HistoryHelper.getApiLineName(entry),
+                        selected = url == activeUrl,
+                        onClick = {
+                            if (!accepted && url.isNotEmpty()) {
+                                accepted = true
+                                onSelect(url)
+                                // 只走动画关闭:它播完才回调 onDismiss 去改状态。
+                                // 若在这里同时置 repoSheetOpen=false,面板会先被拆掉、动画就没了。
+                                dismissAnimated()
+                            }
+                        },
+                        trailing = {
+                            Text(
+                                text = url,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.widthIn(max = 180.dp),
+                            )
+                        },
+                    )
+                }
+            }
+        }
     }
 }
 

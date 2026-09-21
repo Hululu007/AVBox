@@ -12,6 +12,7 @@ import android.util.Base64;
 
 import com.github.catvod.crawler.Spider;
 import com.github.tvbox.osc.base.App;
+import com.github.tvbox.osc.bean.Depot;
 import com.github.tvbox.osc.bean.LiveChannelGroup;
 import com.github.tvbox.osc.bean.IJKCode;
 import com.github.tvbox.osc.bean.LiveChannelItem;
@@ -271,7 +272,13 @@ public class ApiConfig {
         LOG.i("echo-load live config "+liveApiUrl);
         if (useCache && live_cache.exists()) {
             try {
-                parseLiveConfigContent(liveApiUrl, live_cache);
+                String json = readConfigFile(live_cache);
+                if (switchLiveApiCollectionIfNeeded(liveApiUrl, json)) {
+                    loadLiveConfig(false, callback);
+                    return;
+                }
+                clearLiveApiLinesIfUnmatched(liveApiUrl);
+                parseLiveConfigContent(liveApiUrl, json);
                 if (hasLiveConfigResult()) {
                     loadedLiveConfigUrl = liveApiUrl;
                     callback.success();
@@ -285,6 +292,12 @@ public class ApiConfig {
             @Override
             public void success(String json) {
                 try {
+                    if (switchLiveApiCollectionIfNeeded(liveApiUrl, json)) {
+                        FileUtils.saveCache(live_cache, json);
+                        loadLiveConfig(false, callback);
+                        return;
+                    }
+                    clearLiveApiLinesIfUnmatched(liveApiUrl);
                     parseLiveConfigContent(liveApiUrl, json);
                     if (!hasLiveConfigResult()) {
                         callback.error("直播配置解析失败");
@@ -312,7 +325,13 @@ public class ApiConfig {
                 }
                 if (live_cache.exists()) {
                     try {
-                        parseLiveConfigContent(liveApiUrl, live_cache);
+                        String json = readConfigFile(live_cache);
+                        if (switchLiveApiCollectionIfNeeded(liveApiUrl, json)) {
+                            loadLiveConfig(false, callback);
+                            return;
+                        }
+                        clearLiveApiLinesIfUnmatched(liveApiUrl);
+                        parseLiveConfigContent(liveApiUrl, json);
                         if (hasLiveConfigResult()) {
                             loadedLiveConfigUrl = liveApiUrl;
                             callback.success();
@@ -505,8 +524,74 @@ public class ApiConfig {
         if (TextUtils.isEmpty(liveApiUrl) || liveApiUrl.equals(apiUrl)) {
             KV.put(HawkConfig.LIVE_API_URL, firstApi);
             HistoryHelper.setLiveApiHistory(firstApi);
+            // 直播此时跟随点播(2026-09-21):点播换仓后直播源也被改写,
+            // 旧的直播仓列表已不对应当前直播源,必须一起作废,否则「配置切换」会列出上一仓的子源
+            HistoryHelper.clearLiveApiLineList();
         }
         return true;
+    }
+
+    /**
+     * 直播源的"多仓"(仓库)分流(2026-09-21,对齐 FongMi 的 {@code LiveConfig.parseDepot})。
+     *
+     * <p>现状:直播侧此前只认 {@code lives},遇到仓地址(顶层只有 {@code urls})会解析出空列表,
+     * 用户看到的是"直播配置解析失败"。这里补上与点播同一套语义:
+     * 记下仓列表 → 把直播源换成仓里第一条 → 重新加载。
+     *
+     * <p>与点播 {@link #switchApiCollectionIfNeeded} 的两处刻意差异:
+     * <ul>
+     *   <li>改的是 {@code LIVE_API_URL} 而不是 {@code API_URL} —— 直播源可能独立于点播存在;</li>
+     *   <li>同时把 {@code API_URL} 指向首仓,仅在"跟随点播源"时为真 —— 跟随态下两地址必须一致,
+     *       否则下一轮 {@link #isLiveFollowVod()} 会把用户的仓选择判成"已脱离跟随"。</li>
+     * </ul>
+     */
+    private boolean switchLiveApiCollectionIfNeeded(String apiUrl, String jsonStr) {
+        ArrayList<String> apiLines = ConfigParser.parseApiCollection(jsonStr);
+        if (apiLines.isEmpty()) {
+            return false;
+        }
+        String firstApi = HistoryHelper.getApiLineUrl(apiLines.get(0));
+        if (TextUtils.isEmpty(firstApi) || firstApi.equals(apiUrl)) {
+            return false;
+        }
+        KV.put(HawkConfig.LIVE_API_LINE_LIST, apiLines);
+        KV.put(HawkConfig.LIVE_API_LINE_SOURCE, apiUrl);
+        // ⚠️ 跟随态必须在改写 LIVE_API_URL **之前**判定:isLiveFollowVod 靠"LIVE_API_URL 是否等于 API_URL"
+        // 成立,先写新地址会把跟随态判成独立源(同类陷阱见 clearVodConfig 里的同款注释)
+        boolean followLive = isLiveFollowVod();
+        KV.put(HawkConfig.LIVE_API_URL, firstApi);
+        if (followLive) {
+            KV.put(HawkConfig.API_URL, firstApi);
+            HistoryHelper.setApiHistory(firstApi);
+        }
+        HistoryHelper.setLiveApiHistory(apiUrl);
+        loadedLiveConfigUrl = "";
+        clearLiveConfigResult();
+        return true;
+    }
+
+    /**
+     * 与直播仓列表对不上号就清掉(2026-09-21):用户手动换成别的直播源后,
+     * 残留的仓列表会让「配置切换」组继续列出上一仓的子源 —— 点进去是别人的源。
+     * 空地址(跟随态)不清:此时仓列表跟着点播侧走,由点播那条路径负责。
+     */
+    private void clearLiveApiLinesIfUnmatched(String apiUrl) {
+        if (TextUtils.isEmpty(apiUrl)) return;
+        if (!HistoryHelper.isLiveApiLineUrl(apiUrl) && !HistoryHelper.isLiveApiLineSource(apiUrl)) {
+            HistoryHelper.clearLiveApiLineList();
+        }
+    }
+
+    /**
+     * 直播配置数据清场,但**不动** KV 与仓列表 —— 供"换仓后重新拉取"时先丢弃旧结果用。
+     * 与 {@link #invalidateLiveConfig()} 的区别:后者还会作废加载标记与直播配置快照。
+     */
+    private void clearLiveConfigResult() {
+        liveChannelGroupList.clear();
+        spiderLoader.setLiveSpider("");
+        spiderLoader.resetCurrentLiveSpider();
+        initLiveSettings();
+        KV.put(HawkConfig.LIVE_GROUP_LIST, new JsonArray());
     }
 
     private void resetConfigData() {
@@ -545,6 +630,8 @@ public class ApiConfig {
         HistoryHelper.clearApiLineList();
         if (followLive) {
             KV.put(HawkConfig.LIVE_API_URL, "");
+            // 跟随态下直播源就是点播源(2026-09-21):点播仓列表已清,直播仓列表同理作废
+            HistoryHelper.clearLiveApiLineList();
         }
         invalidateLiveConfig();
     }
@@ -552,6 +639,8 @@ public class ApiConfig {
     /** 清空独立直播源并回到「跟随点播源」(2026-09-12):点播配置完全不受影响 */
     public void clearLiveConfig() {
         KV.put(HawkConfig.LIVE_API_URL, "");
+        // 仓列表跟着被清掉的直播源一起作废(2026-09-21):留着会在「配置切换」里列出已失效的子源
+        HistoryHelper.clearLiveApiLineList();
         invalidateLiveConfig();
     }
 
@@ -936,6 +1025,10 @@ public class ApiConfig {
      * 第 0 项固定为合成的「跟随点播源」(即未单独配置直播源的默认态),
      * 其后依次为直播配置历史 —— 因此历史第 i 项在该组里的 itemIndex = i + 1。
      * 跟随项无条件占位(即使当前未配置点播源),避免"是否显示"导致的下标漂移。
+     *
+     * <p>2026-09-21 多仓:当前直播源来自仓列表时,第 1 项起改列**仓里的子源**而不是历史
+     * (对齐点播侧「接口线路」的取舍)—— 用户填了仓地址,想看的就是仓里有什么,
+     * 而不是自己以前填过哪些地址。
      */
     public void refreshLiveApiHistoryItems() {
         if (liveSettingGroupList.size() < 7) return;
@@ -944,14 +1037,54 @@ public class ApiConfig {
         followItem.setItemIndex(0);
         followItem.setItemName(LIVE_FOLLOW_ITEM_NAME);
         liveSettingItemList.add(followItem);
-        ArrayList<String> history = KV.get(HawkConfig.LIVE_API_HISTORY, new ArrayList<String>());
-        for (int i = 0; i < history.size(); i++) {
+        ArrayList<String> entries = HistoryHelper.isLiveApiLineUrl(KV.get(HawkConfig.LIVE_API_URL, ""))
+                ? HistoryHelper.getLiveApiLines()
+                : KV.get(HawkConfig.LIVE_API_HISTORY, new ArrayList<String>());
+        for (int i = 0; i < entries.size(); i++) {
             LiveSettingItem liveSettingItem = new LiveSettingItem();
             liveSettingItem.setItemIndex(i + 1);
-            liveSettingItem.setItemName(history.get(i));
+            liveSettingItem.setItemName(HistoryHelper.getApiLineName(entries.get(i)));
             liveSettingItemList.add(liveSettingItem);
         }
         liveSettingGroupList.get(6).setLiveSettingItems(liveSettingItemList);
+    }
+
+    /** 直播设置的「配置切换」当前列的是仓列表还是历史 —— UI 点击时据此取值 */
+    public boolean isLiveApiLineMode() {
+        return HistoryHelper.isLiveApiLineUrl(KV.get(HawkConfig.LIVE_API_URL, ""));
+    }
+
+    /**
+     * 「配置切换」组第 1 项起实际展示的条目(仓列表或配置历史,见 {@link #refreshLiveApiHistoryItems()})。
+     * UI 的删除动作必须走这里,否则仓模式下会拿历史的下标去索引仓列表,删错源。
+     */
+    public ArrayList<String> getLiveConfigEntries() {
+        return HistoryHelper.isLiveApiLineUrl(KV.get(HawkConfig.LIVE_API_URL, ""))
+                ? HistoryHelper.getLiveApiLines()
+                : KV.get(HawkConfig.LIVE_API_HISTORY, new ArrayList<String>());
+    }
+
+    /**
+     * 同 {@link #getLiveConfigEntries()},但剥成纯地址列表。
+     *
+     * <p>存在理由:条目是 {@code "名字\t链接"} 的行,而"当前选中项"要比对的是地址 ——
+     * 直接拿行去 {@code indexOf(当前地址)} 永远匹配不上,表现为「配置切换」里当前项不高亮。
+     */
+    public ArrayList<String> getLiveConfigUrls() {
+        ArrayList<String> urls = new ArrayList<>();
+        for (String entry : getLiveConfigEntries()) {
+            String url = HistoryHelper.getApiLineUrl(entry);
+            if (!TextUtils.isEmpty(url)) urls.add(url);
+        }
+        return urls;
+    }
+
+    /** 「配置切换」组第 {@code position} 项对应的直播源地址(第 0 项是「跟随点播源」,返回空串) */
+    public String getLiveApiHistoryUrl(int position) {
+        ArrayList<String> urls = getLiveConfigUrls();
+        int index = position - 1;
+        if (index < 0 || index >= urls.size()) return "";
+        return urls.get(index);
     }
 
     public void loadLives(JsonArray livesArray) {

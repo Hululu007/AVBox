@@ -1,0 +1,103 @@
+package com.github.tvbox.osc.util;
+
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
+
+import org.junit.Test;
+
+/**
+ * [BootGuard] 停用判定的纯 JVM 单测(不碰 KV / 不碰文件 / 不碰 Android 存储)。
+ *
+ * <p>存在理由:这段判据的两侧都是真实伤害 ——
+ * 判太松 ⇒ 用户进一次崩一次、连"换源"都做不到,只能清数据(2026-09-21 真机事故);
+ * 判太紧 ⇒ 偶发崩溃(网络/播放器)就把用户能用的源停掉,比崩溃更难理解。
+ *
+ * <p>参数语义(都与实现里的同名量一致):
+ * <ul>
+ *   <li>{@code jar} —— 上次正在加载的 jar 地址;空 = 崩溃与加载无关。</li>
+ *   <li>{@code count} —— 同一源累计装载次数(兜底判据)。</li>
+ *   <li>{@code crashElapsed} —— 上次崩溃时的开机计时;{@code <= 0} = 没有崩溃标记。</li>
+ *   <li>{@code startupCrash} —— 该崩溃是否落在"开始加载 jar 后 10 秒内"(由
+ *       {@link BootGuard#crashedDuringStartup} 单独算好传入,因为它要读并删除标记文件,只能读一次)。</li>
+ * </ul>
+ */
+public class BootGuardTest {
+
+    /** 上次进程开始加载 jar 的开机计时 */
+    private static final long LOAD = 5_000L;
+
+    // ---------- ① 启动加载阶段崩:一次即停用 ----------
+
+    /** 实测场景:开始加载 jar 后 28 毫秒就崩(GoProxy 把 CDN 报错当 .so 加载) */
+    @Test
+    public void startupCrash_disablesAfterSingleAttempt() {
+        assertTrue(BootGuard.shouldDisable("/x/spider.jar", 1, LOAD + 28, true));
+    }
+
+    /** 边界:正好 10 秒算启动阶段 */
+    @Test
+    public void startupCrash_atThresholdCounts() {
+        assertTrue(BootGuard.crashedDuringStartup(LOAD + 10_000, LOAD));
+        assertTrue(BootGuard.shouldDisable("/x/spider.jar", 1, LOAD + 10_000, true));
+    }
+
+    /** 边界:10 秒零 1 毫秒就属于"跑了一阵才崩",单次不停用 */
+    @Test
+    public void slowCrash_oneMillisecondPastThreshold_doesNotDisable() {
+        assertFalse(BootGuard.crashedDuringStartup(LOAD + 10_001, LOAD));
+        assertFalse(BootGuard.shouldDisable("/x/spider.jar", 1, LOAD + 10_001, false));
+    }
+
+    // ---------- ② 非启动阶段的崩溃:累计够次数才停用 ----------
+
+    /**
+     * 交付语义:老用户反馈"崩两次才弹 toast",现在**启动阶段崩一次就停用**(用例在 ①);
+     * 剩下的慢崩路径保持保守 —— 单次绝不停用。
+     */
+    @Test
+    public void slowCrash_singleAttemptNeverDisables() {
+        assertFalse(BootGuard.shouldDisable("/x/spider.jar", 1, LOAD + 60_000, false));
+        assertFalse(BootGuard.shouldDisable("/x/spider.jar", 2, LOAD + 60_000, false));
+    }
+
+    /** 兜底阈值:同一源反复装载(拿不到启动阶段证据)达到 3 次也要能停用,否则会无限空转 */
+    @Test
+    public void repeatedLoads_disableAtFallbackThreshold() {
+        assertTrue(BootGuard.shouldDisable("/x/spider.jar", 3, LOAD + 60_000, false));
+    }
+
+    // ---------- ③ 不该停用的情形 ----------
+
+    /** 没有崩溃标记(没崩过)绝不停用 —— 否则每次冷启动都会把当前源停掉 */
+    @Test
+    public void noCrashNeverDisables() {
+        assertFalse(BootGuard.shouldDisable("/x/spider.jar", 9, 0, true));
+        assertFalse(BootGuard.shouldDisable("/x/spider.jar", 9, -1, true));
+    }
+
+    /** 没有"正在加载的 jar"记录 ⇒ 崩溃与加载无关,不牵连任何源 */
+    @Test
+    public void crashWithoutLoadingJarNeverDisables() {
+        assertFalse(BootGuard.shouldDisable("", 4, LOAD + 1, true));
+        assertFalse(BootGuard.shouldDisable(null, 4, LOAD + 1, true));
+    }
+
+    /**
+     * 关键回归锁:崩溃的开机计时**早于**加载起点(跨批次残留数据)时,不能按"启动阶段崩"处理 ——
+     * 否则会把一次无关崩溃算成启动自锁。
+     */
+    @Test
+    public void crashBeforeLoadStartIsNotStartupCrash() {
+        assertFalse(BootGuard.crashedDuringStartup(LOAD - 1, LOAD));
+        assertFalse(BootGuard.shouldDisable("/x/spider.jar", 1, LOAD - 1, false));
+    }
+
+    /** 没有加载起点(旧数据/异常路径)时,只认计数那条兜底判据(阈值 MAX_LOAD_ATTEMPTS = 3) */
+    @Test
+    public void missingLoadStartFallsBackToCount() {
+        assertFalse(BootGuard.crashedDuringStartup(LOAD + 1, 0));
+        assertFalse(BootGuard.shouldDisable("/x/spider.jar", 1, LOAD + 1, false));
+        assertFalse("阈值以下是 2", BootGuard.shouldDisable("/x/spider.jar", 2, LOAD + 1, false));
+        assertTrue(BootGuard.shouldDisable("/x/spider.jar", 3, LOAD + 1, false));
+    }
+}

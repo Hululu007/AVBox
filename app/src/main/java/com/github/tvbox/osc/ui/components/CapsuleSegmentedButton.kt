@@ -176,7 +176,7 @@ private fun <T> CapsuleToggleButton(
                 pressedShape = TrackShape,
                 checkedShape = TrackShape,
             ),
-            colors = ToggleButtonDefaults.colors(containerColor = Color.Transparent),
+            colors = ToggleButtonDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceBright),
             elevation = null,
             contentPadding = TrackContentPadding,
             interactionSource = interactionSource,

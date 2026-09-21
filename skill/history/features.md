@@ -1422,3 +1422,88 @@ P1 最后两组。至此**调度层(会话/取流/解析/嗅探/重试/换线/�
 - **改动只有 1 处**:`util/SearchSettings.kt` 的 `resultLayout()` —— 判据从"只有 KV `search_result_layout` 等于 `"vertical"` 才竖排、其余(含键不存在)横排",改成**与 `HomeSettings.current()` 同款**:`KV.get(KEY_RESULT_LAYOUT, VALUE_LAYOUT_VERTICAL) == VALUE_LAYOUT_HORIZONTAL` 才横排,其余竖排。默认值仍传 String 常量(不是 `""`)—— 该键**未登记 `KVKeySpec`**,读取必须带默认值、类型要能被默认值携带,换成另一个 String 常量不影响解码。
 - **影响面(改默认值的通用语义)**:①**从未切过**的用户(键不存在)⇒ 跟着变竖排(本次意图);②**显式选过「横向展示」**的用户 KV 里有 `horizontal` 记录 ⇒ 仍横排(不覆盖用户显式选择);③显式选过竖排的不变。④两种排版本来都已实现(`RailResults` / `SearchListResults` 两支),不存在"竖排没渲染"的问题 —— 旧记忆里"竖排只落库,渲染未实现"是过期信息,已按代码写入规范 §4.6。
 - **验证**:`:app:compileDebugKotlin -q` 退出码 0;`:app:testDebugUnitTest` **174 用例 / 0 失败**(现有 `SearchSettingsTest` 只覆盖 `isExactMatch`;KV 相关判定不在单测面内,与项目既有口径一致)。**真机待验**:①键不存在(或在「更多」里选一次「竖向展示」)时进搜索页,结果区应为**左侧站点栏 + 右侧列表**;②在「更多」里切「横向展示」应立刻变成各源分区 + 横向卡片行,重启后保持;③切换展示方式时结果源筛选应重置为「全部」。
+
+## 配置管理页「点播/直播」分段改成音乐页底部胶囊同款(2026-09-21 同日五轮)
+
+- **需求(用户)**:配置管理页的点播/直播分段,外层换成 `surfaceContainer` 大圆角胶囊、内部换成子弹头形状的 `surfaceBright` 段 —— 即与音乐播放页底部胶囊同一套观感。
+- **参考实现(音乐页 `MusicBottomActions` / `BottomActionItem` / `segmentShape`)**:外层 `clip(CapsuleShape) + background(surfaceContainer) + padding(8dp)`(`CapsuleShape = RoundedCornerShape(percent = 50)`);段 = `clip(shape) + background(if (active) activeColor else surfaceBright)`,`elevation` 无阴影;选中态 = primary/tertiary 实心。
+- **改动(2 行,几何与尺寸未动)**:①`ui/components/CapsuleSegmentedButton.kt` 的 `Track` 分支:段容器由 `Color.Transparent` 改 **`MaterialTheme.colorScheme.surfaceBright`**(选中仍走 M3 `ToggleButton` 默认的 primary 实心,两态同时有底色才对得上音乐页);②`ConfigManagePage.kt` 调用点补 **`containerColor = MaterialTheme.colorScheme.surfaceContainer`**(原来吃组件默认值 `surfaceContainerHighest`)。段的 `TrackShape = RoundedCornerShape(percent = 50)` 四角全圆 ⇒ 段本身就是"子弹头",与用户描述一致。
+- **影响面核对(照 §5 的教训:改本组件必须逐页看一眼)**:全仓 `SegmentStyle` 仅三处调用 —— 配置管理页(`Track`,本次就是改它)、主题设置页(`Connected`,不显式传 `containerColor`,走 M3 默认)、搜索设置 sheet(`Separated`,显式传 `containerColor = surfaceBright`);且 `Track` 分支只有配置页在用 ⇒ **不会**复现 2026-09-12「轨道样式一度全局生效、主题设置页观感变差」的问题。
+- **有意保留的差异**:内缩/段间距仍是 4dp(音乐页是 8dp)—— 配置页这个控件是"标题 + 源名"两行紧凑文字、两行内容总高 48dp;要更接近音乐页的比例只需改 `TrackPadding` / `TrackSegmentSpacing` 两个常量。
+- **验证**:`:app:compileDebugKotlin -q` 退出码 0;`:app:testDebugUnitTest` **174 用例 / 0 失败**;`:app:assembleDebug` 成功并已 `adb install -r` 装机(设备回读 `lastUpdateTime` 与装机时刻一致)。**真机待验**:①外层是浅灰(`surfaceContainer`)全圆角胶囊,不再是原来的 `surfaceContainerHighest`;②**未选中段(直播)也有 `surfaceBright` 白底子弹头**(原来透出轨道底色),选中段仍是 primary 实心;③按压回弹(0.94)与"无阴影"观感正常;④**主题设置页的三段选择器外观不应有任何变化**(回归检查点)。
+
+## 直播侧补齐多仓(仓库)支持(2026-09-21)
+
+- **需求(用户)**:「除了自动换仓,其他都做了,参考 fongmi」—— 即补齐前面盘出的两个缺口:①直播侧识别多仓配置;②仓选择器。参考实现 = FongMi/TV `fongmi` 分支的 `VodConfig.parseDepot` / `LiveConfig.parseDepot`(以及 `bean/Depot`),而不是本地 `示例文件/上游项目`(q215613905/TVBoxOS)—— 后者只在 `95eccf4`「兼容多仓配置」里做了点播侧一半,直播侧至今没有。
+- **改前的实际症状**:直播源填的是仓地址(顶层只有 `urls`、没有 `lives`)时,`parseLiveConfigContent` 走 `isLiveJsonContent` → `parseLiveJson`,`infoJson.has("lives")` 为假 ⇒ 频道分组为空 ⇒ `hasLiveConfigResult()` 为假 ⇒ 用户看到「直播配置解析失败」,仓里的源一个都进不来。
+- **改动(8 文件)**:
+  - 新增 `bean/Depot.java`:对齐 FongMi 的 `{url,name}`,但**手写遍历**而不走 Gson 直接映射 —— 本项目配置生态里 `urls` 有三种写法(`{"url":…}` / `{"api":…}` / 裸字符串),Gson 映射会把裸字符串整条丢掉(老写法,不能丢)。判空用**本地 `isEmpty` 而非 `android.text.TextUtils`**(见下"踩坑")。
+  - `ConfigParser`:抽出公共判定 `isDepotJson(JsonObject)`(顶层有 `urls` 数组、**无 sites**、数组非空),`parseApiCollection` 改为复用它 + `Depot.arrayFrom`;点播/直播共用同一条判定,避免两边对"什么算仓"分叉。
+  - `ApiConfig` 新增 `switchLiveApiCollectionIfNeeded(apiUrl, json)` / `clearLiveApiLinesIfUnmatched` / `clearLiveConfigResult`,并接进 `loadLiveConfig` 的**三条**取数路径(命中缓存、网络成功、网络失败回落缓存),与点播 `switchApiCollectionIfNeeded` 完全同构。
+  - `HawkConfig` + `KVKeySpec`:新增 `LIVE_API_LINE_LIST` / `LIVE_API_LINE_SOURCE` 两个键;⚠️ 集合键**必须**在 `KVKeySpec` 显式登记元素类型,否则读回来退化成 `LinkedTreeMap`(该文件里已有 LIVE_WEB_HEADER 的前车之鉴)。
+  - `HistoryHelper`:补 `isLiveApiLineUrl` / `isLiveApiLineSource` / `isLiveApiLineHistory` / `getLiveApiLines` / `clearLiveApiLineList`,与点播那四个判定一一对应。
+  - `ApiConfig.refreshLiveApiHistoryItems` + 新增 `getLiveConfigEntries` / `getLiveConfigUrls` / `getLiveApiHistoryUrl(position)`:仓模式下第 1 项起列**仓里的子源**、否则列配置历史;同时修掉一个既有缺陷 —— 原实现把 `"名字\t链接"` 整行丢给 `LiveSettingsRules.currentConfigIndex` 做 `indexOf(当前地址)`,永远匹配不上 ⇒「配置切换」当前项不高亮(点播侧早就先 `getApiLineUrl` 剥过一层,直播侧漏了)。
+  - `LivePlayViewModel`(第 6 组点击)/ `LivePlayActivity`(选中下标、长按删除)/ `ConfigManagePage`(`applyVodSource` / `applyLiveSource` / `applyLiveFollowVod`):改走上面几个访问器;换到仓列表之外的地址、或回到「跟随点播源」时**作废直播仓列表**,避免组里继续列出上一仓的子源。
+- **与 FongMi 的一处刻意差异(为什么不做成"仓落库")**:FongMi 把每条仓 `Config.find(item, LIVE)` 写进配置表,于是"仓列表"就是现成的配置列表、不需要额外 UI;本项目直播源是 `LIVE_API_URL` 单值 + 独立的配置历史,没有等价的多配置表。改造成本高且会动到点播/直播拆分的既有语义,所以**沿用本项目既有的"仓列表 + 平行 KV"模型**(与点播 `API_LINE_LIST` 同构),保证点播/直播两侧行为一致、改动面最小。
+- **踩坑(值得单记)**:首轮 `parseApiCollection` 的 4 个既有单测全红,现象是"空地址条目不丢、裸字符串条目丢"。真因有两个:①`getName()`/`getUrl()` 里 `name.trim()` 在 `name == null` 时抛 NPE,被 `catch (Throwable)` 吞掉后**静默丢弃后面所有条目**(逐条 `try` 修复);②`android.text.TextUtils.isEmpty` 在单测里**静默返回 false** —— 工程开了 `testOptions.unitTests.returnDefaultValues = true`,Android 桩方法全返默认值,于是"空地址过滤"真机生效、单测失效。这个坑 `ConfigParser` 的注释里已记过一次,本次是第二次;`Depot` 因此改用本地 `isEmpty` 并写了 `DepotTest` 钉死。
+- **验证**:`:app:testDebugUnitTest` **183 用例 / 0 失败**(基线 174 + 新增 `DepotTest` 7 例 + `ConfigParserTest` 新增 `isDepotJson` 与坏 name/空地址 2 例;`KVKeySpecTest` / `LiveSettingsRulesTest` 全绿)。**真机待验(测试机由用户操控)**:①直播源填仓地址时应直接播到仓里第一条的频道,不再报「直播配置解析失败」;②打开直播设置「配置切换」,第 0 项仍是「跟随点播源」、其后应为**仓里的子源名字**,点其他仓应切换并回到同一个频道;③切到仓外的直播源后,该组应回到配置历史(不再列出旧仓子源);④仓模式下长按应提示「仓列表来自仓地址,不能单独删除」而不是删掉一行;⑤点播多仓(原有的「接口线路」)行为不变 —— 这是本次的回归检查点。
+
+## 多仓两处真机暴露的缺陷修复(2026-09-21 同日二轮)
+
+- **用户实测反馈(带截图)**:①「没看到你说的入口」—— 切到仓之后找不到切换仓的地方;②「切换到多仓的源后退出配置管理页面再进去,全部源都是关闭的状态」。
+- **缺陷②真因(数据对不上号)**:配置管理页判"这一条源正在使用"是 `item.url == activeUrl`,而点播多仓加载会把 `API_URL` **改写**成仓里第一条子源的地址(`ApiConfig.switchApiCollectionIfNeeded`)⇒ 订阅列表里那条**仓地址**永远匹配不上当前地址 ⇒ 退出重进后所有卡片显示为未使用。同一处判定还散在列表卡片的 `inUse` 里(比 `isInUse` 还多一处),两处都漏。
+  - **修法**:`HistoryHelper` 新增 `isApiLineSourceOf(url, activeUrl)` / `isLiveApiLineSourceOf(url, activeUrl)` —— 地址本身命中 **或** 它正是"当前仓的来源地址"(`API_LINE_SOURCE`,并要求仓确实处于生效态以免清场后残留误判);`isInUse` 与卡片 `inUse` 两处都改走它。顺带修掉一个连带症状:点了带"使用中"标记的仓卡,之前会因误判走完整换源流程,现在会正确短路。
+- **缺陷①真因(状态只在构造时读一次)**:`SettingsState` 由 `SettingsViewModel.loadState()` 在 **ViewModel 构造时**读一次 KV,之后没有任何刷新钩子;而"当前源来自仓"是**异步**完成的 —— 切完源立刻退回设置页时 `API_LINE_LIST` 仍为空、`API_URL` 仍是仓地址 ⇒ `apiLineVisible` 为假 ⇒「接口线路」这行**永远不出现**(页面状态再也不会更新)。所以用户按文档去设置 tab 找,确实找不到。
+  - **修法**:`SettingsPage` 补两条幂等刷新 —— ①`LifecycleEventEffect(ON_RESUME) { vm.refresh() }`(从配置管理页返回会触发宿主 Activity 的 ON_RESUME);②`AppBootstrap.state` 变 `Ready` 时再刷一次(多仓改写发生在 boot Ready 之前,这条覆盖"人已经停在设置页、加载才完成")。
+- **仓库地址的形态提醒(排查用)**:用户截图里的仓地址是 `https://hk.gh-proxy.org/...`,该域名的根路径返回的是 HTML(实测会 302 到 `gh-proxy.com` 的网页),**必须是能返回 JSON 的具体地址**才可能被识别为仓;若填的是代理站根地址,取到 HTML ⇒ 不是 JSON ⇒ 既不会切到首仓、也就没有「接口线路」。
+- **验证**:`:app:testDebugUnitTest` 183 用例 / 0 失败;`:app:assembleDebug` 通过并已 `adb install -r` 重装(设备回读 `lastUpdateTime` 晚于 APK mtime)。**真机待验**:①切到仓源后**退出配置管理再进来**,那张仓卡应仍带"使用中"开关(不再全部关闭);②从配置管理返回后进设置 tab,应出现「接口线路」行且值为仓里当前子源的名字;③点它可以换到同仓的其它子源。
+
+## 配置管理页「换仓」入口(2026-09-21 同日三轮)
+
+- **需求(用户)**:"换仓的入口放在配置管理页面的右上角,增加一个控件,icon 用 `.tubiao/换仓.svg`,点击弹出 bottom sheet"。
+- **背景**:多仓生效后启动地址被改写成仓里的某个子源,订阅卡与「使用中」都不再指向用户当初填的仓地址 ⇒ 之前换仓只能去**直播播放页的「配置切换」组**或**设置 tab 的「接口线路」行**,而后者还依赖异步加载完成(见上一条缺陷①)。放在配置管理页是顺手的位置:用户本来就在这页管源。
+- **图标**:`.tubiao/换仓.svg` 与既有 `ic_edit.xml` 的 path **逐字符相同**(都是 Material 编辑铅笔字形),但仍按用户指定新建 `res/drawable/ic_switch_repo.xml` 单独存放 —— 外观要调整时只改这一个文件,不影响管理模式的「编辑」图标;沿用本仓约定(viewBox 960 + `<group android:translateY="960">` 平移适配 VectorDrawable,`fillColor="#FFFFFFFF"` 由 `TopBarActionBox` 的 tint 覆盖)。
+- **改动(3 文件 + 1 资源)**:
+  - `ConfigManagePage.kt`:①顶栏常态分支由单个圆钮改 `Row`(8dp 间距),`canSwitchRepo` 为真时在「添加」左侧插「换仓」圆钮;②新增 `repoSheetOpen` 状态与 `RepoSwitchSheet` composable;③新增三个只读派生值 `canSwitchRepo` / `repoEntries` / `repoActiveUrl`。
+  - `HistoryHelper.java`:补 `getApiLines()`(点播仓列表),与已有的 `getLiveApiLines()` 对称。
+  - `res/drawable/ic_switch_repo.xml`:新图标。
+- **可见条件(刻意收窄)**:仅当**当前源来自多仓**才显示 —— 点播看 `isApiLineUrl(activeUrl)`、直播看 `isLiveApiLineMode() && isLiveApiLineUrl(liveActiveUrl)`。不是仓源时没有可换的子源,按钮出现只会让人白点一次。
+- **数据不另建状态**:列表直接取「配置切换」组用的同一份仓列表(`HistoryHelper.getApiLines()` / `getLiveApiLines()`),避免两处各维护一套仓状态(这是本类改动反复踩到的坑)。
+- **切换语义复用**点播 `switchToVod` / 直播 `switchToLive`:仓列表归属判定(`isApiLineHistory`)已在其中,所以换完仓后入口仍在,不用额外处理。
+- **关闭手势的一个坑**:`LocalSheetDismiss` 提供的 `dismissAnimated()` 是**动画播完才回调 `onDismiss`**(实现在 `SheetOverlay.dismissWithAnimation`)。所以点击项时**只调它、不要再自己置 `repoSheetOpen = false`** —— 否则面板先被拆掉、退出动画直接没有。与 `AVBoxOptionSheet` 的写法保持一致,并同样用 `accepted` 防连点。
+- **验证**:`:app:assembleDebug` 退出码 0;`:app:testDebugUnitTest` **190 用例 / 0 失败**(本次纯 UI + 一个 getter,无新增单测面)。**真机待验**:①切到仓源后配置管理页右上应出现两个圆钮(换仓 + 添加);②点换仓弹 bottom sheet,列出仓里子源、当前项打勾、每条带地址;③点其它子源能切换且 sheet 播动画关闭、重开后选中项跟着变;④非仓源时该按钮不出现;⑤管理模式(长按卡片)下右上仍是「编辑/删除」,不受影响。
+
+## 启动看门狗:让坏源不再把应用锁死在崩溃循环(2026-09-21 同日四轮)
+
+- **需求(用户)**:「所有导致闪退的原因是源什么」+「会闪退两次才弹窗 toast 禁用源」+「触发了闪退,再进应用还是闪退,根本没法切换源,只能清除数据」。
+- **真机实测到的根因(逐条有证据)**:
+  - 崩溃栈 `UnsatisfiedLinkError: dlopen failed: ".../files/TV/.libwexproxy…" has bad ELF magic: 3c3f786d`,`at com.github.catvod.spider.GoProxy.<clinit>`;
+  - 把那个"库"从设备掏出来看,内容是 313 字节的**XML 报错**:`<Error><Code>NoSuchKey</Code><Resource>/ysf/cf005a….txt</Resource></Error>`;
+  - 即:第三方源附带的 spider jar 在静态初始化里从云存储下载 `libwexproxy.so`,**远端对象已被删除**,CDN 返回报错页,爬虫不校验就把报错原文当 `.so` 落盘再 `System.load`。`3c3f786d` = ASCII 的 `<?xm`。
+  - 看门狗 KV 里 `boot_vod_source` / `boot_loading_jar` 坐实触发源 = **饭太硬**(`https://www.饭太硬.cc/tv`),jar = 该源配置里的 `csp/81a001fc54e256c003235b33688083ee.jar`;另一个源(王二小)后来也复现同一崩溃,说明是这类加固型 spider 的共性问题。
+- **为什么它会自锁(本轮最关键的观察)**:源地址是持久化的,而该爬虫**每次冷启动都重新下载**(实测清理后 2 秒内又下一遍)再 load ⇒ 进一次崩一次,用户连"换源"都做不到。而 `System.load` 跑在爬虫自己的线程上,**不在我们的调用栈里,try/catch 接不住**。
+- **机制(三轮迭代才成立,每轮都写了为什么上一轮不行)**:
+  1. `FileUtils.repairBogusNativeLibs()` —— 启动时扫私有目录,凡"名字像原生库(`*.so` / `.lib*`)但 ELF 魔数不符"的文件一律删掉。判据刻意收窄(绝不按大小/时间猜),合法库与非库资源(`.wexstring`/`.wexcofig.json`)一个不碰。**只对"上次留下的自锁"有效**。
+  2. `BootGuard` —— 记"正在加载哪个 jar + 此刻哪个源是启动源",进程级 `UncaughtExceptionHandler` 记崩溃,下次启动在加载任何 jar 之前判定:同一源**在启动加载阶段崩过 ⇒ 一次即停用**;否则累计装载 3 次停用。停用只清启动指针 + 仓列表,**不动订阅列表**(用户可在配置管理页重新启用或改选别的源),并弹一次 toast 说明。
+- **三轮失效原因(都留在代码注释里,避免以后重犯)**:
+  - **第一版**:jar 装载成功即清计数。实测爬虫 `GoProxy.<clinit>` 在**另一个线程**,装载线程先报成功、**28 毫秒后**才崩(08:01:25.512 / 08:01:25.540)⇒ 早清等于擦掉唯一证据 ⇒ 阈值永远凑不满。改由"连续存活满 10 分钟"才清。
+  - **第二版**:崩溃时刻写 KV(`KV.putSync`)。实测 MMKV 是**异步写**、2.4.2 **没有同步写 flag**(只有 `SINGLE_PROCESS_MODE` 等模式位),设备上 `boot_last_crash_at` 一直停在几分钟前 ⇒ "启动阶段崩一次即停用"从未成立。改走**同步标记文件** `files/boot_crash.marker`(内容 = 崩溃时的 `elapsedRealtime`),判定全程用同源的开机计时比较。
+  - **第三版(本轮审查修掉)**:`takeCrashMarkerElapsed()` 读完即删,而判定后**又调了一次** `crashedDuringStartup()` 重读同一文件 ⇒ 日志里 `startupCrash=` 恒为 `false`(判定本身没错,但排查会被带偏)。改为只算一次、把结果传进纯函数 `shouldDisable(jar, count, crashElapsed, startupCrash)`。
+- **本轮审查(用户要求"审查是否有错误遗漏与新回归")另修 7 处**:见下一条"审查修复"。
+- **验证**:`:app:testDebugUnitTest` **199 用例 / 0 失败**(基线 174 + `DepotTest` 7 + `FileUtilsNativeLibRepairTest` 8 + `BootGuardTest` 10);`:app:assembleDebug` 退出码 0。真机侧仅观察到"启动不再因该源自锁"(用户确认「没问题了」),其余为静态审查结论。
+
+## 审查修复:本次改动里的 10 处缺陷(2026-09-21 同日五轮)
+
+- **背景**:用户要求「审查一下本次对话增加的内容是否有错误遗漏和引入新回归」。逐文件通读 + 编译 + 单测复核,发现并修掉 10 处,其中最严重的两条**只有靠新写的单测/真机数据才暴露**。
+- **① `BootGuard` 里 `TextUtils.isEmpty` 判空失效(高)**:单测开了 `returnDefaultValues`,`TextUtils.isEmpty("")` **静默返回 false** ⇒ "空 jar 不停用"这条守卫在单测里失效,实现里也随之失真。是**新写的 `BootGuardTest` 当场抓到的**。改局部 `isEmpty`。这是本仓第三次踩同一个坑(`ConfigParser` 注释里记过一次、`Depot` 是第二次),三次的注释现在互相引用。
+- **② 崩溃记录写 MMKV 会丢(高)**:见上一条轮次说明。改同步标记文件。
+- **③ 崩溃标记被读两次(中)**:同上。改"只算一次"。
+- **④ `applyVodSource` 误清独立直播的仓列表(中)**:原写法 `if (followLive) clearLiveApiLineList()` 无条件清 ⇒ 用户"直播是独立仓源 + 点播换到别的源"时会把独立直播仓弄丢(直播设置「配置切换」组退回配置历史)。加 `item.url != oldFollowTarget` 守卫(跟随态下"直播当前跟着谁" = `LIVE_API_URL.ifEmpty { API_URL }`)。
+- **⑤ 停用源时留下"列表非空但地址为空"(中)**:`disableRecordedSource` 只清 `API_URL`/`LIVE_API_URL`,没清仓列表 ⇒ 与 `clearVodConfig()`/`clearLiveConfig()` 的清场口径不一致,「配置切换」会在无源时列出已失效子源。补 `clearApiLineList()`/`clearLiveApiLineList()`。
+- **⑥ 设置页多跑一次缓存目录全量遍历(低,性能回归)**:我把 ON_RESUME 的 `refreshCacheSize()` 换成了 `refresh()`(内含 `getCacheSize()` 的整树递归),且 boot Ready 时又刷一次 ⇒ 白跑。拆出 `refreshState()`(只重读 KV),缓存大小仍只在 ON_RESUME 刷一次。
+- **⑦ 停用阈值与文档不一致(低)**:`count >= MAX_LOAD_ATTEMPTS` 让 `MAX_CRASH_ATTEMPTS` 成为死常量,且 `slowCrash_disablesOnSecondAttempt` 等用例与实现对不上(被单测抓到)。删死常量、统一到 `MAX_LOAD_ATTEMPTS`,并把阈值从 4 收到 3(一次正常启动同源装载 1~2 次,3 仍有区分度、又不必多崩一次)。
+- **⑧ 原生库自检日志 `size=0` 恒为 0(低)**:删完再读 `length()` 必然 0,丢掉了"当初坏文件多大"这条排查信息(实测这个值就是 313,直接指向报错页)。改为删前先记大小。
+- **⑨ `KV.putSync` 无调用方(低,死代码)**:崩溃通道改文件后它没用了,删除,并把为它拆出的 `putInternal` 还原成 `put`。
+- **⑩ `BOOT_LOAD_START_AT` 成为只写不读的死键(低)**:崩溃判定全程用 `elapsedRealtime`,墙钟键没意义。删除,只留 `BOOT_LOAD_START_ELAPSED`;`KVKeySpec` 登记同步更新。
+- **验证**:`:app:testDebugUnitTest` **199 用例 / 0 失败**;`:app:assembleDebug` 退出码 0。
+- **仍存的已知局限(刻意保留,非遗漏)**:①看门狗是**进程级兜底**,爬虫远端一天不修好、该源就一天不可用(会被自动停用);②`repairBogusNativeLibs` 对"本次启动才下载的垃圾"无效(只打破上次留下的自锁);③停用不删订阅列表,用户可重新启用同一个(仍坏的)源、会再次被停用;④换仓入口与原生的「配置切换」列仓列表只做了编译 + 单测,未实机点过。

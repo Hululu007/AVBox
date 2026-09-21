@@ -11,6 +11,28 @@ public class HawkConfig {
     public static final String API_HISTORY = "api_history";
     public static final String API_LINE_LIST = "api_line_list";
     public static final String API_LINE_SOURCE = "api_line_source";
+    /**
+     * 直播侧的多仓(仓库)列表与其仓地址(2026-09-21,对齐 FongMi 的 {@code LiveConfig.parseDepot})。
+     * 与点播的 API_LINE_LIST 分开存 —— 同一条链路的直播/点播是两个独立配置,仓列表不能互相覆盖。
+     */
+    public static final String LIVE_API_LINE_LIST = "live_api_line_list";
+    public static final String LIVE_API_LINE_SOURCE = "live_api_line_source";
+    /**
+     * 启动看门狗(2026-09-21,见 {@code util/BootGuard}):正在加载的 jar 地址 / 尝试次数 / 上次崩溃时刻。
+     * 用途:第三方爬虫在静态初始化里把 CDN 报错当 .so 加载会闪退,而配置是持久化的 ⇒
+     * 冷启动必崩、用户连"换源"都进不去。这三个键让下次启动能识别并自动停用那个源。
+     */
+    public static final String BOOT_LOADING_JAR = "boot_loading_jar";
+    public static final String BOOT_LOADING_COUNT = "boot_loading_count";
+    /** 上次"开始加载 jar"的开机计时:与崩溃标记同源,用于判"崩溃是否发生在启动加载阶段" */
+    public static final String BOOT_LOAD_START_ELAPSED = "boot_load_start_elapsed";
+    /** 上次"开始加载 jar"的时刻:用于"距上次太久就重新计数"的判定 */
+    public static final String BOOT_LAST_ATTEMPT_AT = "boot_last_attempt_at";
+    /** 崩溃发生时正在使用的启动源(点播/直播分开记,见 BootGuard.recordCurrentSource) */
+    public static final String BOOT_VOD_SOURCE = "boot_vod_source";
+    public static final String BOOT_LIVE_SOURCE = "boot_live_source";
+    /** 上一次因连续崩溃被自动停用的源地址(UI 读它做提示) */
+    public static final String BOOT_SAFE_DISABLED = "boot_safe_disabled";
     public static final String LIVE_API_HISTORY = "live_api_history";
     public static final String HOME_API = "home_api";
     public static final String DEFAULT_PARSE = "parse_default";

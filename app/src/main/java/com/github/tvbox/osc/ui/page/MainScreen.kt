@@ -66,6 +66,7 @@ import com.github.tvbox.osc.ui.navbar.FloatingBottomBar
 import com.github.tvbox.osc.ui.navbar.GlassTabItem
 import com.github.tvbox.osc.ui.theme.LiquidGlassState
 import com.github.tvbox.osc.util.AppManager
+import com.github.tvbox.osc.util.BootGuard
 import com.github.tvbox.osc.util.HawkConfig
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
@@ -121,6 +122,11 @@ private fun MainContent() {
         AppBootstrap.state.collect { boot ->
             if (boot is AppBootstrap.Boot.Ready && !homeViewModel.defaultLiveLaunched) {
                 homeViewModel.defaultLiveLaunched = true
+                
+                val disabled = BootGuard.takeSafeDisabledNotice()
+                if (disabled.isNotEmpty()) {
+                    Toast.makeText(context, "该源无法使用，会导致崩溃,已自动停用", Toast.LENGTH_LONG).show()
+                }
                 if (KV.get(HawkConfig.DEFAULT_LOAD_LIVE, false)) {
                     context.startActivity(Intent(context, LivePlayActivity::class.java))
                 }

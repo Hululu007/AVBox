@@ -2,6 +2,7 @@ package com.github.tvbox.osc.api;
 
 import androidx.media3.common.util.UriUtil;
 
+import com.github.tvbox.osc.bean.Depot;
 import com.github.tvbox.osc.bean.LiveSettingItem;
 import com.github.tvbox.osc.bean.SourceBean;
 import com.github.tvbox.osc.util.DefaultConfig;
@@ -128,7 +129,7 @@ final class ConfigParser {
     }
 
     /**
-     * 解析"线路合集"配置:只有带 urls 且不带 sites 的才算合集,返回 {@link HistoryHelper#buildApiLine} 拼好的行。
+     * 解析"线路合集"(多仓)配置:只有带 urls 且不带 sites 的才算合集,返回 {@link HistoryHelper#buildApiLine} 拼好的行。
      * 任何异常都按"不是合集"处理(返回已解析到的行),不能让它把正常配置加载带崩。
      */
     static ArrayList<String> parseApiCollection(String jsonStr) {
@@ -139,31 +140,32 @@ final class ConfigParser {
                 return apiLines;
             }
             JsonObject infoJson = gson.fromJson(json, JsonObject.class);
-            if (infoJson == null || infoJson.has("sites") || !infoJson.has("urls") || !infoJson.get("urls").isJsonArray()) {
+            if (!isDepotJson(infoJson)) {
                 return apiLines;
             }
-            JsonArray urls = infoJson.get("urls").getAsJsonArray();
-            for (JsonElement element : urls) {
-                String name = "";
-                String url = "";
-                if (element.isJsonObject()) {
-                    JsonObject item = element.getAsJsonObject();
-                    name = DefaultConfig.safeJsonString(item, "name", "");
-                    url = DefaultConfig.safeJsonString(item, "url", "");
-                    if (isEmpty(url)) {
-                        url = DefaultConfig.safeJsonString(item, "api", "");
-                    }
-                } else if (element.isJsonPrimitive()) {
-                    url = element.getAsString();
-                }
-                if (!isEmpty(url)) {
-                    apiLines.add(HistoryHelper.buildApiLine(name, url));
-                }
+            for (Depot item : Depot.arrayFrom(infoJson.get("urls").getAsJsonArray())) {
+                apiLines.add(HistoryHelper.buildApiLine(item.getName(), item.getUrl()));
             }
         } catch (Throwable ignored) {
             LOG.d("ApiConfig", "api lines parse failed, keep lines so far");
         }
         return apiLines;
+    }
+
+    /**
+     * 这段 JSON 是不是"多仓"(仓库)配置:顶层是对象、有 {@code urls} 数组、且没有 {@code sites}。
+     *
+     * <p>{@code sites} 优先于 {@code urls} —— 反过来若把"带 sites 的直播 JSON"当多仓,
+     * 会把用户当前源整段换掉。
+     *
+     * <p>点播与直播共用这一条判定(2026-09-21 直播侧补多仓):同一份仓地址既能配在点播,
+     * 也能配在直播,判定分叉只会让两边行为不一致。
+     */
+    static boolean isDepotJson(JsonObject infoJson) {
+        if (infoJson == null || infoJson.has("sites")) return false;
+        if (!infoJson.has("urls")) return false;
+        JsonElement urls = infoJson.get("urls");
+        return urls != null && urls.isJsonArray() && urls.getAsJsonArray().size() > 0;
     }
 
     /** 直播设置「配置切换」组的候选项:没写 name 的用"线路N"占位 */

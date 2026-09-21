@@ -30,13 +30,20 @@
 
 | 键 | 类型 | 备注 |
 |---|---|---|
-| `search_history` / `api_history` / `live_api_history` / `api_line_list` | `ArrayList<String>` | 历史与线路列表 |
+| `search_history` / `api_history` / `live_api_history` / `api_line_list` / `live_api_line_list` | `ArrayList<String>` | 历史与线路列表(2026-09-21 新增 `live_api_line_list`:直播侧多仓,同样是 `名字\t链接`,与点播的 `api_line_list` 分开存) |
 | `subscribe_list` / `live_subscribe_list` | `ArrayList<String>` | 每项 `名字\t链接`(配置管理页) |
 | `local_source_trees` | `ArrayList<String>` | 本地源目录授权(SAF tree uri 字符串),本地服务靠它直读原目录 |
 | `live_group_list` | **`JsonArray`(Gson 节点树)** | 直播分组,注意它不是 List |
 | `source_card_policy` | `HashMap<String, String>` | 源级卡片点击策略 |
 | `sources_for_search` | **`HashMap<String, HashMap<String, String>>`** | 嵌套泛型,读侧需要显式 TypeToken |
 | `doh_json` | String(JSON 文本) | 不是集合 |
+
+**启动看门狗键(2026-09-21 新增,均登记在 `KVKeySpec`)**:`boot_loading_jar`(String,当前正在装载的
+jar 地址)、`boot_loading_count`(Long,同源累计装载次数)、`boot_last_attempt_at`(Long,上次装载时刻,
+用于"距上次太久就重新计数")、`boot_load_start_elapsed`(Long,本次进程开始装载 jar 的开机计时,
+与崩溃标记同源比较)、`boot_vod_source` / `boot_live_source`(String,崩溃时正在使用的启动源)、
+`boot_safe_disabled`(String,被自动停用的源地址,UI 读后即清)。⚠️ 崩溃时刻**不在 KV 里** ——
+它必须同步落盘,走 `files/boot_crash.marker`(原因见 §4.1 的异步写说明)。
 
 ### 1.3 为什么迁(Hawk 2.0.1 的硬伤)
 
@@ -79,6 +86,12 @@
 - `gradle/libs.versions.toml` 新增 `mmkv = "2.4.2"`。
 - `App.onCreate` → `initParams()` 中 `KV.init(this)`(必须在任何 KV 读写之前)。
 - MMKV 实例:单实例 `MMKV.mmkvWithID("avbox_kv", MMKV.SINGLE_PROCESS_MODE)`(**不加密**,见 §4.4)。
+- ⚠️ **写入是异步的,别拿它做崩溃/断电级持久化(2026-09-21 实测教训)**:MMKV 把 `encode` 排进
+  Scheduler、约 1 秒后落盘,而 **2.4.2 没有同步写 flag**(模式位只有 `SINGLE_PROCESS_MODE` /
+  `MULTI_PROCESS_MODE` / `READ_ONLY_MODE` 等),`sync()` 也只是等"当前 pending 批"。
+  实测进程级 `UncaughtExceptionHandler` 里写的崩溃时刻**根本没落盘**(设备上一直停在几分钟前),
+  导致启动看门狗的判据从未成立。**结论:写完进程就可能死的场景必须用同步文件 IO**
+  (先例 = `BootGuard` 的 `files/boot_crash.marker`),不要指望 KV。
 - **无 Hawk、无迁移代码**:`Hawk.init/put/get` 与 `com.orhanobut:hawk`(及传递依赖 conceal)已全部移除,`proguard` 的 hawk keep 规则同步删除。
 
 ### 4.2 KV 门面 API
@@ -132,6 +145,13 @@ public final class KV {
 - 集合读取:区分「键不存在」(返回默认值,正常)与「解不出类型」(返回默认值 + `LOG.e` + 键名)。
 - 关键事件打点前缀 `echo-kv*`,经 `util/LOG` 落盘(`FILE_LOG_PREFIXES` 已含 `echo-kv`),真机取日志:
   `adb shell run-as <applicationId> cat files/preload_debug.log`(该 ROM 吞 logcat,此为既有约定)。
+- ⚠️ **单测里不能用 `android.text.TextUtils.isEmpty` 判空(2026-09-21,第三次踩)**:
+  工程开了 `testOptions.unitTests.returnDefaultValues = true`,Android 桩方法**静默返回默认值** ——
+  `TextUtils.isEmpty("")` 返 `false`、`TextUtils.isEmpty(null)` 也返 `false`。于是同一处判空
+  "真机生效、单测失效",而**单测正是用来钉这类边界的**。踩过三次的落点:`ConfigParser`(最初)、
+  `bean/Depot`(空地址过滤在单测里不生效)、`util/BootGuard`(`shouldDisable` 的"空 jar 不停用"守卫
+  被新写的单测当场抓到)。**约定:纯逻辑类里判空一律写本地 `text == null || text.length() == 0`
+  的小工具方法**,并在注释里指明原因(三处现有实现互相引用,便于后来者一次看懂)。
 
 ## 5. 实施步骤(实际执行)
 
