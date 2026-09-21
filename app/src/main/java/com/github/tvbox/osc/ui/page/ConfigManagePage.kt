@@ -196,6 +196,10 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
         manageMode = false
         selected = emptySet()
         editTarget = null
+        // 换仓 sheet 也关掉:它列的是"当前模式"那份仓列表,切模式后台面下的列表已经换了,
+        // 留着会出现"点的是直播的子源、实际按点播语义切"的错配(分段按钮在遮罩之下点不到,
+        // 但系统返回键/手势能先关 sheet,防的是这一类时序)
+        repoSheetOpen = false
     }
 
     fun exitManageMode() {
@@ -209,9 +213,8 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
     /**
      * 这一条源是不是"正在使用"。
      *
-     * <p>2026-09-21 多仓:光比地址本身不够 —— 仓生效后 {@code API_URL} 已被改写成仓里第一条子源的
-     * 地址,订阅列表里那条仓地址永远匹配不上,表现为"切到仓之后退出再进来,所有源都显示未使用"。
-     * 所以还要认"它正是当前仓的来源地址"这一种关系。
+     * <p>多仓生效后 {@code API_URL} 已被改写成仓里第一条子源的地址,订阅列表里那条仓地址匹配不上,
+     * 所以还要认"它正是当前仓的来源地址"(否则切到仓之后重进页面,所有源都显示未使用)。
      */
     fun isInUse(url: String): Boolean =
         if (isVod) {
@@ -241,9 +244,8 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
     }
 
     // ---------- 换仓(2026-09-21) ----------
-    // 多仓生效后启动地址已被改写成"仓里的某个子源",订阅卡与「使用中」都不再指向用户当初填的仓地址,
-    // 所以换仓需要一个独立入口:右上角图标 → bottom sheet 列出仓里的全部子源。
-    // 列表直接取仓模式判定的同一份数据(isApiLineUrl / isLiveApiLineMode),不另建一套状态。
+    // 多仓生效后启动地址被改写成仓里某个子源,订阅卡与"使用中"都不再指向用户填的仓地址,
+    // 故需要独立入口:右上角图标 → bottom sheet。列表取与「配置切换」同一份数据,不另建状态。
 
     /** 当前源是否来自多仓 —— 不是仓源就没有可换的子源,入口整体隐藏 */
     val canSwitchRepo = if (isVod) {
@@ -252,7 +254,7 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
         ApiConfig.get().isLiveApiLineMode() && HistoryHelper.isLiveApiLineUrl(liveActiveUrl)
     }
 
-    /** 仓里的子源条目("名字\t链接");与「配置切换」组里的仓列表是同一份 */
+    /** 仓里的子源条目("名字\t链接") */
     val repoEntries = if (isVod) HistoryHelper.getApiLines() else HistoryHelper.getLiveApiLines()
 
     /** 当前生效的子源地址:换仓列表据此打选中标记 */
@@ -571,10 +573,9 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
 }
 
 /**
- * 「换仓」bottom sheet(2026-09-21):列出当前仓里的全部子源,点一条即切换。
+ * 「换仓」bottom sheet:列出当前仓里的全部子源,点一条即切换。
  *
- * <p>样式与设置页的 `AVBoxOptionSheet` 保持一致(同一套 `SettingsGroup` / `SettingsCard` /
- * `SettingsOptionRow`),但每条多带一行地址 —— 仓里常有同名子源,只给名字无法分辨。
+ * <p>样式同 `AVBoxOptionSheet`,但每条多带一行地址 —— 仓里常有同名子源,只给名字分不清。
  */
 @Composable
 private fun RepoSwitchSheet(
@@ -584,7 +585,7 @@ private fun RepoSwitchSheet(
     onSelect: (String) -> Unit,
 ) {
     val dismissAnimated = LocalSheetDismiss.current
-    // 与 AVBoxOptionSheet 同款防连点:点一次后锁住,避免快速双击触发两次换源
+    // 防连点(与 AVBoxOptionSheet 同款)
     var accepted by remember { mutableStateOf(false) }
     AVBoxBottomSheet(
         onDismissRequest = onDismiss,
@@ -609,14 +610,14 @@ private fun RepoSwitchSheet(
                     SettingsOptionRow(
                         title = HistoryHelper.getApiLineName(entry),
                         selected = url == activeUrl,
-                        onClick = {
-                            if (!accepted && url.isNotEmpty()) {
-                                accepted = true
-                                onSelect(url)
-                                // 只走动画关闭:它播完才回调 onDismiss 去改状态。
-                                // 若在这里同时置 repoSheetOpen=false,面板会先被拆掉、动画就没了。
-                                dismissAnimated()
-                            }
+                        onClick = onClick@{
+                            // 先吃掉点击并关面板:点"当前已选中"那条时切换逻辑会直接返回,
+                            // 把关闭放进守卫里会让面板卡住关不掉。
+                            if (accepted) return@onClick
+                            accepted = true
+                            if (url.isNotEmpty() && url != activeUrl) onSelect(url)
+                            // 只走动画关闭(它播完才回调 onDismiss);这里再置 repoSheetOpen=false 会把面板先拆掉
+                            dismissAnimated()
                         },
                         trailing = {
                             Text(

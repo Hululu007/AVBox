@@ -132,11 +132,10 @@ class SettingsViewModel : ViewModel() {
     }
 
     /**
-     * 只重读 KV 状态,**不**重算缓存大小(2026-09-21 拆出来)。
+     * 只重读 KV 状态,不重算缓存大小。
      *
-     * <p>理由:{@code getCacheSize()} 是整棵缓存目录的递归遍历,把它绑到"每次配置变化"上会白跑
-     * —— 接口线路的可见性只依赖 API_URL / API_LINE_LIST。缓存大小仍按原样只在 ON_RESUME 与
-     * 清除缓存后刷新。
+     * <p>{@code getCacheSize()} 是整棵缓存目录的递归遍历,绑到"每次配置变化"上会白跑;
+     * 接口线路的可见性只依赖 API_URL / API_LINE_LIST。
      */
     fun refreshState() {
         _state.value = loadState()

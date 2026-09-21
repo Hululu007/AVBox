@@ -153,13 +153,8 @@ final class ConfigParser {
     }
 
     /**
-     * 这段 JSON 是不是"多仓"(仓库)配置:顶层是对象、有 {@code urls} 数组、且没有 {@code sites}。
-     *
-     * <p>{@code sites} 优先于 {@code urls} —— 反过来若把"带 sites 的直播 JSON"当多仓,
-     * 会把用户当前源整段换掉。
-     *
-     * <p>点播与直播共用这一条判定(2026-09-21 直播侧补多仓):同一份仓地址既能配在点播,
-     * 也能配在直播,判定分叉只会让两边行为不一致。
+     * 这段 JSON 是不是"多仓"(仓库)配置:有非空 {@code urls} 数组且**没有 {@code sites}**。
+     * 点播与直播共用这条判定(2026-09-21);sites 优先,否则会把正常配置整段换成仓里第一条。
      */
     static boolean isDepotJson(JsonObject infoJson) {
         if (infoJson == null || infoJson.has("sites")) return false;

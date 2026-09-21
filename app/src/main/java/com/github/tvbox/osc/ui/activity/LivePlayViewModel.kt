@@ -162,8 +162,7 @@ internal class LivePlayViewModel : ViewModel() {
                     if (ApiConfig.isLiveFollowVod()) return
                     target = ""
                 } else {
-                    // 多仓(2026-09-21):当前源来自仓列表时,这一组列的是仓里的子源,否则列配置历史。
-                    // 取值统一走 ApiConfig,避免 UI 自己判断两套列表的偏移
+                    // 仓模式下这一组列的是仓里的子源,否则列配置历史;取值统一走 ApiConfig,不在 UI 里判断偏移
                     target = ApiConfig.get().getLiveApiHistoryUrl(position)
                     if (target.isEmpty() || target == KV.get(HawkConfig.LIVE_API_URL, "")) return
                 }
@@ -172,11 +171,10 @@ internal class LivePlayViewModel : ViewModel() {
                 val requestId = ++liveConfigRequestId
                 KV.put(HawkConfig.LIVE_API_URL, target)
                 if (target.isEmpty()) {
-                    // 回到「跟随点播源」:独立直播源的仓列表随之作废
                     HistoryHelper.clearLiveApiLineList()
                 } else {
                     HistoryHelper.setLiveApiHistory(target)
-                    // 换到仓列表之外的地址 ⇒ 退出仓模式,否则组里会继续列上一仓的子源
+                    // 换到仓列表之外的地址 ⇒ 退出仓模式
                     if (!HistoryHelper.isLiveApiLineUrl(target)) HistoryHelper.clearLiveApiLineList()
                 }
                 ApiConfig.get().invalidateLiveConfig()

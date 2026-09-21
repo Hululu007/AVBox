@@ -18,9 +18,9 @@ public class HawkConfig {
     public static final String LIVE_API_LINE_LIST = "live_api_line_list";
     public static final String LIVE_API_LINE_SOURCE = "live_api_line_source";
     /**
-     * 启动看门狗(2026-09-21,见 {@code util/BootGuard}):正在加载的 jar 地址 / 尝试次数 / 上次崩溃时刻。
-     * 用途:第三方爬虫在静态初始化里把 CDN 报错当 .so 加载会闪退,而配置是持久化的 ⇒
-     * 冷启动必崩、用户连"换源"都进不去。这三个键让下次启动能识别并自动停用那个源。
+     * 启动看门狗标记(见 {@code util/BootGuard}):正在装载的 jar / 累计次数 / 装载起点 / 崩溃时的启动源 /
+     * 被停用的源。用途 = 第三方爬虫把 CDN 报错当 .so 加载导致"冷启动必崩"时,下次启动自动停用那个源。
+     * ⚠️ 崩溃时刻**不在这里** —— 它必须同步落盘,走 files/boot_crash.marker。
      */
     public static final String BOOT_LOADING_JAR = "boot_loading_jar";
     public static final String BOOT_LOADING_COUNT = "boot_loading_count";

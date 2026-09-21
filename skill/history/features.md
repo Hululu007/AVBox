@@ -1507,3 +1507,16 @@ P1 最后两组。至此**调度层(会话/取流/解析/嗅探/重试/换线/�
 - **⑩ `BOOT_LOAD_START_AT` 成为只写不读的死键(低)**:崩溃判定全程用 `elapsedRealtime`,墙钟键没意义。删除,只留 `BOOT_LOAD_START_ELAPSED`;`KVKeySpec` 登记同步更新。
 - **验证**:`:app:testDebugUnitTest` **199 用例 / 0 失败**;`:app:assembleDebug` 退出码 0。
 - **仍存的已知局限(刻意保留,非遗漏)**:①看门狗是**进程级兜底**,爬虫远端一天不修好、该源就一天不可用(会被自动停用);②`repairBogusNativeLibs` 对"本次启动才下载的垃圾"无效(只打破上次留下的自锁);③停用不删订阅列表,用户可重新启用同一个(仍坏的)源、会再次被停用;④换仓入口与原生的「配置切换」列仓列表只做了编译 + 单测,未实机点过。
+
+## 第二轮审查:又两处缺陷 + 一条"假崩溃"结论(2026-09-21 同日六轮)
+
+- **背景**:用户报「刚刚好像产生了崩溃」,并要求继续审查。先读崩溃缓冲(只读,不动设备)定性,再做静态审查。
+- **崩溃日志定性:不是新回归,而是"坏源不止一个"**。时间线:`08:25:23` 崩溃(触发源 = **潇洒** `https://qist.wyfc.qzz.io/xiaosa/api.json`)→ `08:25:26` 看门狗日志 `native-lib-repair removed bogus …/libwexproxy.so size=313` + `boot-guard: disable looping source attempt=2 startupCrash=true` → 用户切到饭太硬后又崩 `08:25:41/44` → `08:25:47` 再次自动停用。三点结论:
+  - ①`size=313` 说明上一轮修的"删前先记大小"生效了(原来恒为 0),而 **313 正是"CDN 报错页"的字节数**,是根因的直接证据;
+  - ②`startupCrash=true` 说明**崩溃标记文件的同步写/读链路打通了** —— 这正是第二轮修复前一直丢掉的那一环;
+  - ③触发源换成了潇洒,但 jar 仍是饭太硬系那个 `csp/4b06c53fc96931d4b2e0330ef420600f.jar` ⇒ **饭太硬系(含潇洒)共用同一个带 `GoProxy` 的加固 spider**,所以"换另一个源"照样崩。
+- **⑪ 换仓 sheet 点"当前已选中"那一条时关不掉(中,UX 死角)**:`RepoSwitchSheet` 的 `dismissAnimated()` 写在 `if (!accepted && url.isNotEmpty())` 守卫里,而选中当前项时切换逻辑(`switchToVod`/`switchToLive`)会直接 return —— 于是面板**卡在那里关不掉**,看起来像卡死。改为"先无条件吃掉点击 + 关面板,再只在地址有效且与当前不同时才切换";既修掉死角,也顺手不再为"点自己"白跑一遍换源流程。
+- **⑫ 切换点播/直播分段时换仓 sheet 不关(低)**:`LaunchedEffect(mode)` 原本只重置 `manageMode/selected/editTarget`。sheet 列的是"当前模式那份仓列表",切模式后台面下的列表已换 ⇒ 补 `repoSheetOpen = false`(分段按钮在遮罩下点不到,防的是返回键先关 sheet 这一类时序)。
+- **本轮逐调用点核对(未发现新问题)**:`isApiLineSourceOf(url, activeUrl)` / `isLiveApiLineSourceOf` 的全部 4 个调用点(`isInUse` 点播/直播分支 + 卡片 `inUse` 点播/直播分支)**实参逐一比对,均传"当前生效地址"**(点播 `activeUrl`、直播 `liveActiveUrl`),没有把两者对调;`getLiveConfigUrls()` / `getLiveApiHistoryUrl()` 的 3 个调用点一致。
+- **一条能力边界(说明,非缺陷)**:这两轮修的 `HistoryHelper` 仓判定与 sheet 关闭**无法进纯 JVM 单测** —— 它们都读 KV,而 `KV.init` 依赖 `MMKV.initialize(Context)`,工程无 Robolectric、单测又开了 `returnDefaultValues`。因此这两处只能靠"逐调用点核对 + 编译 + 真机",已在上条写明核对结果。**当前能测的纯逻辑都有测试**:`Depot`(7)、`BootGuard` 决策(10)、`FileUtils` 原生库自检(8)、`ConfigParser` 多仓判定(2)。
+- **验证**:`:app:testDebugUnitTest` **199 用例 / 0 失败**;`:app:assembleDebug` 退出码 0。本轮**未对设备做任何写操作**(仅 `logcat -b crash -d` 与 `run-as cat` 只读读取)。

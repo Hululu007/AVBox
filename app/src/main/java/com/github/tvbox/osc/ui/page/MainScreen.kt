@@ -122,7 +122,7 @@ private fun MainContent() {
         AppBootstrap.state.collect { boot ->
             if (boot is AppBootstrap.Boot.Ready && !homeViewModel.defaultLiveLaunched) {
                 homeViewModel.defaultLiveLaunched = true
-                
+                // 上次启动被看门狗自动停用的源(有值才提示);默认源不会自动跳到别的源,需用户去配置管理重选
                 val disabled = BootGuard.takeSafeDisabledNotice()
                 if (disabled.isNotEmpty()) {
                     Toast.makeText(context, "该源无法使用，会导致崩溃,已自动停用", Toast.LENGTH_LONG).show()

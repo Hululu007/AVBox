@@ -534,16 +534,10 @@ public class ApiConfig {
     /**
      * 直播源的"多仓"(仓库)分流(2026-09-21,对齐 FongMi 的 {@code LiveConfig.parseDepot})。
      *
-     * <p>现状:直播侧此前只认 {@code lives},遇到仓地址(顶层只有 {@code urls})会解析出空列表,
-     * 用户看到的是"直播配置解析失败"。这里补上与点播同一套语义:
-     * 记下仓列表 → 把直播源换成仓里第一条 → 重新加载。
+     * <p>改前直播侧只认 {@code lives},仓地址(顶层只有 {@code urls})解析出空列表 ⇒ 报"直播配置解析失败"。
      *
-     * <p>与点播 {@link #switchApiCollectionIfNeeded} 的两处刻意差异:
-     * <ul>
-     *   <li>改的是 {@code LIVE_API_URL} 而不是 {@code API_URL} —— 直播源可能独立于点播存在;</li>
-     *   <li>同时把 {@code API_URL} 指向首仓,仅在"跟随点播源"时为真 —— 跟随态下两地址必须一致,
-     *       否则下一轮 {@link #isLiveFollowVod()} 会把用户的仓选择判成"已脱离跟随"。</li>
-     * </ul>
+     * <p>与点播 {@link #switchApiCollectionIfNeeded} 的两点差异:改的是 {@code LIVE_API_URL};
+     * 跟随点播时把 {@code API_URL} 一起指向首仓(两地址不一致会被 {@link #isLiveFollowVod()} 判成已脱离跟随)。
      */
     private boolean switchLiveApiCollectionIfNeeded(String apiUrl, String jsonStr) {
         ArrayList<String> apiLines = ConfigParser.parseApiCollection(jsonStr);
@@ -556,8 +550,7 @@ public class ApiConfig {
         }
         KV.put(HawkConfig.LIVE_API_LINE_LIST, apiLines);
         KV.put(HawkConfig.LIVE_API_LINE_SOURCE, apiUrl);
-        // ⚠️ 跟随态必须在改写 LIVE_API_URL **之前**判定:isLiveFollowVod 靠"LIVE_API_URL 是否等于 API_URL"
-        // 成立,先写新地址会把跟随态判成独立源(同类陷阱见 clearVodConfig 里的同款注释)
+        // 跟随态必须在改写 LIVE_API_URL 之前判定:isLiveFollowVod 靠"LIVE_API_URL 是否等于 API_URL"成立
         boolean followLive = isLiveFollowVod();
         KV.put(HawkConfig.LIVE_API_URL, firstApi);
         if (followLive) {
@@ -570,11 +563,7 @@ public class ApiConfig {
         return true;
     }
 
-    /**
-     * 与直播仓列表对不上号就清掉(2026-09-21):用户手动换成别的直播源后,
-     * 残留的仓列表会让「配置切换」组继续列出上一仓的子源 —— 点进去是别人的源。
-     * 空地址(跟随态)不清:此时仓列表跟着点播侧走,由点播那条路径负责。
-     */
+    /** 与直播仓列表对不上号就清掉,免得「配置切换」继续列上一仓的子源;空地址(跟随态)不清 */
     private void clearLiveApiLinesIfUnmatched(String apiUrl) {
         if (TextUtils.isEmpty(apiUrl)) return;
         if (!HistoryHelper.isLiveApiLineUrl(apiUrl) && !HistoryHelper.isLiveApiLineSource(apiUrl)) {
@@ -582,10 +571,7 @@ public class ApiConfig {
         }
     }
 
-    /**
-     * 直播配置数据清场,但**不动** KV 与仓列表 —— 供"换仓后重新拉取"时先丢弃旧结果用。
-     * 与 {@link #invalidateLiveConfig()} 的区别:后者还会作废加载标记与直播配置快照。
-     */
+    /** 直播配置数据清场,不动 KV 与仓列表 —— 供"换仓后重新拉取"先丢弃旧结果用 */
     private void clearLiveConfigResult() {
         liveChannelGroupList.clear();
         spiderLoader.setLiveSpider("");
@@ -1021,14 +1007,10 @@ public class ApiConfig {
     }
 
     /**
-     * 刷新直播设置「配置切换」组(第 6 组)的候选项(2026-09-12 点播/直播拆分):
-     * 第 0 项固定为合成的「跟随点播源」(即未单独配置直播源的默认态),
-     * 其后依次为直播配置历史 —— 因此历史第 i 项在该组里的 itemIndex = i + 1。
-     * 跟随项无条件占位(即使当前未配置点播源),避免"是否显示"导致的下标漂移。
+     * 刷新直播设置「配置切换」组(第 6 组):第 0 项固定为合成的「跟随点播源」(无条件占位,避免下标漂移),
+     * 其后为候选项 —— 第 i 项的 itemIndex = i + 1。
      *
-     * <p>2026-09-21 多仓:当前直播源来自仓列表时,第 1 项起改列**仓里的子源**而不是历史
-     * (对齐点播侧「接口线路」的取舍)—— 用户填了仓地址,想看的就是仓里有什么,
-     * 而不是自己以前填过哪些地址。
+     * <p>2026-09-21 多仓:当前直播源来自仓列表时,第 1 项起改列**仓里的子源**而不是配置历史。
      */
     public void refreshLiveApiHistoryItems() {
         if (liveSettingGroupList.size() < 7) return;
@@ -1037,9 +1019,7 @@ public class ApiConfig {
         followItem.setItemIndex(0);
         followItem.setItemName(LIVE_FOLLOW_ITEM_NAME);
         liveSettingItemList.add(followItem);
-        ArrayList<String> entries = HistoryHelper.isLiveApiLineUrl(KV.get(HawkConfig.LIVE_API_URL, ""))
-                ? HistoryHelper.getLiveApiLines()
-                : KV.get(HawkConfig.LIVE_API_HISTORY, new ArrayList<String>());
+        ArrayList<String> entries = getLiveConfigEntries();
         for (int i = 0; i < entries.size(); i++) {
             LiveSettingItem liveSettingItem = new LiveSettingItem();
             liveSettingItem.setItemIndex(i + 1);
@@ -1049,15 +1029,12 @@ public class ApiConfig {
         liveSettingGroupList.get(6).setLiveSettingItems(liveSettingItemList);
     }
 
-    /** 直播设置的「配置切换」当前列的是仓列表还是历史 —— UI 点击时据此取值 */
+    /** 「配置切换」当前列的是仓列表还是配置历史 —— UI 点击/删除时据此取值 */
     public boolean isLiveApiLineMode() {
         return HistoryHelper.isLiveApiLineUrl(KV.get(HawkConfig.LIVE_API_URL, ""));
     }
 
-    /**
-     * 「配置切换」组第 1 项起实际展示的条目(仓列表或配置历史,见 {@link #refreshLiveApiHistoryItems()})。
-     * UI 的删除动作必须走这里,否则仓模式下会拿历史的下标去索引仓列表,删错源。
-     */
+    /** 「配置切换」第 1 项起的条目:仓模式给仓列表,否则给配置历史(与上面刷新用的是同一份) */
     public ArrayList<String> getLiveConfigEntries() {
         return HistoryHelper.isLiveApiLineUrl(KV.get(HawkConfig.LIVE_API_URL, ""))
                 ? HistoryHelper.getLiveApiLines()
@@ -1067,8 +1044,8 @@ public class ApiConfig {
     /**
      * 同 {@link #getLiveConfigEntries()},但剥成纯地址列表。
      *
-     * <p>存在理由:条目是 {@code "名字\t链接"} 的行,而"当前选中项"要比对的是地址 ——
-     * 直接拿行去 {@code indexOf(当前地址)} 永远匹配不上,表现为「配置切换」里当前项不高亮。
+     * <p>条目是 {@code "名字\t链接"} 的行,而选中判定要比对地址 —— 直接拿整行去 indexOf 永远匹配不上
+     * (表现为「配置切换」当前项不高亮)。
      */
     public ArrayList<String> getLiveConfigUrls() {
         ArrayList<String> urls = new ArrayList<>();

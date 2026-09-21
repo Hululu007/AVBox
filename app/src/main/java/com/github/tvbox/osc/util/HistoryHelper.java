@@ -133,9 +133,9 @@ public class HistoryHelper {
         return KV.get(HawkConfig.API_LINE_LIST, new ArrayList<String>());
     }
 
-    // ---- 直播侧多仓(2026-09-21):与上面点播四个判定一一对应,只是换 LIVE_API_LINE_LIST 这一对键 ----
+    // ---- 直播侧多仓(2026-09-21):与点播四个判定一一对应,只是换 LIVE_API_LINE_LIST 这一对键 ----
 
-    /** 当前直播源是不是某个仓里的子源(决定直播设置「配置切换」组要不要列出仓列表) */
+    /** 这个地址是不是某个仓里的子源(决定直播「配置切换」列仓列表还是配置历史) */
     public static boolean isLiveApiLineUrl(String url) {
         if (url == null || url.trim().isEmpty()) return false;
         String trimUrl = url.trim();
@@ -148,13 +148,13 @@ public class HistoryHelper {
         return false;
     }
 
-    /** 这个地址本身是不是"仓地址"(即用户当初填的那个仓库链接,而不是仓里的子源) */
+    /** 这个地址本身是不是"仓地址"(用户当初填的那个仓库链接,而不是仓里的子源) */
     public static boolean isLiveApiLineSource(String url) {
         if (url == null || url.trim().isEmpty()) return false;
         return url.trim().equals(KV.get(HawkConfig.LIVE_API_LINE_SOURCE, ""));
     }
 
-    /** 直播源来自仓列表(仓地址本身或仓里某条子源)—— 换源时据此决定要不要清空仓列表 */
+    /** 直播源来自仓(仓地址本身或仓里某条子源)—— 换源时据此决定要不要清空仓列表 */
     public static boolean isLiveApiLineHistory(String url) {
         return isLiveApiLineSource(url) || isLiveApiLineUrl(url);
     }
@@ -170,14 +170,11 @@ public class HistoryHelper {
     }
 
     /**
-     * 这个地址是不是"当前点播仓的来源地址"(2026-09-21)。
+     * 这个地址是不是"当前点播仓的来源地址"。
      *
-     * <p>存在理由:多仓加载会把 {@code API_URL} **改写**成仓里第一条子源的地址,于是
-     * "订阅列表里那一条"与"当前生效地址"不再相等。凡是拿订阅地址跟当前地址比对的 UI
-     * (配置管理页的"使用中")都必须同时认这一种关系,否则切到仓之后订阅卡全部显示为未使用。
-     *
-     * <p>要求仓确实处于生效态(当前地址命中仓列表),避免上一仓被清场后 {@code API_LINE_SOURCE}
-     * 残留导致误判。
+     * <p>多仓加载会把 {@code API_URL} 改写成仓里第一条子源的地址,于是订阅列表里那条仓地址与
+     * 当前地址不再相等 —— 凡拿订阅地址跟当前地址比对的 UI(配置管理页"使用中")都要一并认这种关系,
+     * 否则切到仓之后订阅卡全部显示未使用。要求仓处于生效态,避免清场后残留误判。
      */
     public static boolean isApiLineSourceOf(String url, String activeUrl) {
         if (url == null || url.trim().isEmpty()) return false;

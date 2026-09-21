@@ -811,15 +811,11 @@ class LivePlayActivity : BaseActivity() {
         }
     }
 
-    /**
-     * 「配置切换」组当前列的是仓列表还是配置历史 —— 交给 UI 决定标题要不要带"长按可删除"
-     * (仓列表不允许删,见 {@link #removeLiveConfigHistory})。
-     */
+    /** 「配置切换」列的是仓列表还是配置历史 —— UI 据此决定标题要不要带"长按可删除" */
     internal fun isLiveApiLineMode(): Boolean = ApiConfig.get().isLiveApiLineMode()
 
     fun removeLiveConfigHistory(itemIndex: Int) {
-        // 多仓(2026-09-21):只有"配置历史"模式才允许删;仓列表是由仓地址推导出来的,
-        // 删掉一行既改不了仓内容、又会让下标与仓列表错位
+        // 仓列表由仓地址推导,删单行既改不了仓内容、又会让下标与仓列表错位
         if (ApiConfig.get().isLiveApiLineMode()) {
             Toast.makeText(this, "仓列表来自仓地址,不能单独删除", Toast.LENGTH_SHORT).show()
             return
