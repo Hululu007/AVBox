@@ -3,7 +3,7 @@ name: Release Notification
 on:
   release:
     types: [published]
-  workflow_dispatch: 
+  workflow_dispatch: # 允许手动触发测试
 
 jobs:
   notify-on-release:
@@ -16,7 +16,7 @@ jobs:
           to: ${{ secrets.TELEGRAM_CHAT_ID }}
           thread-id: ${{ secrets.TELEGRAM_THREAD_ID }}
           message: |
-            🚀 测试通知 / 新版本发布！
+            🚀 新版本发布！
             名称: ${{ github.event.release.name || '手动测试' }}
             标签: ${{ github.event.release.tag_name || '手动测试' }}
             仓库: ${{ github.repository }}
