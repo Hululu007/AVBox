@@ -31,3 +31,8 @@ https://github.com/q215613905/TVBoxOS
     <td align="center"><img src="images/4.jpg" width="270"/><br/><sub>设置页</sub></td>
    </tr>
 </table>
+
+<p align="center">
+  <img src="images/5.jpg" alt="首页"/>
+  <br/><sub>宽屏首页</sub>
+</p>
