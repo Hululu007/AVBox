@@ -123,6 +123,7 @@ public class HistoryHelper {
         return isApiLineSource(url) || isApiLineUrl(url);
     }
 
+    /** 清空点播仓列表;顺带发信号 —— "当前源是否来自仓"这个结论变了,界面要重读 */
     public static void clearApiLineList() {
         KV.put(HawkConfig.API_LINE_LIST, new ArrayList<String>());
         KV.put(HawkConfig.API_LINE_SOURCE, "");

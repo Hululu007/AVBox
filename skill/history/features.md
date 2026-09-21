@@ -1576,3 +1576,13 @@ P1 最后两组。至此**调度层(会话/取流/解析/嗅探/重试/换线/�
 - **Java 侧踩点**:`ApiConfig` 在 `com.github.tvbox.osc.api` 包,`ApiLineSignal` 在 `util` 包 ⇒ **必须显式 import**(`HistoryHelper` 与它同包才不用)。第一次编译报 `程序包ApiLineSignal不存在` 就是这个。
 - **验证**:`:app:compileDebugKotlin` / `:app:compileDebugJavaWithJavac` / `:app:testDebugUnitTest`(**199 用例 / 0 失败**)/ `:app:assembleDebug` 全通过(APK 09:34 重建)。**本机无 adb 设备,真机待验**:①添加并启用点播多仓源后**停在配置管理页不动**,应在仓 JSON 拉取完成那一刻(约一次网络往返,不必等 jar)出现「换仓」圆钮;②仓地址那条订阅卡应同时显示「使用中」;③切到直播段添加直播仓源 → 进直播页 → 返回,换仓钮应出现。
 - **文档同步**:spec §4.7 与 §4.3 订正触发器(删掉"改写先于 Ready 所以能兜住"的错误结论)、§6.9 通用规则改为"信号由改写点发,不要反推加载完成"。
+
+## 收窄:刷新路径只留一处(2026-09-21 同日十轮)
+
+- **背景(用户)**：「怎么在设置页也刷新了？？？只保留一处刷新路径啊,放在配置管理页面的右上角就行了」。九轮把 `ApiLineSignal` 同时接给了 `ConfigManagePage` 与 `SettingsPage`,用户判定同一件事挂两条刷新路径属于多余。
+- **复核结论:用户对,两处都能收窄到一条。**
+  - **设置页**:它本来就是 `MainScreen` 的一个 tab,而仓改写只可能发生在配置管理页(独立 Activity)或开机阶段 —— 离开本页期间改写必然已经结束,原有那条 `LifecycleEventEffect(ON_RESUME)` 重读一次就够。删掉 `apiLineVersion` 订阅与随之失效的三个 import(`LaunchedEffect` / `collectAsState` / `ApiLineSignal`)。这条订阅是九轮顺手加的,属于过度设计。
+  - **配置管理页**:连 `ON_RESUME` 一起删掉,只留信号。依据(逐条查证,不是推断):①`ConfigManageActivity` 在 manifest 里是默认 `standard` 启动模式、自身也不 `startActivity` ⇒ 每次进入都是新实例,首次组合读到的就是新值;②`loadLiveConfig` 的调用点只有 `LivePlayViewModel` / `LivePlayActivity` ⇒ 本页存活期间**唯一**会改写仓关系的只有点播那一路(`AppBootstrap.onApiUrlChanged()`),而它必发信号。
+- **保留的机制**:`ApiLineSignal` 本身不动(写入方在 `api`/`util` 包、读方在 `ui.page`,`util` 里的信号对象是最省事的解耦方式),只是**只剩一个消费者**。九轮审查期已把自增改成 `_version.update { it + 1 }`(CAS),并发调用不丢计数。
+- **验证**:`:app:compileDebugKotlin` / `:app:compileDebugJavaWithJavac` 通过(两个任务均实跑,非 UP-TO-DATE)。
+- **文档同步**:spec §4.3「接口线路」行、§4.7「换仓入口」、§6.9 通用规则统一改为「同一页内只保留一条刷新路径」。

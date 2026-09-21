@@ -56,8 +56,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LifecycleEventEffect
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.ui.activity.ConfigManageActivity
@@ -193,9 +191,11 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
      * 多仓的地址改写由异步 loadConfig 完成(仓地址 → 仓内首条子源),它不产生任何 Compose 状态
      * 变化 ⇒ 这几份"只在首次组合读一次"的当前态不会自更新,换仓入口与"使用中"标记要退出重进才正确。
      *
-     * <p>刷新靠两条:改写点发的 [ApiLineSignal](等"加载完成"不可靠 —— 点播的完成态要等 jar 装载也跑完,
-     * 那时改写早已结束);ON_RESUME 兜"改写发生在别的页面"(直播仓要进直播页拉配置时才改写)。
-     * 只重读"当前态"而**不**重读订阅列表 —— 列表的增删改都同步写 KV,重读只会与 manageMode 的勾选集错位。
+     * <p>刷新只走一条:改写点发的 [ApiLineSignal]。反推"加载什么时候完成"不可靠 —— 点播的完成态
+     * 要等 jar 装载也跑完,那时改写早已结束;也不必再挂 ON_RESUME,因为本页存活期间唯一会改写仓
+     * 关系的只有点播这一路(它必发信号),直播那路只在直播页拉配置时才改写,届时本页早已重建,
+     * 首次组合读到的就是新值。只重读"当前态"而**不**重读订阅列表 —— 列表的增删改都同步写 KV,
+     * 重读只会与 manageMode 的勾选集错位。
      */
     fun refreshActiveSnapshot() {
         activeUrl = KV.get(HawkConfig.API_URL, "")
@@ -205,7 +205,6 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
 
     val apiLineVersion by ApiLineSignal.version.collectAsState()
     LaunchedEffect(apiLineVersion) { refreshActiveSnapshot() }
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { refreshActiveSnapshot() }
 
     val isVod = mode == ConfigMode.Vod
     val currentItems = if (isVod) vodItems else liveItems
