@@ -101,6 +101,10 @@ fun HomeGridLayout(
     val sorts by vm.sorts.collectAsState()
     val partitions by vm.partitions.collectAsState()
     val sourceKey by vm.currentSource.collectAsState()
+    val titleMeasurer = rememberTextMeasurer()
+    val titleLine = with(LocalDensity.current) {
+        titleMeasurer.measure("M", style = MaterialTheme.typography.titleSmall).size.height.toDp()
+    }
 
     var selectedSortId by remember { mutableStateOf("") }
     var filterOpen by remember { mutableStateOf(false) }
@@ -193,25 +197,11 @@ fun HomeGridLayout(
                             HomeGridHint(text = stringResource(R.string.common_empty_content))
                         }
                     } else {
-                        items(6) {
-                            SkeletonBox(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .aspectRatio(2f / 3f)
-                                    .clip(RoundedCornerShape(16.dp)),
-                                shape = RoundedCornerShape(16.dp),
-                            )
-                        }
+                        items(6) { HomeGridSkeleton(titleLine) }
                     }
 
                     HomeViewModel.PartitionState.Idle, HomeViewModel.PartitionState.Loading -> items(6) {
-                        SkeletonBox(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(2f / 3f)
-                                .clip(RoundedCornerShape(16.dp)),
-                            shape = RoundedCornerShape(16.dp),
-                        )
+                        HomeGridSkeleton(titleLine)
                     }
 
                     HomeViewModel.PartitionState.Empty -> item(
@@ -283,6 +273,20 @@ fun HomeGridLayout(
                 onConfirm = { selection -> partition?.let { p -> vm.applyFilter(p, selection) } },
             )
         }
+    }
+}
+
+@Composable
+private fun HomeGridSkeleton(titleLine: Dp) {
+    Column {
+        SkeletonBox(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(2f / 3f)
+                .clip(RoundedCornerShape(16.dp)),
+            shape = RoundedCornerShape(16.dp),
+        )
+        Spacer(modifier = Modifier.height(6.dp + titleLine))
     }
 }
 

@@ -64,7 +64,8 @@
 ### 4.1 首页 tab(定稿)
 
 - **顶部区**(随内容滚动,不固定):左侧**订阅源胶囊**(圆角 20dp `cardContainer`,站点头像 / 接口 logo 兜底 + 源名 + ArrowDropDown,**宽度随源名自适应、上限 240dp**〔2026-09-12 由"占满剩余宽度"改为上限 220dp,2026-09-13 用户要求"宽度增加 20dp"→ 240dp〕;点击弹「订阅源」bottom sheet = 设置页卡位风格源列表 + 末组「配置接口」入口,2026-09-10 由源 chips 行收敛而来)+ 右侧搜索图标圆钮(40dp 正圆 `surfaceBright` → SearchActivity);**直播入口 = 右下角图标 FAB**(`ic_live_fab.xml`,源 `.tubiao/直播fab.svg`,2026-09-12 由 `Icons.Filled.LiveTv` 换成项目图标;原行首 chips 入口废止);切源后内容流整体刷新。
-- **内容流(2026-09-09 定稿,2026-09-10 补 Hero)**:LazyColumn 分区列表;首项 = **Hero 大卡轮播**(推荐前 5 部,Loading 态即用骨架占位首项防滚动锚点漂移)+ 推荐分区(Hero 已展示的前 5 部去重);其余分区 = 当前源的**全部分类**,每区 = 大号粗体标题行 + LazyRow 卡片行;标题行右侧**「全部 >」入口**(bodyMedium onSurfaceVariant + KeyboardArrowRight 18dp 胶囊,原 Tune 筛选控件已删)→ `PartitionListActivity` 二级页(3 列海报网格,全量分页 + Tune 筛选 sheet,FilterSheet 已移至 ui/components 复用);搜索结果源分区右侧同样「全部 >」(携带结果 JSON 进同一二级页,无筛选)。首页加载看门狗 45s 超时转「加载失败 + 重试」(2026-09-11)。
+- **内容流(2026-09-09 定稿,2026-09-10 补 Hero)**:LazyColumn 分区列表;首项 = **Hero 大卡轮播**(推荐前 5 部,Loading 态即用骨架占位首项防滚动锚点漂移)+ 推荐分区(Hero 已展示的前 5 部去重);其余分区 = 当前源的**全部分类**,每区 = 大号粗体标题行 + LazyRow 卡片行;标题行右侧**「全部 >」入口**(bodyMedium onSurfaceVariant + KeyboardArrowRight 18dp 胶囊,原 Tune 筛选控件已删)→ `PartitionListActivity` 二级页(3 列海报网格,全量分页 + Tune 筛选 sheet,FilterSheet 已移至 ui/components 复用);搜索结果源分区右侧同样「全部 >」(携带结果 JSON 进同一二级页,无筛选)。首页加载看门狗 20s 超时转「加载失败 + 重试」(2026-09-11;延时 2026-09-22 由 45s 校正为实际的 20s)。
+- **首屏加载闸门(2026-09-22 用户拍板,对齐上游 fongmi `VodFragment`)**:整屏 `ContainedLoadingIndicator` 只等"接口配置就绪 + 分类到齐 + 推荐位出结果"(`HomeViewModel.pageLoading` = `bootReady && sortsLoaded && rec != Loading`),**各分类第一页不再计入首屏** —— 谁先回来谁先出,未回的分区用各自骨架屏占位(竖向网格骨架预留卡片标题行高,骨架→卡片不跳动)。上游同语义:转圈只覆盖 `homeContent`(分类 + 推荐),分类页自己的 `progressLayout` 独立 loading;旧口径(等所有分区到齐)会被最慢的那个分类拖住整屏。看门狗保留,并改为**按请求计时**(`requestPartition` 每次重新武装:20s 未回即把该分区转「加载失败 + 重试」)—— **不能在开闸时 `cancel()`**:首屏分区尚未回来时取消掉,它的超时就再也没有 Error 出口。
 - **分类隐藏**:设置 tab"首页分类显示"勾选管理,按 源+分类名 存 KV;隐藏的不加载不渲染。
 - **卡片(最终版)**:2:3 海报、圆角 16dp、底部黑色渐变 scrim;白色粗体标题(16sp,titleLarge 就地覆盖;2026-09-09 由 18sp 调整,用户定稿)+ 名称下方年份行(≈14sp,白 70%,year>0 才显示;2026-09-09 由「年/地区/类型」拼接改为仅年份,vodMeta 删除);**无评分角标**(用户已否决);长按→收藏/操作菜单。该组件三处共用:首页内容流 / 详情页相关推荐 / 搜索结果卡。
 - **卡片点击分发(2026-09-11 用户定稿,对齐上游 fongmi `TypeFragment.onItemClick`)**:统一入口 `ui/page/VodCardAction.kt` 的 `Context.dispatchVodCardClick(video, onAction)`(调用方 = 首页 Hero/推荐/分区、`PartitionListActivity` 的 partition/folder 模式),判定**优先级**:
@@ -377,6 +378,14 @@
 - **页面留白的下发方式**:`MainScreen` 算 `contentPadding: PaddingValues` → 各页加在滚动容器的 `contentPadding` / 覆盖层的 `Modifier.padding` / 顶栏的 `topBarStartInset` 上。页面签名里**没有**导航留白参数,页面内**不出现** `if (isRail)`。各页保留自己的基准值(`8.dp` / `88.dp`)。
 - **band 与顶栏的重叠是刻意接受的取舍**(完整理由见 §5):band 顶部若下移到顶栏之下,Rail 上段会落在源层之外、玻璃退化成纯容器色。改 band 矩形前先读 §5 那条。
 - **阶段二的测试空白(说明,非遗漏)**:Rail 与导航壳全是 Compose 布局代码,而本项目单测是纯 JVM、无 Robolectric ⇒ 这部分进不了单测,只能靠 `@Preview` 矩阵与真机。若将来再扩轴向逻辑,建议先把"窗口档 → 轴向"抽成纯函数再补测。
+
+### 6.11 启动与配置加载(2026-09-22 补)
+
+- **首屏闸门**:整屏 `ContainedLoadingIndicator` 只等「配置就绪 + 分类到齐 + 推荐位出结果」,分区首屏各自骨架(见 §4.1)。改 `HomeViewModel.pageLoading` 判定前先读那条。
+- **配置快照优先(仅远程源)**:冷启动走 `ApiConfig.loadConfig(useCache)` 的缓存分支,判据 = 地址是 `http/https` **且** 快照文件(`filesDir + MD5.encode(apiUrl)`,与 `ApiConfig` 同一路径算法)未过期(`AppBootstrap.CONFIG_CACHE_TTL_MS` = 12h);过期即回网络并把新快照写回。**本地/局域网源不吃快照**(其改动必须立即生效)。没有 TTL 会让快照永久冻结 —— 服务端更新源后再也不会生效。
+- **用户主动重载一律走网络**:`AppBootstrap.retry()`(换源 / 改地址 / 启动失败重试)走 `startInit(forceFresh = true)` 跳过快照 —— 否则"重选同一个源"会拿旧快照,看起来像没生效;`continueOffline()` 照旧完全不拉配置。该标志是**参数透传**而非共享字段(主线程写、IO 线程读,字段形式会被连点 retry 的旧协程抢先清零)。
+- ⚠️ **不要在会话中重解析配置**:`parseJson` 第一行 `resetConfigData() → clearSpiderCache() → jarLoader.clear()`,会销毁所有 spider 与 DexClassLoader,而**重装 jar 只发生在 `AppBootstrap`**(`getCSP` 在 loader 为空时只返回 `SpiderNull`)⇒ 中途重解析 = 所有 spider 源失效到下次启动;要热刷新必须走 `AppBootstrap.retry()` 全套。
+- ⚠️ **不能"预装上一次的 jar"来做并行**:`JarLoader.load(MAIN_KEY, …)` 开头 `if (loaders.containsKey(key)) return true` ⇒ 预装的是旧 URL 的 jar 时,真实配置到达后会**静默沿用旧 jar**(爬虫全错);且预装本身会被上面那次 clear 清掉 —— 两头都白做。
 
 ## 7. 未决 / 待细化清单
 

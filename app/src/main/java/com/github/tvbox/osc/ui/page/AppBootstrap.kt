@@ -2,12 +2,15 @@ package com.github.tvbox.osc.ui.page
 
 import android.widget.Toast
 import com.github.tvbox.osc.api.ApiConfig
+import com.github.tvbox.osc.base.App
 import com.github.tvbox.osc.event.RefreshEvent
 import com.github.tvbox.osc.server.ControlManager
 import com.github.tvbox.osc.ui.activity.SearchViewModel
 import com.github.tvbox.osc.util.BootGuard
 import com.github.tvbox.osc.util.FileUtils
 import com.github.tvbox.osc.util.HawkConfig
+import com.github.tvbox.osc.util.KV
+import com.github.tvbox.osc.util.MD5
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -16,6 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.greenrobot.eventbus.EventBus
+import java.io.File
 import kotlin.coroutines.resume
 
 object AppBootstrap {
@@ -43,21 +47,21 @@ object AppBootstrap {
         FileUtils.repairBogusNativeLibs()
         BootGuard.disableBootLoopingSource()
         ControlManager.get().startServer()
-        startInit()
+        startInit(forceFresh = false)
     }
 
     fun retry() {
         dataInitOk = false
         jarInitOk = false
         _state.value = Boot.Loading
-        startInit()
+        startInit(forceFresh = true)
     }
 
     fun continueOffline() {
         dataInitOk = true
         jarInitOk = true
         _state.value = Boot.Loading
-        startInit()
+        startInit(forceFresh = false)
     }
 
     fun onApiUrlChanged() {
@@ -67,10 +71,11 @@ object AppBootstrap {
         retry()
     }
 
-    private fun startInit() {
+    /** forceFresh = 用户主动重载(换源/改地址/失败重试):必须走网络,否则"重选同一个源"会拿旧快照,看起来像没生效 */
+    private fun startInit(forceFresh: Boolean) {
         scope.launch {
             if (!dataInitOk) {
-                val err = awaitLoadConfig()
+                val err = awaitLoadConfig(forceFresh)
                 if (err != null) {
                     if (err == "-1") {
                         dataInitOk = true
@@ -96,8 +101,21 @@ object AppBootstrap {
         }
     }
 
-    private suspend fun awaitLoadConfig(): String? = suspendCancellableCoroutine { cont ->
-        ApiConfig.get().loadConfig(false, object : ApiConfig.LoadConfigCallback {
+    /** 快照有效期:过期即走网络刷新并把新快照写回,避免"一次缓存永久冻结源更新" */
+    private const val CONFIG_CACHE_TTL_MS = 12 * 60 * 60 * 1000L
+
+    /** 只有远程源吃快照:本地/局域网配置的改动必须立即生效,不能被快照挡住 */
+    private fun useCachedConfig(): Boolean {
+        val apiUrl = KV.get(HawkConfig.API_URL, "")
+        if (!apiUrl.startsWith("http://") && !apiUrl.startsWith("https://")) return false
+        val app = App.getInstance() ?: return false
+        val cache = File(app.filesDir, MD5.encode(apiUrl))
+        return cache.exists() &&
+            System.currentTimeMillis() - cache.lastModified() < CONFIG_CACHE_TTL_MS
+    }
+
+    private suspend fun awaitLoadConfig(forceFresh: Boolean): String? = suspendCancellableCoroutine { cont ->
+        ApiConfig.get().loadConfig(!forceFresh && useCachedConfig(), object : ApiConfig.LoadConfigCallback {
             override fun success() {
                 if (cont.isActive) cont.resume(null)
             }

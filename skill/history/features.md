@@ -1937,3 +1937,61 @@ P1 最后两组。至此**调度层(会话/取流/解析/嗅探/重试/换线/�
 - **配置**:`androidResources { localeFilters += listOf("en", "zh", "zh-rCN", "b+zh+Hant", "zh-rTW", "zh-rHK") }` —— 保留四语(简体=默认资源,无需列)+ 依赖库的中文资源(zh-rCN / zh-rTW),剥离其余 ≈22 个语言变体。
 - **验证**:debug 与 release(R8 + `isShrinkResources=true`)均 EXIT=0;`aapt2 dump configurations` 两 APK 都只剩 `b+zh+Hant / en / zh-rCN / zh-rHK / zh-rTW` —— 四语资源齐全、无多余语言。
 - **收益与定位**:体积收益 **KB 级**(debug 83.96 → 83.959 MB;APK 大头是 .so / Python / QuickJS,不是语言资源)⇒ 该配置的价值是"显式声明交付语言 + 防止将来依赖引入多语言资源",**不是瘦身手段**;且它**不会新增语言支持**(列表里写 ja/ko/de… 但没有 `values-*/strings.xml` 不会生效)。
+
+## 首页首屏加载闸门收窄（2026-09-22）
+
+**背景（用户原话）**：「进入首页后转圈圈然后才出现影视海报，能让这个加载速度更快一些吗」。
+
+**排查（先只读，未改代码）**：首屏转圈由 `HomeViewModel.pageLoading` 控制，原关闭条件是 `bootReady && sortsLoaded && rec 非 Loading && 所有分区非 Loading` —— 而每个分区各自要发一次 `getList`（横向布局还受 `Semaphore(2)` 分批），于是**最慢的那个分类决定整屏首帧**；分区骨架屏代码（`PartitionSection` / `HomeGridLayout`）早已存在，只是被闸门挡着从未在首屏露过面。另发现 `AppBootstrap` 冷启动固定 `loadConfig(false)`（网络优先，本地快照只在失败时兜底）、jar 与配置串行装载 —— 经评估属"并行 / 缓存"议题（P2），本轮不动。
+
+**对照上游（`示例文件/TV-fongmi`，只读参考）**：`VodFragment.showProgress()` 只覆盖 `homeContent`（分类 + 推荐）一跳，`setAdapter()` 一到就 `hideProgress() + showContent()` 并给 ViewPager 装 adapter（**此时才创建当前分类页**），分类页在 `TypeFragment` 里自己 `progressLayout.showProgress()` —— 即上游转圈本就不含各分类首屏。顺带核实：上游**没有**做配置缓存（`Decoder.getJson` 每次真网络，catvod `OkHttp` 未配 disk cache、`Config.json` 字段闲置）也没有 jar 并行（`initSite` 内同步 `parseJar`），所以它的"快"只来自闸门更窄。
+
+**改动（对齐上游口径，2 文件，纯展示层）**：
+1. `HomeViewModel` 闸门收窄为 `bootReady && sortsLoaded && rec != Loading`（去掉 `partitions.none { Loading }`），同时**去掉开闸时的 `watchdogJob?.cancel()`** —— 看门狗必须继续活着，它才是"分区超时 → 该分区 Error + 提示"的唯一出口，取消即退化。
+2. `HomeGridLayout` 新增 `HomeGridSkeleton()`：竖向骨架在 2:3 海报下**预留 Stacked 卡片标题行高**（`6dp + titleSmall.lineHeight`），否则分区数据到达时网格每行下移约 26dp。
+
+**口径取舍（都写进 spec §4.1）**：推荐位 `rec` **仍计入**闸门 —— 横向布局的 Hero 与推荐属同一块首屏，若不等它，`getHomeRecList` 那次额外请求回来时 Hero 骨架会被替换（宽度 0.78 屏宽 → 真 Hero 0.64 屏宽）或整块消失。未改动项：横向 Hero 骨架尺寸、分区骨架等宽 ≈112dp（真卡 110dp，差值 2dp）、下拉刷新仍是"整屏转圈"（沿用原行为）。
+
+**验证**：`assembleDebug` EXIT=0；`adb install -r` 到 vivo V2425A（`10AF1J04JX0016G`）成功，待用户真机走查（冷启动转圈时长、竖向骨架→海报无跳动、下拉刷新 / 切源 / 切布局回归）。
+
+**遗留**：①"切布局到横向"时的 Hero 骨架尺寸未对齐；②`loadConfig(false)` 网络优先、jar 与配置串行、sorts 未落盘 —— 继续提速属 P2，需用户拍板（会碰数据层或"首屏先出旧内容"的取舍）。
+
+## 配置快照优先：冷启动跳过配置下载（2026-09-22）
+
+**背景**：承接同日「首页首屏加载闸门收窄」——转圈缩短后，链路里剩下的第一跳（每次冷启动都重新下载订阅 JSON）成为可省项。
+
+**核实**：`AppBootstrap.awaitLoadConfig` 固定传 `loadConfig(false)` ⇒ `ApiConfig.java:169` 的 `if (useCache && cache.exists())` 永不成立，本地快照只在**网络失败**时兜底（`:220`）。缓存文件路径 = `filesDir + MD5.encode(apiUrl)`（与 `ApiConfig` 同一算法），且只在 fetch 成功后才写。
+
+**改动（1 文件，纯 Kotlin）**：`AppBootstrap` 新增 `useCachedConfig()`：地址是 `http/https` **且** 快照在 `CONFIG_CACHE_TTL_MS`（12h）内 → 传 `true`。本地 / 局域网源一律不吃快照（其改动必须立即生效）；TTL 保证最多 12h 陈旧，过期即回网络刷新并写回新快照（网络失败仍由既有回落分支兜底）。**不做 TTL 会让快照永久冻结** —— 服务端更新源后再也不会生效，这是本轮特意避开的回归。
+
+**没做（两条实锤结论，已写进 spec §6.11）**：① 会话中热刷新配置 —— `parseJson` 第一行 `resetConfigData() → clearSpiderCache() → jarLoader.clear()` 会销毁所有 spider 与 DexClassLoader，而重装 jar 只发生在 `AppBootstrap`（`getCSP` 在 loader 为空时只返回 `SpiderNull`）⇒ 中途重解析 = 所有 spider 源失效到下次启动；要做"只落盘刷新"必须另开入口（`ApiConfig` 新增方法，待拍板）。② jar 并行预装 —— `JarLoader.load(MAIN_KEY, …)` 开头 `if (loaders.containsKey(key)) return true` 早退，预装旧 URL 的 jar 会让真实配置到达后**静默沿用旧 jar**，且预装本身会被那次 clear 清掉；收益仅 0.1~0.5s，不划算。
+
+**验证**：`assembleDebug` EXIT=0；`adb install -r` 装机成功。待真机对比：冷启动转圈时长、改订阅地址是否立即生效、仓（合集）切换是否正常。
+
+## 审查：P1 / P2 两轮改动的错误与回归排查（2026-09-22，修 4 处）
+
+**第一轮（用户「审查是否有错误遗漏和引入新回归」）**
+
+1. 🔴 **看门狗反而误伤（P1 引入）**：P1 删掉开闸时的 `watchdogJob?.cancel()` 后，看门狗变成 `loadHome()+20s` 无条件触发 —— 用户若在这 20s 内切 tab（`ensureLoaded`）或触发 `loadMorePartition`，请求还在飞就被判「部分超时」、该分区被打成 Error + toast，随后数据到达又覆盖成内容（骨架 → 错误闪现 + 多余 toast）。修：抽出 `armWatchdog()` 由 `requestPartition` 重新武装，改成**按请求计时**；`loadHome()` 仍武装一次兜住 homeContent 挂死。⚠️ 不能在开闸时 `cancel()`：首屏分区还在飞，取消掉它永远没有 Error 出口。
+2. 🔴 **用户主动重载会吃快照（P2 step1 引入）**：换源 / 改地址 / 启动失败重试都走 `AppBootstrap.retry()`，而快照判据只看「地址 + 12h」不看触发者 ⇒ 重选一个 12h 内用过的源会直接解析旧快照，看起来像「重载没生效」。修：`retry()` 跳过快照；冷启动仍吃快照。
+
+**第二轮（用户「继续审查是否还有错误遗漏和新回归」）**
+
+3. 🟡 **看门狗计时点仍在"入队"而非"开跑"**：`armWatchdog()` 原先放在 `requestPartition` 顶部，而被 `loadSemaphore` 限流排队的请求还没真正发起（横向布局 8 个分类、并发 2）⇒ 排队分区可能刚开跑就被判超时。修：`armWatchdog()` 移进 `withPermit` 之内，按"拿到许可、真正发起"计时。
+4. 🟡 **`freshConfig` 是跨线程共享可变字段**：主线程 `retry()` 写、IO 线程读并清零；连点两次 retry 时旧协程可能抢先清零，导致第二次不走网络。修：去掉字段，改为 `startInit(forceFresh: Boolean)` 参数透传（零共享状态）。
+
+**核实通过（未改）**：快照路径算法与 `ApiConfig` 一致（`filesDir + MD5.encode(apiUrl)`）；快照分支与网络分支的副作用只差一个 `saveCache`（`clearApiLinesIfUnmatched` / `switchApiCollectionIfNeeded` / `parseJson` 都在）；快照损坏 → 异常被 catch → 落网络路径；网络失败 → 仍回落快照；仓（合集）首次切仓仍走网络、之后按子源地址命中快照；`-1`（未配置）与本地 / 局域网源（clan 等非 http）一律不吃快照；`useCachedConfig()` 跑在 IO 线程（不是主线程 I/O）；闸门收窄只会「更早开闸」，找不到"更晚开"或"卡死不撤转圈"的新路径；`sorts` 与 `partitions` 都在 `sortsLoaded = true` 之前赋值 ⇒ 无空 tab 窗口；竖向骨架高度 = 2:3 海报 + `6dp + titleSmall.lineHeight`，与 Stacked 卡逐项一致；`i18n_gate` 0/0（无新增硬编码文案）；`pageLoading` 全仓只有 `HomeViewModel` / `HomePage` 两处引用；`LoadConfigCallback.notice` 全库无调用点（不构成"快照路径漏通知"）。
+
+**发现（既存问题，未动）**：直播侧 `LivePlayActivity.loadLiveConfigOnEnter()` 用 `loadLiveConfig(true)`，即**快照优先且没有 TTL** —— 快照存在就永不刷新，只有用户切直播源（`LivePlayViewModel` 传 `false`）或删掉快照文件才会重新拉。本次给点播侧加的 12h TTL 比它严格；要不要给直播侧补同样的过期策略属另一个待拍板项。
+
+**验证**：`testDebugUnitTest`（230 例）+ `assembleDebug` 全绿；装机 Success；spec §4.1 / §6.11 已同步（看门狗按请求计时、用户主动重载走网络、标志走参数透传）。
+
+**第三轮（用户「再审查一遍」）**
+
+5. 🟡 **骨架预留高度依赖了未验证的假设**：`Spacer(6.dp + titleSmall.lineHeight.toDp())` 是否正确取决于 `TextUnit.toDp()` 是否按 `fontScale` 换算，而离线无法核实（Gradle 缓存里没有 compose `ui-unit` 的 sources jar）。修：改用 `rememberTextMeasurer().measure("M", style = titleSmall).size.height` **实测一行高度**后下传给 `HomeGridSkeleton`（与同文件 `HomeFilterChipsRow` 的用法一致；一次测量、不在每个骨架项里测量），彻底去掉该假设 —— 系统大字体下同样精确。
+
+**更正上一轮的记录（不删旧文，在此更正）**：第一轮写的「下拉刷新仍是"整屏转圈"（沿用原行为）」不准确 —— 下拉刷新确实仍走整屏 spinner（`reload()` → `pageLoading = true`），但**撤 spinner 的时机跟着闸门一起提前了**：现在只等「配置 + 分类 + 推荐位」，随后由各分区骨架逐个填内容。也就是说下拉刷新与冷启动现在共用同一套渐进呈现，不再是"刷完一次性全出"。
+
+**既存观察（非本次引入，未动）**：`HomePullRefreshIndicator` 的 `isRefreshing` 全库恒为 `false` ⇒ 下拉松手后指示器停在 `distanceFraction = 0` 的静态环上，而页面此时已被整屏 spinner 取代，顶部会同时存在一个静态环与中央转圈；属 2026-09-12 改版的遗留。
+
+**第三轮核实通过**：本地源红线未受影响 —— `isLocalSourceUnreadable` / `isLocalSourceMissing` 只认 `clan://localhost/` 与 `file://` 两种"本机文件"形态，两者都不是 `http/https`，因此永远不会走快照分支（"本地源拉取失败不静默回落旧快照"的语义完整保留）；局域网 `clan://<ip>` 同样不吃快照（且它本来就快）；超时 toast 不会串页 —— `pageErrorEvents` 是 `replay = 0` 的 SharedFlow，而 `HorizontalPager` 默认 `beyondViewportPageCount = 0`，用户切到其它 tab 后 `HomePage` 已离开组合、收集者被取消，弹窗不会打扰其它页面，分区的 Error 状态仍留在 VM 里（切回来看得到「重试」）；`useCachedConfig()` 读的 `HawkConfig.API_URL` 与 `loadConfig` 用来算缓存文件名的 KV 键一致；`BootGuard.disableBootLoopingSource()` 在 `startInit` 之前同步执行 ⇒ 快照判据用的是"已被看门狗处理过"的地址，不会算出错误的缓存路径。

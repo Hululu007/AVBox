@@ -119,13 +119,11 @@ class HomeViewModel : ViewModel() {
             }
         }
         scope.launch {
-            combine(bootReady, rec, partitions, sortsLoaded) { ready, r, ps, loaded ->
-                ready && loaded && r.state != PartitionState.Loading &&
-                    ps.none { it.state == PartitionState.Loading }
+            combine(bootReady, rec, sortsLoaded) { ready, r, loaded ->
+                ready && loaded && r.state != PartitionState.Loading
             }.collect { ready ->
                 if (ready && pageLoading.value) {
                     pageLoading.value = false
-                    watchdogJob?.cancel()
                 }
             }
         }
@@ -172,11 +170,7 @@ class HomeViewModel : ViewModel() {
         loaders.clear()
         staleLoaders.forEach { it.release() }
         loadGeneration++
-        watchdogJob?.cancel()
-        watchdogJob = scope.launch {
-            delay(20_000)
-            onHomeLoadTimeout()
-        }
+        armWatchdog()
         sortViewModel.getSort(loadingSourceKey, HomeSettings.current() == HomeSettings.HomeLayout.Horizontal)
     }
 
@@ -294,12 +288,21 @@ class HomeViewModel : ViewModel() {
 
     private class LoaderResult(val stale: Boolean, val absXml: AbsXml?)
 
+    private fun armWatchdog() {
+        watchdogJob?.cancel()
+        watchdogJob = scope.launch {
+            delay(20_000)
+            onHomeLoadTimeout()
+        }
+    }
+
     private fun requestPartition(current: Partition, page: Int) {
         val generation = loadGeneration
         val loader = loaders.getOrPut(current.sort.id) { PartitionLoader(current.sort) }
         scope.launch {
             loadSemaphore.withPermit {
                 if (generation != loadGeneration || loader.released) return@withPermit
+                armWatchdog()
                 val result = suspendCancellableCoroutine<LoaderResult> { cont ->
                     loader.request(page) { r -> if (cont.isActive) cont.resume(r) }
                 }
