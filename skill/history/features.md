@@ -1520,3 +1520,44 @@ P1 最后两组。至此**调度层(会话/取流/解析/嗅探/重试/换线/�
 - **本轮逐调用点核对(未发现新问题)**:`isApiLineSourceOf(url, activeUrl)` / `isLiveApiLineSourceOf` 的全部 4 个调用点(`isInUse` 点播/直播分支 + 卡片 `inUse` 点播/直播分支)**实参逐一比对,均传"当前生效地址"**(点播 `activeUrl`、直播 `liveActiveUrl`),没有把两者对调;`getLiveConfigUrls()` / `getLiveApiHistoryUrl()` 的 3 个调用点一致。
 - **一条能力边界(说明,非缺陷)**:这两轮修的 `HistoryHelper` 仓判定与 sheet 关闭**无法进纯 JVM 单测** —— 它们都读 KV,而 `KV.init` 依赖 `MMKV.initialize(Context)`,工程无 Robolectric、单测又开了 `returnDefaultValues`。因此这两处只能靠"逐调用点核对 + 编译 + 真机",已在上条写明核对结果。**当前能测的纯逻辑都有测试**:`Depot`(7)、`BootGuard` 决策(10)、`FileUtils` 原生库自检(8)、`ConfigParser` 多仓判定(2)。
 - **验证**:`:app:testDebugUnitTest` **199 用例 / 0 失败**;`:app:assembleDebug` 退出码 0。本轮**未对设备做任何写操作**(仅 `logcat -b crash -d` 与 `run-as cat` 只读读取)。
+
+## 播放器两处「旧内容残留」缺陷修复(2026-09-21 同日七轮)
+
+用户真机反馈两个现象,读码定位到两处独立缺陷,根因同源:**「挂载视图」早于「确定会话」 + 退页面只停到 PAUSED 不清内容**。
+
+**① 音乐页退出 → 进直播,一瞬间有音乐声**
+- 链路:退出音乐页 `PlaybackEngine.detach()`(`:392-425`)先 `pause()` 再调 `stopPlaybackKeepPlayer()`,而 `VideoView.stopPlaybackKeepPlayer()`(player 模块 `:430-438`)**首句就是 `if (mCurrentPlayState == STATE_PAUSED) return;`** ⇒ 内核留在 PAUSED + 旧媒体项(这是 D6 同片接管刻意要的"可复用态")。
+- `enterLive()`(`:230-262`)对旧内容只有 `if (videoView.isPlaying()) videoView.pause();` ⇒ 已 PAUSED 时**是空操作**;对比 `enterLiveState()` 写的是 `videoView.release()`,**两条直播入口不对称**。
+- `LivePlayActivity.onResume()`(`:224-235`)→ `enterLiveState()` 因 liveMode 已 true 返回 false → 走 `mVideoView?.resume()`;`VideoView.resume()`(`:373-410`)判据 `isInPlaybackState() && !isPlaying()`,PAUSED 正好命中 ⇒ **音乐复活**,直到频道列表就绪后 `playChannel()` 的 `releasePlayerKernel()` 把它顶掉。
+- "有概率"的来源 = 列表是否需异步加载:`ApiConfig.shouldReloadLiveConfig()`(空 / URL 变)或 127.0.0.1 代理源走 `loadLiveConfigOnEnter()` / `loadProxyLives()` 时才有这段网络等待窗口;列表已缓存则 `playChannel` 在 onCreate 内同步跑完,听不到。
+- **修复**:`enterLive()` 改用 `releasePlayer()`(与 `enterLiveState()` 对齐)。释放放在 `setProgressManager(null)` **之前** —— 那一刻进度键还是旧内容的,正好把它的观看位置落盘。`LivePlayActivity.onResume()` 只补一行注释记录不变量(此处只可能恢复直播流),不加多余守卫。
+
+**② 影视页退出 → 进新影视页,加载时闪上一部画面**
+- 链路:`PlayContainer` 构造函数(`:96-108`)在**详情数据还没到**时就 `engine.attach(this)` → `VideoView.attachContainerTo()`(`:923-934`)把还带着上一部 SurfaceView 的 `mPlayerContainer` 搬进新页槽位;搬运触发 surfaceDestroyed/surfaceCreated,`SurfaceRenderView.surfaceCreated()`(app `player/render/` `:92-96`)**无条件** `mMediaPlayer.setDisplay(holder)` → `ExoMediaPlayer.setDisplay()`(`:246-251`)→ media3 `setVideoSurface()`;此时内核里还是上一部内容(PAUSED/PREPARED、解码器在),**media3 会把最后一帧重渲染到新 surface** ⇒ 闪上一部画面。
+- 竞态:与随后 `PlaybackController.play()`(`:1377-1379`)`reusePlayer=false` 分支的 `view.releasePlayer()` 谁先谁后,取决于详情数据秒回还是要等网络 ⇒ "有概率"。另一佐证:`play()` 里**只有 reusePlayer 分支**才 `view.clearVideoFrame()`(`:1371-1376`),换片路径全程无遮黑帧动作。
+- **修复**:`MyVideoView` 新增 `coverVideoFrame()`(只加黑遮罩、**不停内核** —— `clearVideoFrame()` 内部 `mMediaPlayer.stop()` 会破坏 D6 续播,不能复用),`attach()` 搬容器前 `if (!videoView.isPlaying()) coverVideoFrame()`。
+- **为什么必须带 `!isPlaying()` 条件**:正在播的内容属于"本次接管"(音乐页交接 / 页面返回),遮了没人来揭就是永久黑屏;揭开统一靠既有 `STATE_PLAYING` 回调 `showVideoFrame()`(纯音频走 `hideVideoFrameCover()`)。另核对过 z-order:遮罩与海报的层级在 `releasePlayer()` 之后的常规路径里不会互相盖住(此时容器只剩遮罩,后续 `addDisplay()` 插 index 0、`setArtwork` 按 `min(1, childCount)` 追加,都在遮罩之上)。
+- **顺带修掉自己引入的第二处漏洞**:揭遮罩的代码原本写在引擎状态回调的 `if (liveMode) return;` **之后**,而直播页共用同一块容器 ⇒「attach 时遮了黑 → 一直没起播 → 回直播页 → `enterLiveState()` 重播频道」这条路上 `STATE_PLAYING` 会被 liveMode 短路掉,**遮罩永远没人揭 = 直播有声无画**。修法不是再补一处调用,而是把揭遮罩提到模式短路**之前**(它本来就与点播/直播无关)。核对依据:`VideoView.setPlayState()` **不去重**(`start`/`resume`/`replay` 每次都会发 `STATE_PLAYING`,故必有一条揭开路径);`isConfirmedAudioOnly()` → `currentTrackInfo()` 是只读 + `try/catch`,直播下调用安全。
+- **`resume()` 调用点全量审计(收口"谁能唤醒旧内容"这一面)**:全工程共 4 处 —— `PlayContainer.hostResume()`(`lifecyclePaused` 守卫)、`MusicPlayerActivity.hostResume()`(`lifecyclePaused` 守卫)、引擎 `HeadlessView.hostResume()`(无实际调用方,死代码)、`LivePlayActivity.onResume()`(**唯一无守卫**,其安全性现依赖「`enterLive()` 必把内核置为 IDLE」这个不变量,已在该处写注释锚定)。另核了直播页 6 处 `start()`(`:285` / `:522` / `:880` / `:996` / `:1016` / `:1055`):前 5 处一律先 `setUrl` 再 `start`(不可能唤醒残留内容),第 6 处是时移播放开关(仅在直播流在播时可达)⇒ **结论是不加"多处打标记"式守卫** —— 那种守卫要求 6 个调用点各自记得置位,本身就是新的漏点来源;正确做法是在源头(`enterLive()`)保证不变量。
+- **自查复审(第三轮)发现并修掉:遮罩盖住控制器**。`setVideoController()` 是把控制器 `addView` 进 `mPlayerContainer` 的,而 `PlayContainer` 构造函数里 `initView()`(挂控制器)在 `engine.attach()`(加遮罩)**之前** ⇒ 遮罩被追加到控制器之上,加载期顶栏/手势层/直播控制层全被盖住。修法:`showFrameCover()` 里 `if (mVideoController != null) mVideoController.bringToFront()`。**为什么不用按 index 插入**:`addDisplay()` 永远把渲染视图插到 index 0,而"渲染视图尚未创建"(全新引擎 + 新详情页,容器里可能只有控制器)时 index 会算错位,`bringToFront` 不依赖顺序。
+- **复审确认无问题的点(有据可查,非"看起来没问题")**:① 详情页的加载遮罩与 `PlayerTipOverlay()` 都在 `AndroidView(container)` **之后**绘制 ⇒ 在容器之上,遮罩盖不到提示;② 直播页换台快照是 Compose 层 `Image(bitmap)`,不走 `setArtwork` ⇒ 揭遮罩时新增的 `clearArtwork()` 不会误清它;③ `enterLive()` 里 `releasePlayer()` 置于 `setProgressManager(null)` 之前 ⇒ 旧内容位置按旧键正确落盘,且 `release()` 内部的 `saveProgress → markPlaybackStarted/hideTip` 在无页面桥下是空操作;④ `enterLive()` 与 `enterLiveState()` 都 release ⇒ **`liveMode == true` 现在蕴含"旧内容已释放"**(比改前更强的不变量);⑤ `attach()` 的 `!isPlaying()` 守卫不可去掉 —— 去掉会让"音乐页交接后返回详情页"(内容在播、不会再发 `STATE_PLAYING`)永久黑屏。
+- **原先标注的"已知遗留"经核实为不可达,故不改**:「直播正在播 → 打开点播详情页」要求直播流在直播页不在前台时仍在播,而这是走不到的 —— `exitingLivePlay` 只在返回键 `finish()` 路径置 true(`:205`),该路径必然经 `onDestroy → exitLive() → release` 把内核置 IDLE;其余离开方式(home/切后台)`onPause` 会 `pause()`(`:240`)。两种情况下 `attach()` 时 `isPlaying()` 都是 false ⇒ 遮罩照常生效。`DetailActivity` 的唯一入口是 `ui/page/Jump.kt`(首页/搜索的卡片点击),直播页内没有跳点播详情的入口。**若将来新增"直播 → 点播详情"的入口,这条会重新成立**,届时需连同"同片接管分支(`isSamePlaybackOwned`,不发 `STATE_PLAYING`)补显式揭开"一起做。
+- **遗漏排查**:确认全仓只有一份 `PlayContainer` / `LivePlayActivity` / `MyVideoView` / `PlaybackEngine`(`app/src/main`;`python`/`test` 是另外两个源集,无 flavor 变体)⇒ 不存在"改漏了一份实现"。
+
+**验证**:`:app:compileDebugJavaWithJavac` + `:app:compileDebugKotlin` 通过;`:app:testDebugUnitTest` **199 用例 / 0 失败**;`:app:assembleDebug` 退出码 0(`AVBox_debug.apk` 已产出)。**未装机** —— 改动落在播放器/引擎层,现有纯逻辑单测(Depot/BootGuard/FileUtils/ConfigParser)覆盖不到。
+**环境坑(本轮又踩,补充到环境结论)**:`gradle` 直跑时 `:pyramid:installDebugPythonRequirements` 会失败(报 `Process ... python.exe finished with non-zero exit value 1`,并伴随 `[safe-delete] SAFE_DELETE_BULK_CONFIRM_REQUIRED`);需 `export PATH` 带上系统 Python 3.10 并用 `-x :pyramid:installDebugPythonRequirements` 跳过。
+**遗留**:①的窗口已消除,但 `VideoView.stopPlaybackKeepPlayer()` 的 PAUSED 早退语义本身没动(它服务于 D6 同片接管);后续若再出现"退页面后旧内容被谁恢复出来"的类同问题,优先查**新页面有没有无条件 `resume()`**。
+
+## 「换仓」入口要退出重进才出现(2026-09-21 同日八轮)
+
+- **现象(用户问)**:「添加好多仓源后,是不是要退出配置管理页面再进去才会在右上角显示换仓控件?」—— **是**,读码确认。
+- **根因一:判定用的地址与那一刻的本地快照对不上**。`ConfigManagePage.kt` 的 `canSwitchRepo`(点播)= `HistoryHelper.isApiLineUrl(activeUrl)`,而 `isApiLineUrl` 只在 `API_LINE_LIST` 里比对**仓内子源**地址。刚添加完时 `activeUrl` 还是**仓地址本身** —— `switchToVod()` 里 `activeUrl = item.url` 是**同步**赋值,早于异步改写 ⇒ 恒为 false。
+- **根因二(更本质):异步改写不触发重组**。`ApiConfig.switchApiCollectionIfNeeded()`(`:507-532`)在异步 loadConfig 里把 `API_URL` 由仓地址改写成仓内首条子源、并写入 `API_LINE_LIST`/`API_LINE_SOURCE`,**全程不产生任何 Compose 状态变化**;而 `activeUrl` 是 `remember { mutableStateOf(KV.get(API_URL)) }`,只在首次组合读一次,页面里两个 `LaunchedEffect` 也不监听配置加载 ⇒ 不重组。退出重进之所以能好,是因为 `ConfigManageActivity` 是独立 Activity,重建 `ComposeView` 让 `remember` 重跑。
+- **顺带确认的同类漏改**:`repoEntries`(仓列表)也是直读 `HistoryHelper.getApiLines()` 的普通值;`isInUse` 的「使用中」标记同样依赖 `activeUrl`,所以切到仓后**页内**所有源都显示未使用(代码注释 `:216-217` 原本只解决了"重进页面"这一半)。
+- **为什么需要两条刷新通道(而不是一条)**:
+  - 点播仓的改写就在**本页后台**完成(`AppBootstrap.onApiUrlChanged()` → `retry()`),所以必须靠 `AppBootstrap.state` 落地 `Ready` 时重读 —— **已核 `AppBootstrap.startInit` 顺序:`awaitLoadConfig()`(含改写)→ `awaitLoadJar()` → `_state.value = Boot.Ready`,改写先于 Ready**;
+  - 直播仓的改写发生在**直播页**拉取配置时(`applyLiveSource()` 只 `invalidateLiveConfig()`,真正拉取要等进直播页),所以要靠 `LifecycleEventEffect(ON_RESUME)`;这条同时覆盖"从本地文件选择器返回"。
+- **改动**(`ConfigManagePage.kt` 单文件):新增 `refreshActiveSnapshot()`,只重读 `activeUrl`/`liveActiveUrl`/`liveFollow` 三份"当前态",再由上面两条通道各调一次。**刻意不重读 `vodItems`/`liveItems`**:订阅列表的增删改都同步写 KV,本地值不会与 KV 分叉,重读不会带来新信息,反而会与 `manageMode` 的 `selected` 勾选集错位。
+- **刻意否掉的方案**:把可见条件放宽成 `isApiLineSource(activeUrl) || isApiLineUrl(activeUrl)`。这能绕过"仓地址 ≠ 子源地址"的错配,但**解决不了根因二** —— 异步完成时依然没有重组;更要命的是它会让按钮在 `Ready` 之前就出现,而那一刻 `repoEntries` 还是空的 ⇒ 用户点开是个空 sheet(比"暂时看不见"更糟)。
+- **验证**:`:app:compileDebugKotlin` / `:app:testDebugUnitTest`(**199 用例 / 0 失败**)/ `:app:assembleDebug` 全部通过。**未装机** —— 改动是 Compose 状态刷新时序,现有纯逻辑单测覆盖不到。**真机待验**:①添加点播仓源后**停在配置管理页不动**,数秒内右上角应自行出现「换仓」圆钮,且订阅卡上的仓地址那条显示「使用中」;②切到直播段添加直播仓源 → 进直播页 → 返回配置管理页,换仓钮应出现;③管理模式下右上仍是「编辑/删除」,不受刷新影响。
+- **文档同步**:`avbox-mobile-ui-spec.md` §4.7「换仓入口」新增可见性刷新条目;§6.9 补一条通用规则(「首次组合读一次 KV」+「异步写 KV」= 页面不刷新 → 标准配方 = ON_RESUME + boot Ready 双通道,且只重读"当前态"不重读用户可编辑列表)。

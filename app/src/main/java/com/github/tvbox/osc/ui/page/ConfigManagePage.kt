@@ -43,6 +43,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,6 +56,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.ui.activity.ConfigManageActivity
@@ -184,6 +187,24 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
     var manageMode by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf(emptySet<String>()) }
     var repoSheetOpen by remember { mutableStateOf(false) }
+
+    /**
+     * 多仓的地址改写由异步 loadConfig 完成(仓地址 → 仓内首条子源),它不产生任何 Compose 状态
+     * 变化 ⇒ 这几份"只在首次组合读一次"的当前态不会自更新,换仓入口与"使用中"标记要退出重进才正确。
+     *
+     * <p>故补两条幂等刷新:回到本页(直播仓的改写发生在直播页拉取配置时)、boot 落地 Ready
+     * (点播仓的改写在本页后台完成,且先于 Ready)。只重读"当前态"而**不**重读订阅列表 ——
+     * 列表的增删改都同步写 KV,重读只会与 manageMode 的勾选集错位。
+     */
+    fun refreshActiveSnapshot() {
+        activeUrl = KV.get(HawkConfig.API_URL, "")
+        liveActiveUrl = KV.get(HawkConfig.LIVE_API_URL, "")
+        liveFollow = ApiConfig.isLiveFollowVod()
+    }
+
+    val boot by AppBootstrap.state.collectAsState()
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { refreshActiveSnapshot() }
+    LaunchedEffect(boot) { if (boot is AppBootstrap.Boot.Ready) refreshActiveSnapshot() }
 
     val isVod = mode == ConfigMode.Vod
     val currentItems = if (isVod) vodItems else liveItems
