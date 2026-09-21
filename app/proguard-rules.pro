@@ -177,6 +177,14 @@
 #    宿主提供绑定反而会让它抛 IncompatibleClassChangeError,详见 spec §6.3)
 # Guava:由 media3-common 传递带入,宿主代码未静态引用 → R8 默认改名/裁剪,jar 引用即崩
 -keep class com.google.common.** { *; }
+# Sardine(WebDAV):订阅源 jar 的 com.github.catvod.spider.WebDAV 会 new OkHttpSardine()
+# 做 WebDAV 备份/还原,宿主零静态引用 → 不 keep 就整包被 R8 裁掉
+-keep class com.thegrizzlylabs.sardineandroid.** { *; }
+# Kotlin 标准库:jar 直接调用 kotlin.*(如 merge/e0/a 调 kotlin.io.TextStreamsKt),
+# 而宿主 Compose 只用到 stdlib 的一部分 → 其余被 R8 裁掉(debug 有、release 无),
+# 与 Guava 属同一类问题。对齐上游 fongmi 的同名规则。
+-keeppackagenames kotlin.**
+-keep class kotlin.** { *; }
 -keepclassmembers enum * {
     public static **[] values();
     public static ** valueOf(java.lang.String);

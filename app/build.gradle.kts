@@ -161,6 +161,8 @@ dependencies {
     // zxing:动态加载的爬虫 jar 运行期需要 com.google.zxing.*(二维码),宿主必须提供。
     // 宿主源码无静态引用,禁止按"零引用"删除;keep 规则见 proguard-rules.pro
     implementation(libs.zxing.core)
+    // sardine:订阅源 jar 里的 WebDAV 爬虫(com.github.catvod.spider.WebDAV)用它做
+    implementation(libs.sardine)
 
     // Compose UI(avbox-mobile-ui-spec §2)
     implementation(platform(libs.androidx.compose.bom))
@@ -175,7 +177,6 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
-    // 主题取色(主题设置页):种子色/风格 → M3 配色方案
     implementation(libs.materialkolor)
     // 液态玻璃导航栏:backdrop 本地 fork(见 libs/backdrop)+ capsule 连续曲率胶囊形状
     implementation(project(":libs:backdrop"))

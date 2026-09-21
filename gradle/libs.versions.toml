@@ -84,6 +84,7 @@ jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
 commons-io = { group = "commons-io", name = "commons-io", version.ref = "commonsIo" }
 juniversalchardet = { group = "com.googlecode.juniversalchardet", name = "juniversalchardet", version.ref = "juniversalchardet" }
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxingCore" }
+sardine = { group = "com.github.thegrizzlylabs", name = "sardine-android", version.ref = "sardine" }
 desugar-jdk-libs = { group = "com.android.tools", name = "desugar_jdk_libs_nio", version.ref = "desugarJdkLibs" }
 androidx-annotation = { group = "androidx.annotation", name = "annotation", version.ref = "androidxAnnotation" }
 media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "media3" }
