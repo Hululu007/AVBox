@@ -1586,3 +1586,17 @@ P1 最后两组。至此**调度层(会话/取流/解析/嗅探/重试/换线/�
 - **保留的机制**:`ApiLineSignal` 本身不动(写入方在 `api`/`util` 包、读方在 `ui.page`,`util` 里的信号对象是最省事的解耦方式),只是**只剩一个消费者**。九轮审查期已把自增改成 `_version.update { it + 1 }`(CAS),并发调用不丢计数。
 - **验证**:`:app:compileDebugKotlin` / `:app:compileDebugJavaWithJavac` 通过(两个任务均实跑,非 UP-TO-DATE)。
 - **文档同步**:spec §4.3「接口线路」行、§4.7「换仓入口」、§6.9 通用规则统一改为「同一页内只保留一条刷新路径」。
+
+## 删除设置页「接口线路」行:换仓入口只留一处(2026-09-21 同日十一轮)
+
+- **用户要求(原话)**：「设置页不要显示接口线路这个换仓入口,听不懂吗」,并附设置页截图(「接口线路」行显示 `FongMi`)。**这是对十轮那句「只保留一处刷新路径啊,放在配置管理页面的右上角就行了」的澄清** —— 用户要的是**入口只留一处**,不是刷新路径只留一条。十轮理解偏了,只删了刷新订阅,没删入口。
+- **删除范围(整行 + 只为它存在的机制)**：
+  - UI:那块 `if (state.apiLineVisible) { SettingsGroup { SettingsCard(SINGLE) { SettingsRow("接口线路") } } }` 单卡。
+  - 状态:`SettingsState` 的 `apiUrl` / `apiLines` 两个字段与派生属性 `apiLineVisible`(`get() = HistoryHelper.isApiLineUrl(apiUrl)`);`loadState()` 里对应的两行 KV 读取。
+  - 辅助函数:`currentLineName()` / `currentLineIndex()`。
+  - **只为它存在**的弹层机制:`OptionSheetState` 类、`var optionSheet` 状态、`openOptions()`、以及底部 `optionSheet?.let { AVBoxOptionSheet(...) }` 渲染块 —— 全仓再无调用者(其它行都走 `SettingsOptionMenuRow` 的弹出式菜单)。
+  - 失效 import:`AVBoxOptionSheet`、`ApiConfig`。
+- **刻意保留(不是遗漏)**:`refreshState()` 与 `LifecycleEventEffect(ON_RESUME) { vm.refreshState(); vm.refreshCacheSize() }` —— 查 `git show e17cc0e^` 确认它们**早于九轮就存在**,服务的是"播放设置/偏好设置/预载设置等二级页改了同一批 KV,回设置 tab 要重读",与该入口无关;两者 KDoc/注释里原先写的"接口线路"理由已改写为真实理由。
+- **教训**:九轮为了修这行的可见性,补了 `ApiLineSignal` 订阅 + 返工一次 + 十轮再收窄 —— **三轮工作全部白做**,因为用户从一开始就不想要这个入口。用户说"只保留一处"时,要先确认指的是**入口**还是**刷新路径**;UI 上出现"同一功能两个入口"时,先问是不是该删一个,而不是急着把第二个修好。
+- **验证**:`:app:compileDebugKotlin` 通过(仅剩既有 Kotlin 插件弃用警告);`:app:compileDebugJavaWithJavac` UP-TO-DATE(无 Java 改动)。
+- **文档同步**:spec §4.3「接口线路」条目改写为删除记录、分组内容去掉该行、§4.3 弹窗形态条目去掉它的 `AVBoxOptionSheet` 归属、§4.3「已删条目」补一行、§4.7 与 §6.9 里"设置页那一半"的表述改为"已随入口删除"。

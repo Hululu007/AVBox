@@ -51,10 +51,8 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.tvbox.osc.R
-import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.ui.components.AppTopBarScaffold
 import com.github.tvbox.osc.ui.components.AVBoxBottomSheet
-import com.github.tvbox.osc.ui.components.AVBoxOptionSheet
 import com.github.tvbox.osc.ui.components.SettingsCard
 import com.github.tvbox.osc.ui.components.SettingsCardPosition
 import com.github.tvbox.osc.ui.components.SettingsGroup
@@ -104,14 +102,9 @@ data class SettingsState(
     val preloadDuration: Int,
     val playCache: Boolean,
     val exoCacheSizeMb: Int,
-    val apiUrl: String,
-    val apiLines: List<String>,
     val dohIndex: Int,
     val cacheSizeText: String = "",
-) {
-    val apiLineVisible: Boolean
-        get() = HistoryHelper.isApiLineUrl(apiUrl)
-}
+)
 
 class SettingsViewModel : ViewModel() {
     private var cacheSizeText: String = ""
@@ -133,7 +126,7 @@ class SettingsViewModel : ViewModel() {
      * 只重读 KV 状态,不重算缓存大小。
      *
      * <p>{@code getCacheSize()} 是整棵缓存目录的递归遍历,绑到"每次配置变化"上会白跑;
-     * 接口线路的可见性只依赖 API_URL / API_LINE_LIST。
+     * 各行的值(播放内核/默认启动页/历史条数/弹幕 API 等)在别的二级页也能改,回本页时重读一次即可。
      */
     fun refreshState() {
         _state.value = loadState()
@@ -191,8 +184,6 @@ class SettingsViewModel : ViewModel() {
         preloadDuration = KV.get(HawkConfig.PRELOAD_DURATION, HawkConfig.PRELOAD_DURATION_DEFAULT),
         playCache = KV.get(HawkConfig.PLAY_CACHE, false),
         exoCacheSizeMb = KV.get(HawkConfig.EXO_CACHE_SIZE_MB, HawkConfig.EXO_CACHE_SIZE_MB_DEFAULT),
-        apiUrl = KV.get(HawkConfig.API_URL, ""),
-        apiLines = KV.get(HawkConfig.API_LINE_LIST, ArrayList()),
         dohIndex = KV.get(HawkConfig.DOH_URL, 0),
         cacheSizeText = cacheSizeText,
     )
@@ -203,28 +194,17 @@ class SettingsViewModel : ViewModel() {
     }
 }
 
-class OptionSheetState(
-    val title: String,
-    val options: List<String>,
-    val selectedIndex: Int,
-    val onSelect: (Int) -> Unit,
-)
-
 @Composable
 fun SettingsPage(vm: SettingsViewModel = viewModel(), bottomPadding: Dp = 0.dp) {
     val state by vm.state
-    // 接口线路的可见性、当前线路名、各行的值全都来自 KV,而 loadState() 只在 ViewModel 构造时读一次
-    // —— 切到多仓源后配置是**异步**加载并改写 API_URL 的,退回本页时会读到"仓地址 + 空线路列表"
-    // 的旧快照,「接口线路」这行就不出现。
-    //
-    // 只靠 ON_RESUME 就够:改写只发生在配置管理页(独立 Activity)或开机阶段,离开本页期间必然
-    // 已经结束,回到本页重读一次即可 —— 不必再订阅改写信号,否则同一件事有两条刷新路径。
+    // 各行的值都来自 KV,而 loadState() 只在 ViewModel 构造时读一次;播放设置/偏好设置/预载设置等
+    // 二级页也能改同一批 KV,退回本页时若不重读就会显示旧值 —— 故回本页(宿主 Activity 的 ON_RESUME)
+    // 重读一次。缓存大小走独立那条:它是整棵缓存目录的递归遍历,不该跟着每次状态重读一起跑。
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         vm.refreshState()
         vm.refreshCacheSize()
     }
     val context = LocalContext.current
-    var optionSheet by remember { mutableStateOf<OptionSheetState?>(null) }
     val versionName = remember {
         try {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: ""
@@ -236,10 +216,6 @@ fun SettingsPage(vm: SettingsViewModel = viewModel(), bottomPadding: Dp = 0.dp) 
     var aboutSheet by remember { mutableStateOf(false) }
 
     val listState = rememberScrollState()
-
-    fun openOptions(title: String, options: List<String>, currentIndex: Int, onSelect: (Int) -> Unit) {
-        optionSheet = OptionSheetState(title, options, currentIndex, onSelect)
-    }
 
     AppTopBarScaffold(
         titleContent = {
@@ -354,39 +330,6 @@ fun SettingsPage(vm: SettingsViewModel = viewModel(), bottomPadding: Dp = 0.dp) 
                 }
             }
 
-            if (state.apiLineVisible) {
-                SettingsGroup(title = null) {
-                    SettingsCard(SettingsCardPosition.SINGLE) {
-                        SettingsRow(
-                            title = "接口线路",
-                            valueText = currentLineName(state),
-                            onClick = {
-                                val lines = state.apiLines
-                                openOptions(
-                                    "接口线路",
-                                    lines.map { HistoryHelper.getApiLineName(it) },
-                                    currentLineIndex(state),
-                                ) { idx ->
-                                    val newApi = lines.getOrNull(idx)?.let { HistoryHelper.getApiLineUrl(it) }
-                                    if (!newApi.isNullOrEmpty()) {
-                                        val oldApi = KV.get(HawkConfig.API_URL, "")
-                                        val followLive = ApiConfig.isLiveFollowVod()
-                                        KV.put(HawkConfig.API_URL, newApi)
-                                        if (followLive) KV.put(HawkConfig.LIVE_API_URL, "")
-                                        vm.refresh()
-                                        if (oldApi != newApi) {
-                                            AppBootstrap.onApiUrlChanged()
-                                        } else {
-                                            ApiConfig.get().invalidateLiveConfig()
-                                        }
-                                    }
-                                }
-                            },
-                        )
-                    }
-                }
-            }
-
             SettingsGroup(title = null) {
                 SettingsCard(SettingsCardPosition.FIRST) {
                     SettingsRow(
@@ -406,17 +349,6 @@ fun SettingsPage(vm: SettingsViewModel = viewModel(), bottomPadding: Dp = 0.dp) 
                     )
                 }
             }
-        }
-    }
-
-    optionSheet?.let { sheet ->
-        AVBoxOptionSheet(
-            onDismissRequest = { optionSheet = null },
-            title = sheet.title,
-            options = sheet.options,
-            selected = sheet.options.getOrNull(sheet.selectedIndex),
-        ) { option ->
-            sheet.onSelect(sheet.options.indexOf(option))
         }
     }
 
@@ -504,17 +436,6 @@ private fun AboutSheet(versionName: String, onDismiss: () -> Unit) {
             )
         }
     }
-}
-
-private fun currentLineName(state: SettingsState): String {
-    val current = HistoryHelper.getApiLineUrl(state.apiUrl)
-    val line = state.apiLines.firstOrNull { HistoryHelper.getApiLineUrl(it) == current }
-    return if (line == null) state.apiUrl else HistoryHelper.getApiLineName(line)
-}
-
-private fun currentLineIndex(state: SettingsState): Int {
-    val current = HistoryHelper.getApiLineUrl(state.apiUrl)
-    return state.apiLines.indexOfFirst { HistoryHelper.getApiLineUrl(it) == current }.coerceAtLeast(0)
 }
 
 private const val GITHUB_REPO_URL = "https://github.com/XiaochangXu/AVBox"
