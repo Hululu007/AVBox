@@ -18,7 +18,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.github.tvbox.osc.R
 import com.github.tvbox.osc.bean.MovieSort
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -31,7 +33,7 @@ fun FilterSheet(
     var selection by remember(sort.id) { mutableStateOf(sort.filterSelect.toMap()) }
     AVBoxBottomSheet(
         onDismissRequest = onDismiss,
-        title = "筛选 · ${sort.name ?: ""}",
+        title = stringResource(R.string.filter_title, sort.name ?: ""),
     ) {
         val dismissAnimated = LocalSheetDismiss.current
         var accepted by remember { mutableStateOf(false) }
@@ -77,14 +79,14 @@ fun FilterSheet(
                         onConfirm(emptyMap())
                         dismissAnimated()
                     }
-                }) { Text("清除") }
+                }) { Text(stringResource(R.string.filter_clear)) }
                 TextButton(onClick = {
                     if (!accepted) {
                         accepted = true
                         onConfirm(selection)
                         dismissAnimated()
                     }
-                }) { Text("确定") }
+                }) { Text(stringResource(R.string.common_confirm)) }
             }
         }
     }

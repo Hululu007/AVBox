@@ -22,9 +22,9 @@ public class LivePlayerManager {
             if (defaultPlayerConfig.optInt("pl", 2) == 0) {
                 defaultPlayerConfig.put("pl", 2);
             }
-            defaultPlayerConfig.put("ijk", KV.get(HawkConfig.IJK_CODEC, "硬解码"));
+            defaultPlayerConfig.put("ijk", KV.get(HawkConfig.IJK_CODEC, "硬解码")); // i18n: keep(R1:ijk_codec/exo_decode KV 值与比较键)
             // EXO 解码方式(2026-09-17):与 IJK 的 ijk 键独立,取全局设置(IJK/EXO 各记一份,见 PlaySettingsPage)
-            defaultPlayerConfig.put("exo", KV.get(HawkConfig.EXO_DECODE, "硬解码"));
+            defaultPlayerConfig.put("exo", KV.get(HawkConfig.EXO_DECODE, "硬解码")); // i18n: keep(R1:ijk_codec/exo_decode KV 值与比较键)
             defaultPlayerConfig.put("pr", KV.get(HawkConfig.PLAY_RENDER, 1));
             defaultPlayerConfig.put("sc", KV.get(HawkConfig.LIVE_PLAY_SCALE, 0));
         } catch (JSONException e) {
@@ -54,10 +54,10 @@ public class LivePlayerManager {
         JSONObject config = currentOrDefaultConfig();
         int playerTypeIndex = 2;
         int playerType = config.optInt("pl", 2);
-        String ijkCodec = config.optString("ijk", "硬解码");
+        String ijkCodec = config.optString("ijk", "硬解码"); // i18n: keep(R1:ijk_codec/exo_decode KV 值与比较键)
         switch (playerType) {
             case 1:
-                if (ijkCodec.equals("硬解码"))
+                if (ijkCodec.equals("硬解码")) // i18n: keep(R1:ijk_codec/exo_decode KV 值与比较键)
                     playerTypeIndex = 0;
                 else
                     playerTypeIndex = 1;
@@ -81,7 +81,7 @@ public class LivePlayerManager {
      * 时回落全局设置 —— 与改造前的取值完全一致。
      */
     public String effectiveIjkCodecName() {
-        return currentOrDefaultConfig().optString("ijk", KV.get(HawkConfig.IJK_CODEC, "硬解码"));
+        return currentOrDefaultConfig().optString("ijk", KV.get(HawkConfig.IJK_CODEC, "硬解码")); // i18n: keep(R1:ijk_codec/exo_decode KV 值与比较键)
     }
 
     public void changeLivePlayerType(VideoView videoView, int playerType) {
@@ -95,17 +95,17 @@ public class LivePlayerManager {
             switch (playerType) {
                 case 0:
                     playerConfig.put("pl", 1);
-                    playerConfig.put("ijk", "硬解码");
+                    playerConfig.put("ijk", "硬解码"); // i18n: keep(R1:ijk_codec/exo_decode KV 值与比较键)
                     break;
                 case 1:
                     playerConfig.put("pl", 1);
-                    playerConfig.put("ijk", "软解码");
+                    playerConfig.put("ijk", "软解码"); // i18n: keep(R1:ijk_codec/exo_decode KV 值与比较键)
                     break;
                 case 2:
                     playerConfig.put("pl", 2);
                     // EXO(2026-09-17):解码方式按**全局 EXO 设置**走 —— 旧实现是"切到 EXO 就把 ijk 改成软解码",
                     // 那个值随后还会被写进全局 IJK 设置,把用户在 IJK 下的选择一并带偏(同处修掉)
-                    playerConfig.put("exo", KV.get(HawkConfig.EXO_DECODE, "硬解码"));
+                    playerConfig.put("exo", KV.get(HawkConfig.EXO_DECODE, "硬解码")); // i18n: keep(R1:ijk_codec/exo_decode KV 值与比较键)
                     break;
             }
         } catch (JSONException e) {
@@ -116,7 +116,7 @@ public class LivePlayerManager {
         try {
             defaultPlayerConfig.put("pl", playerConfig.getInt("pl"));
             defaultPlayerConfig.put("ijk", playerConfig.getString("ijk"));
-            defaultPlayerConfig.put("exo", playerConfig.optString("exo", KV.get(HawkConfig.EXO_DECODE, "硬解码")));
+            defaultPlayerConfig.put("exo", playerConfig.optString("exo", KV.get(HawkConfig.EXO_DECODE, "硬解码"))); // i18n: keep(R1:ijk_codec/exo_decode KV 值与比较键)
             KV.put(HawkConfig.LIVE_PLAY_TYPE, playerConfig.getInt("pl"));
             // 只有 IJK 内核才同步全局 IJK 解码键(2026-09-17):选 EXO 时它的解码值属于 exo 键,不该覆盖 IJK 设置
             if (playerConfig.getInt("pl") == 1) {

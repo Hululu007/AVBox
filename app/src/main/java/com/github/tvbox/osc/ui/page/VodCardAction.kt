@@ -2,6 +2,7 @@ package com.github.tvbox.osc.ui.page
 
 import android.content.Context
 import android.widget.Toast
+import com.github.tvbox.osc.R
 import com.github.tvbox.osc.bean.Movie
 import com.github.tvbox.osc.ui.activity.PartitionListActivity
 import com.github.tvbox.osc.util.SourceIndexFlags
@@ -65,7 +66,7 @@ fun Context.openVodCardOrDetail(video: Movie.Video) {
 private fun Context.openVodFolder(video: Movie.Video) {
     val folderId = video.id.orEmpty()
     if (folderId.isEmpty()) {
-        Toast.makeText(this, "目录数据缺失,无法打开", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, getString(R.string.toast_folder_data_missing), Toast.LENGTH_SHORT).show()
         return
     }
     PartitionListActivity.startForFolder(this, folderId, video.name.orEmpty())

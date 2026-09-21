@@ -16,7 +16,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class TxtSubscribe {
-    public static final String DEFAULT_GROUP_NAME = "直播";
+    public static final String DEFAULT_GROUP_NAME = "直播"; // i18n: keep(默认分组名数据值)
     private static final String LEGACY_DEFAULT_GROUP_NAME = "Ungrouped";
     private static final Pattern NAME_PATTERN = Pattern.compile(".*,(.+?)$");
     private static final Pattern GROUP_PATTERN = Pattern.compile("group-title=\"(.*?)\"");

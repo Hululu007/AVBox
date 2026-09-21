@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.player.state.PlayerActions
 import com.github.tvbox.osc.player.state.PlayerUiState
@@ -188,20 +189,20 @@ private fun PlayerCenterControls(state: PlayerUiState, actions: PlayerActions, m
         CenterControlCircle(
             diameter = 48.dp,
             icon = painterResource(R.drawable.player_ic_prev),
-            label = "上一集",
+            label = stringResource(R.string.player_prev_episode),
             onClick = actions::onPreClicked,
             shape = ScallopShape(),
         )
         CenterControlCircle(
             diameter = 60.dp,
             icon = painterResource(if (playing) R.drawable.player_ic_pause else R.drawable.player_ic_play),
-            label = if (playing) "暂停" else "播放",
+            label = stringResource(if (playing) R.string.common_pause else R.string.common_play),
             onClick = actions::onPlayPauseClicked,
         )
         CenterControlCircle(
             diameter = 48.dp,
             icon = painterResource(R.drawable.player_ic_next),
-            label = "下一集",
+            label = stringResource(R.string.player_next_episode),
             onClick = actions::onNextClicked,
             shape = ScallopShape(),
         )

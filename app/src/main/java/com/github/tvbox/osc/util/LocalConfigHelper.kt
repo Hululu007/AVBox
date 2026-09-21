@@ -12,6 +12,7 @@ import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
+import com.github.tvbox.osc.R
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
@@ -59,7 +60,7 @@ fun handleLocalConfigResult(activity: Activity, uri: Uri): Boolean {
     if (callback == null) return false
     val result = importLocalConfig(activity, uri)
     if (result == null) {
-        Toast.makeText(activity, "读取本地配置失败", Toast.LENGTH_SHORT).show()
+        Toast.makeText(activity, activity.getString(R.string.toast_local_config_read_failed), Toast.LENGTH_SHORT).show()
         return false
     }
     LOG.i(
@@ -76,12 +77,11 @@ fun handleLocalConfigResult(activity: Activity, uri: Uri): Boolean {
     LocalConfigHost.pendingDir = result.dir
     LocalConfigHost.pendingRefs = result.missingRefs
     val tip = when {
-        result.directPath != null -> "本地源要直引原目录,得给一次目录授权:请选择该配置所在的文件夹"
+        result.directPath != null -> activity.getString(R.string.toast_local_direct_grant_hint)
         !PermissionHelper.isStorageGranted(activity) ->
-            "还有 " + result.missingRefs.size + " 个同目录文件没搬过来,请选择该配置所在的文件夹" +
-                "(开启「所有文件访问」后可直接引用原目录,不必搬文件)"
+            activity.getString(R.string.toast_local_missing_files_all_files, result.missingRefs.size)
 
-        else -> "还有 " + result.missingRefs.size + " 个同目录文件没搬过来,请选择该配置所在的文件夹"
+        else -> activity.getString(R.string.toast_local_missing_files_hint, result.missingRefs.size)
     }
     Toast.makeText(activity, tip, Toast.LENGTH_LONG).show()
     return true
@@ -108,11 +108,11 @@ fun handleLocalSourceTreeResult(activity: Activity, tree: Uri?) {
         val grantedPath = if (picked == null) null else LocalSourceTree.remember(activity, picked)
         LOG.i("echo-local-src tree direct=" + grantedPath + " need=" + directPath)
         if (picked == null || grantedPath == null || relativeUnder(grantedPath, directPath) == null) {
-            Toast.makeText(activity, "没拿到该配置所在文件夹的授权,已取消导入(可再点一次重试)", Toast.LENGTH_LONG).show()
+            Toast.makeText(activity, activity.getString(R.string.toast_local_tree_denied), Toast.LENGTH_LONG).show()
             return
         }
         if (!LocalSourceTree.isPersisted(activity, picked)) {
-            Toast.makeText(activity, "目录授权没能长期保留,重启后该源可能失效(建议开启「所有文件访问」)", Toast.LENGTH_LONG).show()
+            Toast.makeText(activity, activity.getString(R.string.toast_local_grant_not_persisted), Toast.LENGTH_LONG).show()
         }
         callback(api ?: return)
         return
@@ -122,7 +122,7 @@ fun handleLocalSourceTreeResult(activity: Activity, tree: Uri?) {
     if (missing.isNotEmpty()) {
         Toast.makeText(
             activity,
-            "还有 " + missing.size + " 个同目录引用的文件没搬过来,该源可能不可用(可重新导入)",
+            activity.getString(R.string.toast_local_refs_missing, missing.size),
             Toast.LENGTH_LONG,
         ).show()
     }

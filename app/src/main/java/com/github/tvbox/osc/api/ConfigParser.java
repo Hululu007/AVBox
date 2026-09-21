@@ -168,7 +168,7 @@ final class ConfigParser {
         ArrayList<LiveSettingItem> liveSettingItemList = new ArrayList<>();
         for (int i = 0; i < livesGroups.size(); i++) {
             JsonObject jsonObject = livesGroups.get(i).getAsJsonObject();
-            String name = jsonObject.has("name") ? jsonObject.get("name").getAsString() : "线路" + (i + 1);
+            String name = jsonObject.has("name") ? jsonObject.get("name").getAsString() : "线路" + (i + 1); // i18n: keep(数据默认名,进 bean 且被 ConfigParserTest 锁定)
             LiveSettingItem liveSettingItem = new LiveSettingItem();
             liveSettingItem.setItemIndex(i);
             liveSettingItem.setItemName(name);

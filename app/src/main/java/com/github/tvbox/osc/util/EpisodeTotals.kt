@@ -13,7 +13,7 @@ object EpisodeTotals {
     private const val LIMIT = 300
 
     private val INDEX_PATTERNS = listOf(
-        Regex("^第?\\s*(\\d{1,4})\\s*[集期话話]?\\s*(?:\\.[a-z0-9]{1,5})?$"),
+        Regex("^第?\\s*(\\d{1,4})\\s*[集期话話]?\\s*(?:\\.[a-z0-9]{1,5})?$"), // i18n: keep(R13:集数正则)
         Regex("^(?:ep|e|episode)\\.?\\s*(\\d{1,4})\\s*(?:\\.[a-z0-9]{1,5})?$", RegexOption.IGNORE_CASE),
     )
 

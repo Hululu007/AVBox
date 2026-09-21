@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -146,7 +147,7 @@ fun CollectPage(
         topBarStartInset = navStart,
         titleContent = {
             Text(
-                text = "收藏",
+                text = stringResource(R.string.common_collect),
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onSurface,
             )
@@ -155,7 +156,7 @@ fun CollectPage(
 
             ManageActionIcon(
                 iconRes = R.drawable.ic_delete,
-                contentDescription = "清空收藏",
+                contentDescription = stringResource(R.string.collect_clear),
                 onClick = { showDeleteAllDialog = true },
             )
         },
@@ -172,7 +173,7 @@ fun CollectPage(
 
             items.isEmpty() -> LoadStateBox(
                 state = com.github.tvbox.osc.ui.components.LoadState.Empty,
-                emptyText = "暂无收藏",
+                emptyText = stringResource(R.string.collect_empty),
                 errorText = "",
                 retryText = "",
                 emptyIconRes = R.drawable.ic_empty_record,
@@ -227,16 +228,19 @@ fun CollectPage(
 
     if (showDeleteAllDialog) {
         ConfirmDeleteDialog(
-            title = "清空收藏",
-            text = "将删除全部收藏，此操作不可恢复",
+            title = stringResource(R.string.collect_clear),
+            text = stringResource(R.string.collect_clear_message),
             onConfirm = { vm.deleteAll() },
             onDismiss = { showDeleteAllDialog = false },
         )
     }
     deleteTarget?.let { target ->
         ConfirmDeleteDialog(
-            title = "取消收藏",
-            text = "取消收藏「${target.name ?: "未命名"}」？",
+            title = stringResource(R.string.detail_uncollect),
+            text = stringResource(
+                R.string.collect_uncollect_message,
+                target.name ?: stringResource(R.string.common_unnamed),
+            ),
             onConfirm = { vm.deleteOne(target) },
             onDismiss = { deleteTarget = null },
         )

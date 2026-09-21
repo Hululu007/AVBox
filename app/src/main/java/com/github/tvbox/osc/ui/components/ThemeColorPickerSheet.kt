@@ -33,7 +33,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.github.tvbox.osc.R
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
@@ -66,7 +68,7 @@ fun ThemeColorPickerSheet(
             Spacer(Modifier.height(12.dp))
 
             Text(
-                text = "亮度 " + (hsv[2] * 100f).toInt() + "%",
+                text = stringResource(R.string.theme_brightness_value, (hsv[2] * 100f).toInt()),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -90,7 +92,7 @@ fun ThemeColorPickerSheet(
                         accepted = true
                         dismissAnimated()
                     }
-                }) { Text("取消") }
+                }) { Text(stringResource(R.string.common_cancel)) }
                 Spacer(Modifier.width(8.dp))
                 Button(onClick = {
                     if (!accepted) {
@@ -98,7 +100,7 @@ fun ThemeColorPickerSheet(
                         onConfirm(currentColor)
                         dismissAnimated()
                     }
-                }) { Text("确定") }
+                }) { Text(stringResource(R.string.common_confirm)) }
             }
         }
     }
@@ -111,8 +113,8 @@ private fun ColorCompareRow(initialColor: Int, currentColor: Int) {
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ColorPreviewColumn(label = "初始颜色", color = initialColor)
-        ColorPreviewColumn(label = "当前颜色", color = currentColor)
+        ColorPreviewColumn(label = stringResource(R.string.theme_initial_color), color = initialColor)
+        ColorPreviewColumn(label = stringResource(R.string.theme_current_color), color = currentColor)
     }
 }
 

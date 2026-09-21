@@ -104,7 +104,7 @@ public final class KV {
     @NonNull
     private static MMKV requireStore() {
         MMKV instance = store;
-        if (instance == null) throw new IllegalStateException("KV.init(Context) 未调用");
+        if (instance == null) throw new IllegalStateException("KV.init(Context) 未调用"); // i18n: keep(异常消息)
         return instance;
     }
 }

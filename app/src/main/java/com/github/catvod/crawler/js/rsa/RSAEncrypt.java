@@ -88,11 +88,11 @@ public class RSAEncrypt {
             // 将公钥进行 Base64 解码  创建 PublicKey 对象并返回
             return KeyFactory.getInstance(KEY_ALGORITHM).generatePublic(new X509EncodedKeySpec(DataUtils.base64Decode(pubKey)));
         } catch (NoSuchAlgorithmException unused) {
-            handleException(new Exception("无此算法"));
+            handleException(new Exception("无此算法")); // i18n: keep(异常消息,只进日志)
         } catch (InvalidKeySpecException unused2) {
-            handleException(new Exception("公钥非法"));
+            handleException(new Exception("公钥非法")); // i18n: keep(异常消息,只进日志)
         } catch (NullPointerException unused3) {
-            handleException(new Exception("公钥数据为空"));
+            handleException(new Exception("公钥数据为空")); // i18n: keep(异常消息,只进日志)
         }
         return null;
     }
@@ -107,11 +107,11 @@ public class RSAEncrypt {
             // 将私钥进行 Base64 解码  创建 PrivateKey 对象并返回
             return KeyFactory.getInstance(KEY_ALGORITHM).generatePrivate(new PKCS8EncodedKeySpec(DataUtils.base64Decode(prvKey)));
         } catch (NoSuchAlgorithmException unused) {
-            handleException(new Exception("无此算法"));
+            handleException(new Exception("无此算法")); // i18n: keep(异常消息,只进日志)
         } catch (InvalidKeySpecException unused2) {
-            handleException(new Exception("私钥非法"));
+            handleException(new Exception("私钥非法")); // i18n: keep(异常消息,只进日志)
         } catch (NullPointerException unused3) {
-            handleException(new Exception("私钥数据为空"));
+            handleException(new Exception("私钥数据为空")); // i18n: keep(异常消息,只进日志)
         }
         return null;
     }

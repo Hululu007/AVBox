@@ -55,8 +55,8 @@ public class OkGoHelper {
     // 内置doh json
     /** App 内置 DoH(2026-09-12 起不再只是"兜底":始终置于 [getDohConfigArray] 列表**最前**,接口项去重后追加在后) */
     private static final String dnsConfigJson = "["
-            + "{\"name\": \"腾讯\", \"url\": \"https://doh.pub/dns-query\"},"
-            + "{\"name\": \"阿里\", \"url\": \"https://dns.alidns.com/dns-query\"},"
+            + "{\"name\": \"腾讯\", \"url\": \"https://doh.pub/dns-query\"}," // i18n: keep(DNS 配置数据)
+            + "{\"name\": \"阿里\", \"url\": \"https://dns.alidns.com/dns-query\"}," // i18n: keep(DNS 配置数据)
             + "{\"name\": \"360\", \"url\": \"https://doh.360.cn/dns-query\"}"
             + "]";
     static OkHttpClient ItvClient = null;
@@ -173,7 +173,7 @@ public class OkGoHelper {
     public static void setDnsList() {
         dnsHttpsList.clear();
         JsonArray jsonArray = getDohConfigArray();
-        dnsHttpsList.add("关闭");
+        dnsHttpsList.add("关闭"); // i18n: keep(DNS 选项索引锚点,显示由设置页映射资源)
         for (int i = 0; i < jsonArray.size(); i++) {
             JsonObject dnsConfig = jsonArray.get(i).getAsJsonObject();
             String name = dnsConfig.has("name") ? dnsConfig.get("name").getAsString() : "Unknown Name";
@@ -203,7 +203,7 @@ public class OkGoHelper {
         JsonArray ips=null;
         try {
             dnsHttpsList.clear();
-            dnsHttpsList.add("关闭");
+            dnsHttpsList.add("关闭"); // i18n: keep(DNS 选项索引锚点,显示由设置页映射资源)
             JsonArray jsonArray = getDohConfigArray();
             if(dohSelector>jsonArray.size()) {
                 KV.put(HawkConfig.DOH_URL, 0);

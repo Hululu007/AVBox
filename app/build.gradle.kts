@@ -32,6 +32,10 @@ android {
         }
     }
 
+    androidResources {
+        localeFilters += listOf("en", "zh", "zh-rCN", "b+zh+Hant", "zh-rTW", "zh-rHK")
+    }
+
     sourceSets {
         getByName("main") {
             // src/python/java:Python 采集源桥接层(包含 Python 支持)

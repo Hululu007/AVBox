@@ -51,7 +51,7 @@ class DetailActivity : BaseActivity(), PageHost {
         try {
             localSubtitlePicker.launch(arrayOf("*/*"))
         } catch (e: Exception) {
-            Toast.makeText(this, "无法打开文件选择器", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.toast_file_picker_unavailable), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -166,12 +166,12 @@ class DetailActivity : BaseActivity(), PageHost {
     /** 详情页手动进音乐播放页:会话还没建就先按当前集起播,再交接(影视内容交接后本页留在栈里) */
     fun openMusicPlayer() {
         if (vm.vodInfo == null) {
-            Toast.makeText(this, "内容还没加载好", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.detail_content_not_ready), Toast.LENGTH_SHORT).show()
             return
         }
         if (PlaybackService.peek()?.controller()?.vod() == null) playCurrent()
         if (!handOffToMusicPlayer()) {
-            Toast.makeText(this, "暂无可播放的内容", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.detail_no_playable_content), Toast.LENGTH_SHORT).show()
         }
     }
 

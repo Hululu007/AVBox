@@ -559,7 +559,7 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
                 switch (msg.what) {
                     case MSG_PARSE_TIMEOUT:
                         scheduler.stopParse();
-                        errorWithRetry("嗅探错误", false);
+                        errorWithRetry(mContext.getString(R.string.player_error_sniff), false);
                         break;
                 }
                 return false;
@@ -650,7 +650,7 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
 
             @Override
             public void errReplay() {
-                errorWithRetry("视频播放出错", false);
+                errorWithRetry(mContext.getString(R.string.player_error_play), false);
             }
 
             @Override
@@ -709,7 +709,7 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
 
     private void showCastDialog() {
         if (TextUtils.isEmpty(scheduler.webPlayUrl())) {
-            Toast.makeText(mContext, "暂无可投屏播放地址", Toast.LENGTH_SHORT).show();
+            Toast.makeText(mContext, mContext.getString(R.string.toast_no_cast_url), Toast.LENGTH_SHORT).show();
             return;
         }
         if (!isAttached()) return;
@@ -829,7 +829,7 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
                 LOG.e("echo-Local Subtitle copy err: " + e);
                 activity.runOnUiThread(() -> {
                     if (isAttached()) {
-                        android.widget.Toast.makeText(activity, "读取字幕文件失败", android.widget.Toast.LENGTH_SHORT).show();
+                        android.widget.Toast.makeText(activity, activity.getString(R.string.toast_subtitle_read_failed), android.widget.Toast.LENGTH_SHORT).show();
                     }
                 });
             }
@@ -891,7 +891,7 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
             trackInfo = ((ExoPlayer)mediaPlayer).getTrackInfo();
         }
         if (trackInfo == null) {
-            Toast.makeText(mContext, "没有音轨", Toast.LENGTH_SHORT).show();
+            Toast.makeText(mContext, mContext.getString(R.string.player_no_audio_track), Toast.LENGTH_SHORT).show();
             return;
         }
         List<TrackInfoBean> bean = trackInfo.getAudio();
@@ -899,7 +899,7 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
         List<String> names = new ArrayList<>();
         for (TrackInfoBean item : bean) names.add(item.name);
         mController.getUiState().setSelectDialog(new SelectDialogState(
-                "切换音轨",
+                mContext.getString(R.string.player_switch_audio_track),
                 names,
                 trackInfo.getAudioSelected(false),
                 pos -> {
@@ -939,14 +939,14 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
             trackInfo = ((ExoPlayer) mediaPlayer).getTrackInfo();
         }
         if (trackInfo == null || trackInfo.getVideo().isEmpty()) {
-            Toast.makeText(mContext, "没有视轨", Toast.LENGTH_SHORT).show();
+            Toast.makeText(mContext, mContext.getString(R.string.player_no_video_track), Toast.LENGTH_SHORT).show();
             return;
         }
         List<TrackInfoBean> tracks = trackInfo.getVideo();
         List<String> names = new ArrayList<>();
         for (TrackInfoBean item : tracks) names.add(item.name);
         mController.getUiState().setSelectDialog(new SelectDialogState(
-                "切换视轨",
+                mContext.getString(R.string.player_switch_video_track),
                 names,
                 trackInfo.getVideoSelected(false),
                 pos -> {
@@ -989,7 +989,7 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
             trackInfo = ((ExoPlayer) mediaPlayer).getTrackInfo();
         }
         if (trackInfo == null) {
-            Toast.makeText(mContext, "没有内置字幕", Toast.LENGTH_SHORT).show();
+            Toast.makeText(mContext, mContext.getString(R.string.player_no_internal_subtitle), Toast.LENGTH_SHORT).show();
             return;
         }
         List<TrackInfoBean> bean = trackInfo.getSubtitle();
@@ -997,7 +997,7 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
         List<String> names = new ArrayList<>();
         for (TrackInfoBean item : bean) names.add(item.name);
         mController.getUiState().setSelectDialog(new SelectDialogState(
-                "切换内置字幕",
+                mContext.getString(R.string.player_switch_internal_subtitle),
                 names,
                 trackInfo.getSubtitleSelected(false),
                 pos -> {
@@ -1133,7 +1133,7 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
         final Activity activity = mActivity;
         if (activity == null || !isAttached() || mHandler == null) return;
         if (preloadReadyToast != null) preloadReadyToast.cancel();
-        preloadReadyToast = Toast.makeText(activity, "下一集已就绪", Toast.LENGTH_LONG);
+        preloadReadyToast = Toast.makeText(activity, activity.getString(R.string.player_next_episode_ready), Toast.LENGTH_LONG);
         preloadReadyToast.show();
         mHandler.removeCallbacks(refreshPreloadToastRunnable);
         mHandler.postDelayed(refreshPreloadToastRunnable, PRELOAD_TOAST_REFRESH_DELAY_MS);
@@ -1287,7 +1287,7 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
                         int selectedIndex = trackInfo.getSubtitleSelected(true);
                         boolean hasMandarin = false;
                         for (TrackInfoBean subtitleTrackInfoBean : subtitleTrackList) {
-                            if ("国语".equals(subtitleTrackInfoBean.language)) {
+                            if ("国语".equals(subtitleTrackInfoBean.language)) { // i18n: keep
                                 hasMandarin = true;
                                 if (selectedIndex != subtitleTrackInfoBean.trackId) {
                                     ((IjkMediaPlayer) mediaPlayer).setTrack(subtitleTrackInfoBean.trackId);
@@ -1461,7 +1461,7 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
             hasNext = scheduler.vod().playIndex + 1 < scheduler.vod().seriesMap.get(scheduler.vod().playFlag).size();
         }
         if (!hasNext) {
-            Toast.makeText(mActivity, "已经是最后一集了!", Toast.LENGTH_SHORT).show();
+            Toast.makeText(mActivity, mActivity.getString(R.string.player_last_episode), Toast.LENGTH_SHORT).show();
             return;
         }else {
             scheduler.vod().playIndex++;
@@ -1479,7 +1479,7 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
             hasPre = scheduler.vod().playIndex - 1 >= 0;
         }
         if (!hasPre) {
-            Toast.makeText(mActivity, "已经是第一集了!", Toast.LENGTH_SHORT).show();
+            Toast.makeText(mActivity, mActivity.getString(R.string.player_first_episode), Toast.LENGTH_SHORT).show();
             return;
         }
         scheduler.vod().playIndex--;
@@ -1491,7 +1491,9 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
         if (!isAttached() || scheduler.vod() == null || scheduler.vod().seriesMap == null || TextUtils.isEmpty(scheduler.vod().playFlag)) return;
         List<VodInfo.VodSeries> episodes = scheduler.vod().seriesMap.get(scheduler.vod().playFlag);
         if (episodes == null || episodes.isEmpty()) return;
-        String title = TextUtils.isEmpty(scheduler.vod().name) ? "选集" : scheduler.vod().name + " 选集";
+        String title = TextUtils.isEmpty(scheduler.vod().name)
+                ? mContext.getString(R.string.detail_episodes)
+                : mContext.getString(R.string.detail_episodes_of, scheduler.vod().name);
         mController.getUiState().setEpisodeSheet(new EpisodeSheetState(
                 title,
                 episodes,

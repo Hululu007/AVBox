@@ -149,10 +149,10 @@ internal object LiveEpgParser {
     }
     internal fun cleanEpgTitle(title: String?): String {
         if (title == null) return ""
-        return title.replace(" --免费使用", "").replace("--免费使用", "").trim { it <= ' ' }
+        return title.replace(" --免费使用", "").replace("--免费使用", "").trim { it <= ' ' } // i18n: keep(源 EPG 文本清洗规则)
     }
     internal fun isUnavailableEpgText(text: String?): Boolean {
-        return text != null && (text.contains("未提供") || text.contains("暂无"))
+        return text != null && (text.contains("未提供") || text.contains("暂无")) // i18n: keep(R3:EPG 内容判据)
     }
     internal fun normalizeEpgChannelName(channelName: String?): String {
         if (channelName == null) return ""

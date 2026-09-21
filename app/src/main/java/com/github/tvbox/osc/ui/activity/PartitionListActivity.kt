@@ -41,6 +41,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -163,7 +164,7 @@ private fun PartitionListScreen(mode: String, title: String, sortJson: String?, 
             )
         },
         navigationIcon = {
-            BarActionBox(R.drawable.ic_arrow_left, "返回") {
+            BarActionBox(R.drawable.ic_arrow_left, stringResource(R.string.common_back)) {
                 (context as? Activity)?.finish()
             }
         },
@@ -172,7 +173,7 @@ private fun PartitionListScreen(mode: String, title: String, sortJson: String?, 
                 val selectedCount = vm.sort?.filterSelectCount() ?: 0
                 BarActionBox(
                     R.drawable.ic_filter,
-                    "筛选",
+                    stringResource(R.string.common_filter),
                     tint = if (selectedCount > 0) {
                         MaterialTheme.colorScheme.primary
                     } else {
@@ -203,7 +204,7 @@ private fun PartitionListScreen(mode: String, title: String, sortJson: String?, 
 
             ui.state == PartitionListVM.State.Empty -> LoadStateBox(
                 state = LoadState.Empty,
-                emptyText = "暂无内容",
+                emptyText = stringResource(R.string.common_empty_content),
                 errorText = "",
                 retryText = "",
                 modifier = Modifier

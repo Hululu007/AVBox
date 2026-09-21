@@ -21,6 +21,7 @@ import androidx.core.content.PermissionChecker;
 import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.ui.WindowSize;
 import com.github.tvbox.osc.util.AppManager;
+import com.github.tvbox.osc.util.LanguageManager;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -56,6 +57,12 @@ public abstract class BaseActivity extends AppCompatActivity implements CustomAd
             hideSysBar();
         }
     };
+
+    /** 语言资源包裹;必须早于 AppCompat 的 delegate 建基(它依赖包裹后的 base) */
+    @Override
+    protected void attachBaseContext(Context newBase) {
+        super.attachBaseContext(LanguageManager.INSTANCE.wrap(newBase));
+    }
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {

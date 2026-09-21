@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -138,7 +139,7 @@ fun CastSheet(sheet: CastSheetState, onDismiss: () -> Unit) {
                 RemoteTVBox.post("http://" + device.id + "/action", params, object : okhttp3.Callback {
                     override fun onFailure(call: okhttp3.Call, e: java.io.IOException) {
                         mainHandler.post {
-                            Toast.makeText(context, "TVBox投屏失败", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, context.getString(R.string.toast_cast_tvbox_failed), Toast.LENGTH_SHORT).show()
                         }
                     }
 
@@ -153,28 +154,28 @@ fun CastSheet(sheet: CastSheetState, onDismiss: () -> Unit) {
                                 // 投屏成功 = 用户显式选中该设备 → 以它为准记住地址(覆盖扫描时的兜底值)
                                 RemoteTVBox.setAvalible(device.id)
                                 PlayerHelper.invalidatePlayersExistInfo()
-                                Toast.makeText(context, "投屏成功", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, context.getString(R.string.toast_cast_success), Toast.LENGTH_SHORT).show()
                                 sheet.onCastSuccess()
                                 onDismiss()
                             } else {
-                                Toast.makeText(context, "TVBox投屏失败", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, context.getString(R.string.toast_cast_tvbox_failed), Toast.LENGTH_SHORT).show()
                             }
                         }
                     }
                 })
             } catch (e: Exception) {
-                Toast.makeText(context, "TVBox投屏失败", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.toast_cast_tvbox_failed), Toast.LENGTH_SHORT).show()
             }
         } else {
             DLNACastManager.get().cast(device, sheet.video, object : DLNACastManager.CastCallback {
                 override fun onResult(success: Boolean, msg: String?) {
                     mainHandler.post {
                         if (success) {
-                            Toast.makeText(context, "投屏成功", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, context.getString(R.string.toast_cast_success), Toast.LENGTH_SHORT).show()
                             sheet.onCastSuccess()
                             onDismiss()
                         } else {
-                            Toast.makeText(context, if (msg.isNullOrEmpty()) "投屏失败" else msg, Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, if (msg.isNullOrEmpty()) context.getString(R.string.toast_cast_failed) else msg, Toast.LENGTH_SHORT).show()
                         }
                     }
                 }
@@ -186,10 +187,10 @@ fun CastSheet(sheet: CastSheetState, onDismiss: () -> Unit) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             SheetPanel(width = playerDim(R.dimen.vs_520)) {
                 Spacer(Modifier.height(playerDim(R.dimen.vs_24)))
-                SheetTitle("投屏到设备")
+                SheetTitle(stringResource(R.string.cast_title))
                 Spacer(Modifier.height(playerDim(R.dimen.vs_15)))
                 Text(
-                    text = "确认电视/盒子已安装AVBox或已打开DLNA投屏\n电视/盒子与手机连接在同一Wi-Fi下",
+                    text = stringResource(R.string.cast_hint),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = playerTextSize(R.dimen.ts_18),
                     textAlign = TextAlign.Center,
@@ -215,7 +216,7 @@ fun CastSheet(sheet: CastSheetState, onDismiss: () -> Unit) {
                     }
                     if (!canScan) {
                         Text(
-                            text = "需要允许「附近的设备」权限才能搜索投屏设备\n开启后点「刷新」重试",
+                            text = stringResource(R.string.cast_permission_hint),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = playerTextSize(R.dimen.ts_20),
                             textAlign = TextAlign.Center,
@@ -231,14 +232,14 @@ fun CastSheet(sheet: CastSheetState, onDismiss: () -> Unit) {
                             ContainedLoadingIndicator(Modifier.size(64.dp))
                             Spacer(Modifier.height(playerDim(R.dimen.vs_10)))
                             Text(
-                                text = "正在搜索设备...",
+                                text = stringResource(R.string.cast_searching),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = playerTextSize(R.dimen.ts_20),
                             )
                         }
                     } else if (deviceList.isEmpty() && searchFinished) {
                         Text(
-                            text = "未找到可用设备",
+                            text = stringResource(R.string.cast_no_device),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = playerTextSize(R.dimen.ts_20),
                             modifier = Modifier.align(Alignment.Center),
@@ -253,7 +254,7 @@ fun CastSheet(sheet: CastSheetState, onDismiss: () -> Unit) {
                         .height(playerDim(R.dimen.vs_50)),
                     horizontalArrangement = Arrangement.spacedBy(playerDim(R.dimen.vs_20)),
                 ) {
-                    SheetButton(text = "刷新", onClick = {
+                    SheetButton(text = stringResource(R.string.common_refresh), onClick = {
                         devices.clear()
                         deviceList = emptyList()
                         if (PermissionHelper.isLocalNetworkGranted(context)) {
@@ -267,7 +268,7 @@ fun CastSheet(sheet: CastSheetState, onDismiss: () -> Unit) {
                             }
                         }
                     }, modifier = Modifier.weight(1f))
-                    SheetButton(text = "取消", onClick = { onDismiss() }, modifier = Modifier.weight(1f))
+                    SheetButton(text = stringResource(R.string.common_cancel), onClick = { onDismiss() }, modifier = Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(playerDim(R.dimen.vs_24)))
             }

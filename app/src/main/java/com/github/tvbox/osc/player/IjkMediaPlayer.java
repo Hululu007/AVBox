@@ -3,13 +3,16 @@ package com.github.tvbox.osc.player;
 import android.content.Context;
 import android.text.TextUtils;
 
+import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.api.ApiConfig;
+import com.github.tvbox.osc.base.App;
 import com.github.tvbox.osc.bean.IJKCode;
 import com.github.tvbox.osc.server.ControlManager;
 import com.github.tvbox.osc.util.AudioTrackMemory;
 import com.github.tvbox.osc.util.FileUtils;
 import com.github.tvbox.osc.util.HawkConfig;
 import com.github.tvbox.osc.util.LOG;
+import com.github.tvbox.osc.util.LanguageManager;
 import com.github.tvbox.osc.util.MD5;
 import com.github.tvbox.osc.util.KV;
 
@@ -29,6 +32,12 @@ import xyz.doikki.videoplayer.exo.ExoMediaSourceHelper;
 import xyz.doikki.videoplayer.ijk.IjkPlayer;
 
 public class IjkMediaPlayer extends IjkPlayer {
+
+    /** 资源文案:Application 的 base 只在进程启动时挂一次,切语言后直接用 app.getString 会停在旧语言 */
+    private static String str(int resId, Object... args) {
+        App app = App.getInstance();
+        return app == null ? "" : LanguageManager.INSTANCE.localized(app).getString(resId, args);
+    }
 
     private IJKCode codec = null;
     protected String currentPlayPath;
@@ -253,7 +262,7 @@ public class IjkMediaPlayer extends IjkPlayer {
                 String name = processVideoName(info.getInfoInline());
                 String language = getFriendlyLanguage(info.getLanguage(), info.getInfoInline());
                 v.language = language;
-                v.name = buildDisplayName("视轨", data.getVideo().size() + 1, language, name);
+                v.name = buildDisplayName(str(R.string.player_menu_video_track), data.getVideo().size() + 1, language, name);
                 v.trackId = index;
                 v.index = index;
                 v.selected = index == videoSelected;
@@ -263,11 +272,11 @@ public class IjkMediaPlayer extends IjkPlayer {
                 TrackInfoBean a = new TrackInfoBean();
                 String name = processAudioName(info.getInfoInline());
                 a.language = info.getLanguage();
-                if(name.startsWith("aac"))a.language="中文";
+                if(name.startsWith("aac"))a.language="中文"; // i18n: keep(音轨语言值,随后被 getFriendlyLanguage 转换显示)
                 a.name = name;
                 String language = getFriendlyLanguage(a.language, info.getInfoInline());
                 a.language = language;
-                a.name = buildDisplayName("\u97f3\u8f68", data.getAudio().size() + 1, language, name);
+                a.name = buildDisplayName(str(R.string.player_menu_audio_track), data.getAudio().size() + 1, language, name);
                 a.trackId = index;
                 a.index = index;
                 a.selected = index == audioSelected;
@@ -285,7 +294,7 @@ public class IjkMediaPlayer extends IjkPlayer {
                 t.language = info.getLanguage();
                 String language = getFriendlyLanguage(t.language, t.name);
                 t.language = language;
-                t.name = buildDisplayName("\u5b57\u5e55", data.getSubtitle().size() + 1, language, "");
+                t.name = buildDisplayName(str(R.string.player_menu_subtitle), data.getSubtitle().size() + 1, language, "");
                 t.trackId = index;
                 t.index = index;
                 t.selected = index == subtitleSelected;

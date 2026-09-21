@@ -7,12 +7,15 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
+import com.github.tvbox.osc.R
 import com.github.tvbox.osc.api.ApiConfig
+import com.github.tvbox.osc.base.App
 import com.github.tvbox.osc.bean.LiveChannelItem
 import com.github.tvbox.osc.util.BootGuard
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.HistoryHelper
 import com.github.tvbox.osc.util.KV
+import com.github.tvbox.osc.util.LanguageManager
 import com.google.gson.JsonArray
 import xyz.doikki.videoplayer.player.VideoView
 import java.util.ArrayList
@@ -36,6 +39,12 @@ internal data class ChannelInfoUi(
  * 本类不持有 Activity/Context,只持有可观察状态与 KV 配置。
  */
 internal class LivePlayViewModel : ViewModel() {
+
+    /** 资源文案:ViewModel 无 Context,走 LanguageManager(Application 的 base 切语言不会重挂) */
+    private fun str(resId: Int, vararg args: Any): String {
+        val app = App.getInstance() ?: return ""
+        return LanguageManager.localized(app).getString(resId, *args)
+    }
 
     /** 设置项分发需要宿主配合的动作(播放器、频道列表都在宿主手里) */
     internal interface Host {
@@ -110,7 +119,7 @@ internal class LivePlayViewModel : ViewModel() {
 
     fun onSettingClicked(groupIndex: Int, position: Int, host: Host) {
         if (groupIndex in 0..2 && host.currentChannelItem() == null) {
-            host.toast("请先选择频道")
+            host.toast(str(R.string.live_please_select_channel))
             return
         }
         when (groupIndex) {
@@ -172,7 +181,7 @@ internal class LivePlayViewModel : ViewModel() {
                 val requestId = ++liveConfigRequestId
                 // 黑名单里的坏源选了就崩;这一组只是个切换列表(没有二次确认的位置),直接拒掉并指路
                 if (target.isNotEmpty() && BootGuard.isDisabledSource(target)) {
-                    host.toast("该源已被自动停用，可在配置管理中重新启用")
+                    host.toast(str(R.string.live_source_auto_disabled))
                     return
                 }
                 KV.put(HawkConfig.LIVE_API_URL, target)

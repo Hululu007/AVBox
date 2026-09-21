@@ -77,6 +77,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -218,7 +219,7 @@ fun MusicPlayerScreen(
         if (queueVisible) {
             AVBoxBottomSheet(
                 onDismissRequest = { queueVisible = false },
-                title = "播放队列",
+                title = stringResource(R.string.music_queue),
                 containerColor = MaterialTheme.colorScheme.surfaceContainer,
                 isScrollable = false,
             ) {
@@ -249,7 +250,7 @@ fun MusicPlayerScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                text = name.ifEmpty { "第 ${index + 1} 首" },
+                                text = name.ifEmpty { stringResource(R.string.music_song_index, index + 1) },
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = if (current) {
                                     MaterialTheme.colorScheme.primary
@@ -322,7 +323,7 @@ private fun MusicTopBar(sourceName: String, onBack: () -> Unit) {
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TopBarActionBox(R.drawable.ic_arrow_left, "返回", onClick = onBack)
+        TopBarActionBox(R.drawable.ic_arrow_left, stringResource(R.string.common_back), onClick = onBack)
         if (sourceName.isNotEmpty()) {
             Spacer(Modifier.weight(1f))
             MusicSourcePill(sourceName)
@@ -384,7 +385,7 @@ private fun MusicBottomActions(
             ) {
                 BottomActionItem(
                     iconRes = modeIcon,
-                    label = playMode.label,
+                    label = stringResource(playMode.labelRes),
                     active = playMode != MusicPlayMode.ORDER,
                     activeColor = MaterialTheme.colorScheme.primary,
                     onActiveColor = MaterialTheme.colorScheme.onPrimary,
@@ -394,7 +395,7 @@ private fun MusicBottomActions(
                 )
                 BottomActionItem(
                     iconRes = if (collected) R.drawable.ic_tab_collect_filled else R.drawable.ic_tab_collect,
-                    label = if (collected) "取消收藏" else "收藏",
+                    label = stringResource(if (collected) R.string.detail_uncollect else R.string.common_collect),
                     active = collected,
                     activeColor = MaterialTheme.colorScheme.tertiary,
                     onActiveColor = MaterialTheme.colorScheme.onTertiary,
@@ -404,7 +405,7 @@ private fun MusicBottomActions(
                 )
                 BottomActionItem(
                     iconRes = R.drawable.ic_detail_cast,
-                    label = "投屏",
+                    label = stringResource(R.string.common_cast),
                     active = false,
                     activeColor = MaterialTheme.colorScheme.primary,
                     onActiveColor = MaterialTheme.colorScheme.onPrimary,
@@ -414,7 +415,7 @@ private fun MusicBottomActions(
                 )
                 BottomActionItem(
                     iconRes = R.drawable.ic_music_queue,
-                    label = "音乐选集",
+                    label = stringResource(R.string.music_episodes),
                     active = false,
                     activeColor = MaterialTheme.colorScheme.primary,
                     onActiveColor = MaterialTheme.colorScheme.onPrimary,
@@ -745,7 +746,7 @@ private fun MusicControls(
     ) {
         ScallopControlButton(
             iconRes = R.drawable.player_ic_prev,
-            label = "上一首",
+            label = stringResource(R.string.music_previous),
             onClick = onPrevious,
         )
         Spacer(Modifier.width(SkipToPlayGap))
@@ -768,7 +769,7 @@ private fun MusicControls(
                     painter = painterResource(
                         if (playing) R.drawable.player_ic_pause else R.drawable.player_ic_play,
                     ),
-                    contentDescription = if (playing) "暂停" else "播放",
+                    contentDescription = stringResource(if (playing) R.string.common_pause else R.string.common_play),
                     tint = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier.size(40.dp),
                 )
@@ -777,7 +778,7 @@ private fun MusicControls(
         Spacer(Modifier.width(PlayToSkipGap))
         ScallopControlButton(
             iconRes = R.drawable.player_ic_next,
-            label = "下一首",
+            label = stringResource(R.string.music_next),
             onClick = onNext,
         )
     }

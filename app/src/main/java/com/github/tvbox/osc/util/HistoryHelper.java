@@ -7,11 +7,6 @@ public class HistoryHelper {
     private static final Integer[] hisNumArray = {30,50,100};
     private static final String API_LINE_SPLIT = "\t";
 
-    public static String getHistoryNumName(int index){
-        Integer value = getHisNum(index);
-        return value + "条";
-    }
-
     public static int getHisNum(int index){
         Integer value = null;
         if(index>=0 && index < hisNumArray.length){

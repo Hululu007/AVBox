@@ -69,6 +69,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -182,7 +183,7 @@ fun HomePage(vm: HomeViewModel, contentPadding: PaddingValues = PaddingValues(0.
                     }
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = currentSource?.name?.takeIf { it.isNotEmpty() } ?: "订阅源",
+                        text = currentSource?.name?.takeIf { it.isNotEmpty() } ?: stringResource(R.string.home_subscription_source),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
@@ -206,7 +207,7 @@ fun HomePage(vm: HomeViewModel, contentPadding: PaddingValues = PaddingValues(0.
             ) {
                 Icon(
                     painter = painterResource(R.drawable.ic_more_vert),
-                    contentDescription = "搜索设置",
+                    contentDescription = stringResource(R.string.search_settings),
                     tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
@@ -222,7 +223,7 @@ fun HomePage(vm: HomeViewModel, contentPadding: PaddingValues = PaddingValues(0.
             ) {
                 Icon(
                     imageVector = Icons.Filled.Search,
-                    contentDescription = "搜索",
+                    contentDescription = stringResource(R.string.common_search),
                     tint = MaterialTheme.colorScheme.onSurface,
                 )
             }
@@ -253,12 +254,12 @@ fun HomePage(vm: HomeViewModel, contentPadding: PaddingValues = PaddingValues(0.
                         )
                         Spacer(Modifier.size(12.dp))
                         Text(
-                            text = "尚未配置订阅接口",
+                            text = stringResource(R.string.home_no_source),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         TextButton(onClick = { ConfigManageActivity.start(context) }) {
-                            Text("添加订阅")
+                            Text(stringResource(R.string.config_add_subscribe))
                         }
                     }
                 }
@@ -314,8 +315,8 @@ fun HomePage(vm: HomeViewModel, contentPadding: PaddingValues = PaddingValues(0.
                             LoadStateBox(
                                 state = LoadState.Error(),
                                 emptyText = "",
-                                errorText = "首页加载超时，请检查网络后重试",
-                                retryText = "重试",
+                                errorText = stringResource(R.string.home_load_timeout),
+                                                retryText = stringResource(R.string.common_retry),
                                 onRetry = { vm.loadHome() },
                             )
                         }
@@ -326,7 +327,7 @@ fun HomePage(vm: HomeViewModel, contentPadding: PaddingValues = PaddingValues(0.
                 ) {
                     item(key = "rec") {
                         PartitionSection(
-                            title = "推荐",
+                            title = stringResource(R.string.home_recommend),
                             state = rec.state,
                             videos = rec.videos.drop(5),
                             onLoadMore = {},
@@ -370,14 +371,14 @@ fun HomePage(vm: HomeViewModel, contentPadding: PaddingValues = PaddingValues(0.
                 .padding(16.dp)
                 .padding(start = navStart, bottom = navBottom),
         ) {
-            Icon(painter = painterResource(R.drawable.ic_live_fab), contentDescription = "直播")
+            Icon(painter = painterResource(R.drawable.ic_live_fab), contentDescription = stringResource(R.string.common_live))
         }
     }
 
     if (showSourceSheet) {
         AVBoxBottomSheet(
             onDismissRequest = { showSourceSheet = false },
-            title = "订阅源",
+            title = stringResource(R.string.home_subscription_source),
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
             isScrollable = false,
         ) {
@@ -424,7 +425,7 @@ fun HomePage(vm: HomeViewModel, contentPadding: PaddingValues = PaddingValues(0.
                             color = MaterialTheme.colorScheme.surfaceBright,
                         ) {
                             SettingsRow(
-                                title = "配置管理",
+                                title = stringResource(R.string.settings_config_manage),
                                 onClick = {
                                     dismissAnimated()
                                     ConfigManageActivity.start(context)
@@ -524,7 +525,7 @@ private fun PartitionSection(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "全部",
+                        text = stringResource(R.string.common_all),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -560,7 +561,7 @@ private fun PartitionSection(
             }
 
             HomeViewModel.PartitionState.Empty -> Text(
-                text = "暂无内容",
+                text = stringResource(R.string.common_empty_content),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp),
@@ -574,13 +575,13 @@ private fun PartitionSection(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "加载失败，请检查网络",
+                        text = stringResource(R.string.common_load_failed_network),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.weight(1f),
                     )
                     TextButton(onClick = { onRetry?.invoke() }) {
-                        Text(text = "重试")
+                        Text(text = stringResource(R.string.common_retry))
                     }
                 }
             }

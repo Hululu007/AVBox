@@ -47,6 +47,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.ui.components.AppTopBarScaffold
@@ -83,13 +84,13 @@ fun ThemeSettingsScreen(onNavigateBack: () -> Unit) {
     AppTopBarScaffold(
         titleContent = {
             Text(
-                text = "主题设置",
+                text = stringResource(R.string.settings_theme),
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onSurface,
             )
         },
         navigationIcon = {
-            TopBarActionBox(R.drawable.ic_arrow_left, "返回", onClick = onNavigateBack)
+            TopBarActionBox(R.drawable.ic_arrow_left, stringResource(R.string.common_back), onClick = onNavigateBack)
         },
     ) { topPad, _ ->
         Column(
@@ -104,7 +105,7 @@ fun ThemeSettingsScreen(onNavigateBack: () -> Unit) {
 
             SettingsGroup(title = null) {
                 ThemeCard(SettingsCardPosition.FIRST) {
-                    HeaderRow("主题颜色")
+                    HeaderRow(stringResource(R.string.theme_color))
                 }
                 ThemeCard(SettingsCardPosition.MIDDLE) {
                     CustomThemeSwitchRow(
@@ -155,17 +156,17 @@ fun ThemeSettingsScreen(onNavigateBack: () -> Unit) {
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = "液态玻璃效果",
+                                text = stringResource(R.string.theme_liquid_glass),
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.weight(1f),
                             )
                             TextButton(onClick = { LiquidGlassState.restoreDefaults() }) {
-                                Text("重置")
+                                Text(stringResource(R.string.theme_reset))
                             }
                         }
                         Text(
-                            text = "Android 13 及以上支持液态玻璃",
+                            text = stringResource(R.string.theme_liquid_glass_hint),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -173,21 +174,21 @@ fun ThemeSettingsScreen(onNavigateBack: () -> Unit) {
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {
                     SettingsSwitchRow(
-                        title = "底部导航",
+                        title = stringResource(R.string.theme_nav_bar),
                         checked = glassConfig.navbarEnabled,
                         onCheckedChange = { LiquidGlassState.setNavbarEnabled(it) },
                     )
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {
                     SettingsSwitchRow(
-                        title = "应用控件",
+                        title = stringResource(R.string.theme_app_controls),
                         checked = glassConfig.controlsEnabled,
                         onCheckedChange = { LiquidGlassState.setControlsEnabled(it) },
                     )
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {
                     GlassSliderRow(
-                        title = "模糊效果",
+                        title = stringResource(R.string.theme_blur),
                         value = blurValue,
                         valueRange = LiquidGlassState.BLUR_RANGE,
                         onValueChange = { blurValue = it },
@@ -196,7 +197,7 @@ fun ThemeSettingsScreen(onNavigateBack: () -> Unit) {
                 }
                 SettingsCard(SettingsCardPosition.LAST) {
                     GlassSliderRow(
-                        title = "扭曲效果",
+                        title = stringResource(R.string.theme_distortion),
                         value = distortionValue,
                         valueRange = LiquidGlassState.DISTORTION_RANGE,
                         onValueChange = { distortionValue = it },
@@ -211,7 +212,7 @@ fun ThemeSettingsScreen(onNavigateBack: () -> Unit) {
 
     if (seedPickerOpen) {
         ThemeColorPickerSheet(
-            title = "自定义颜色",
+            title = stringResource(R.string.theme_custom_color),
             initialColor = config.seedArgb,
             onConfirm = { argb ->
                 AppThemeState.setSeed(argb)
@@ -259,7 +260,7 @@ private fun CustomThemeSwitchRow(checked: Boolean, onCheckedChange: (Boolean) ->
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "自定义主题",
+            text = stringResource(R.string.theme_custom_theme),
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f),
@@ -325,7 +326,7 @@ private fun GlassSliderRow(
 private fun ThemeModeRow(currentMode: Int, onModeSelected: (Int) -> Unit) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
-            text = "主题模式",
+            text = stringResource(R.string.theme_mode),
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurface,
         )
@@ -333,17 +334,17 @@ private fun ThemeModeRow(currentMode: Int, onModeSelected: (Int) -> Unit) {
         CapsuleSegmentedButton(
             options = listOf(
                 SegmentOption(
-                    label = "自动",
+                    label = stringResource(R.string.theme_mode_auto),
                     value = ThemeMode.FOLLOW_SYSTEM,
                     iconPainter = painterResource(R.drawable.ic_brightness_auto),
                 ),
                 SegmentOption(
-                    label = "浅色",
+                    label = stringResource(R.string.theme_mode_light),
                     value = ThemeMode.LIGHT,
                     iconPainter = painterResource(R.drawable.ic_light_mode),
                 ),
                 SegmentOption(
-                    label = "深色",
+                    label = stringResource(R.string.theme_mode_dark),
                     value = ThemeMode.DARK,
                     iconPainter = painterResource(R.drawable.ic_dark_mode),
                 ),
@@ -362,7 +363,7 @@ private fun CustomSeedRow(seedArgb: Int, enabled: Boolean, onClick: () -> Unit) 
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "自定义颜色",
+            text = stringResource(R.string.theme_custom_color),
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f),
@@ -389,7 +390,7 @@ private fun VariantSelectorRow(
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
-            text = "配色风格",
+            text = stringResource(R.string.theme_palette_style),
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurface,
         )
@@ -400,12 +401,12 @@ private fun VariantSelectorRow(
                 .horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            PaletteStyles.forEach { (style, label) ->
+            PaletteStyles.forEach { (style, labelRes) ->
                 FilterChip(
                     selected = currentStyle == style,
                     onClick = { onStyleSelected(style) },
                     enabled = enabled,
-                    label = { Text(label) },
+                    label = { Text(stringResource(labelRes)) },
                 )
             }
         }
@@ -421,7 +422,7 @@ private fun PresetSeedsRow(
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
-            text = "预设色卡",
+            text = stringResource(R.string.theme_preset_palette),
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurface,
         )
@@ -432,10 +433,10 @@ private fun PresetSeedsRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                rowItems.forEach { (name, argb) ->
+                rowItems.forEach { (nameRes, argb) ->
                     key(argb, style) {
                         PresetSeedCard(
-                            name = name,
+                            nameRes = nameRes,
                             seedArgb = argb,
                             selected = currentSeed == argb,
                             style = style,
@@ -452,7 +453,7 @@ private fun PresetSeedsRow(
 
 @Composable
 private fun PresetSeedCard(
-    name: String,
+    nameRes: Int,
     seedArgb: Int,
     selected: Boolean,
     style: PaletteStyle,
@@ -529,7 +530,7 @@ private fun PresetSeedCard(
                 }
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = name,
+                    text = stringResource(nameRes),
                     style = MaterialTheme.typography.labelSmall,
                     color = previewScheme.onSurface,
                     maxLines = 1,

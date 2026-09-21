@@ -13,7 +13,9 @@ import androidx.lifecycle.ViewModel;
 import com.github.catvod.net.OkHttp;
 import com.github.catvod.crawler.Spider;
 import com.github.tvbox.osc.api.ApiConfig;
+import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.base.App;
+import com.github.tvbox.osc.util.LanguageManager;
 import com.github.tvbox.osc.bean.AbsJson;
 import com.github.tvbox.osc.bean.AbsSortJson;
 import com.github.tvbox.osc.bean.AbsSortXml;
@@ -232,7 +234,7 @@ public class SourceViewModel extends ViewModel {
             postSortResult(sourceKey, null);
             return;
         }
-        if(sourceBean.getName().length()<=3 && sourceBean.getName().endsWith("搜")){
+        if(sourceBean.getName().length()<=3 && sourceBean.getName().endsWith("搜")){ // i18n: keep
             postSortResult(sourceKey, null);
             return;
         }
@@ -323,7 +325,7 @@ public class SourceViewModel extends ViewModel {
                             if (response.body() != null) {
                                 return response.body().string();
                             } else {
-                                throw new IllegalStateException("网络请求错误");
+                                throw new IllegalStateException(ERR_NETWORK);
                             }
                         }
 
@@ -381,7 +383,7 @@ public class SourceViewModel extends ViewModel {
                                 if (response.body() != null) {
                                     return response.body().string();
                                 } else {
-                                    throw new IllegalStateException("网络请求错误");
+                                    throw new IllegalStateException(ERR_NETWORK);
                                 }
                             }
 
@@ -520,7 +522,7 @@ public class SourceViewModel extends ViewModel {
                             if (response.body() != null) {
                                 return response.body().string();
                             } else {
-                                throw new IllegalStateException("网络请求错误");
+                                throw new IllegalStateException(ERR_NETWORK);
                             }
                         }
 
@@ -574,7 +576,7 @@ public class SourceViewModel extends ViewModel {
                                 if (response.body() != null) {
                                     return response.body().string();
                                 } else {
-                                    throw new IllegalStateException("网络请求错误，response body 为 null");
+                                    throw new IllegalStateException(ERR_NETWORK + "，response body 为 null"); // i18n: keep
                                 }
                             } catch (Exception e) {
                                 LOG.i("echo-list: convertResponse error"+ e.getMessage());
@@ -661,7 +663,7 @@ public class SourceViewModel extends ViewModel {
                             if (response.body() != null) {
                                 return response.body().string();
                             } else {
-                                throw new IllegalStateException("网络请求错误");
+                                throw new IllegalStateException(ERR_NETWORK);
                             }
                         }
 
@@ -785,7 +787,7 @@ public class SourceViewModel extends ViewModel {
                             if (response.body() != null) {
                                 return response.body().string();
                             } else {
-                                throw new IllegalStateException("网络请求错误");
+                                throw new IllegalStateException(ERR_NETWORK);
                             }
                         }
 
@@ -884,7 +886,7 @@ public class SourceViewModel extends ViewModel {
                             if (response.body() != null) {
                                 return response.body().string();
                             } else {
-                                throw new IllegalStateException("网络请求错误");
+                                throw new IllegalStateException(ERR_NETWORK);
                             }
                         }
 
@@ -935,7 +937,7 @@ public class SourceViewModel extends ViewModel {
                             return response.body().string();
                         } else {
                             LOG.i("echo-t4 search-网络请求错误");
-                            throw new IllegalStateException("网络请求错误");
+                            throw new IllegalStateException(ERR_NETWORK);
                         }
                     }
 
@@ -1082,7 +1084,7 @@ public class SourceViewModel extends ViewModel {
                         if (response.body() != null) {
                             return response.body().string();
                         } else {
-                            throw new IllegalStateException("网络请求错误");
+                            throw new IllegalStateException(ERR_NETWORK);
                         }
                     }
 
@@ -1198,6 +1200,18 @@ public class SourceViewModel extends ViewModel {
         return !TextUtils.isEmpty(url) && url.contains(PUSH_HEADERS_MARKER);
     }
 
+    /** i18n: keep —— 只进日志(convertResponse → onError → LOG.i),无 UI 出口 */
+    private static final String ERR_NETWORK = "网络请求错误";
+
+    /**
+     * 资源文案;走 LanguageManager(Application 的 base 切语言不会重挂,直接 app.getString 会停旧语言);
+     * App 未就绪(单测/极早调用)返回空串,不抛异常。
+     */
+    private static String str(int resId, Object... args) {
+        App app = App.getInstance();
+        return app == null ? "" : LanguageManager.INSTANCE.localized(app).getString(resId, args);
+    }
+
     private AbsXml createPushDetail(String url, String sourceKey) {
         AbsXml data = new AbsXml();
         data.sourceKey = sourceKey;
@@ -1206,15 +1220,16 @@ public class SourceViewModel extends ViewModel {
         Movie.Video video = new Movie.Video();
         video.id = url;
         video.name = url;
+        // i18n: keep —— 以下是合成 Movie 的结构化数据(type/flag/`线路名$地址` 格式),会被持久化与比较,不能翻
         video.type = "推送";
         video.sourceKey = sourceKey;
         video.urlBean = new Movie.Video.UrlBean();
         video.urlBean.infoList = new ArrayList<>();
         Movie.Video.UrlBean.UrlInfo urlInfo = new Movie.Video.UrlBean.UrlInfo();
-        urlInfo.flag = "推送";
-        urlInfo.urls = "播放$" + url;
+        urlInfo.flag = "推送"; // i18n: keep
+        urlInfo.urls = "播放$" + url; // i18n: keep
         urlInfo.beanList = new ArrayList<>();
-        urlInfo.beanList.add(new Movie.Video.UrlBean.UrlInfo.InfoBean("播放", url));
+        urlInfo.beanList.add(new Movie.Video.UrlBean.UrlInfo.InfoBean("播放", url)); // i18n: keep
         video.urlBean.infoList.add(urlInfo);
         movie.videoList.add(video);
         data.movie = movie;
@@ -1605,7 +1620,7 @@ public class SourceViewModel extends ViewModel {
                                         }
                                     }
                                 }
-                                infoBean.name = "解析失败 >>> " + infoBean.name;
+                                infoBean.name = str(R.string.player_parse_failed_prefix, infoBean.name);
                             }
                         }
                     }

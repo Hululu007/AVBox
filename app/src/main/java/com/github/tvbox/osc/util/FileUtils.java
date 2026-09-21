@@ -533,8 +533,8 @@ public class FileUtils {
         try {
             if (name.contains("gbk.js")) {
                 name = "gbk.js";
-            } else if (name.contains("模板.js")) {
-                name = "模板.js";
+            } else if (name.contains("模板.js")) { // i18n: keep(R4:模板.js 文件名约定)
+                name = "模板.js"; // i18n: keep(R4:模板.js 文件名约定)
             } else if (name.contains("cat.js")) {
                 name = "cat.js";
             }

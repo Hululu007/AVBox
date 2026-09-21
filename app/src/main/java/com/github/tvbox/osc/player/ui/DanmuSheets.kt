@@ -26,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.github.tvbox.osc.R
@@ -51,7 +52,7 @@ fun DanmuSettingSheet(sheet: DanmuSettingSheetState, onDismiss: () -> Unit) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             SheetPanel(width = playerDim(R.dimen.vs_520)) {
                 Spacer(Modifier.height(playerDim(R.dimen.vs_24)))
-                SheetTitle("弹幕设置")
+                SheetTitle(stringResource(R.string.danmu_settings))
                 Spacer(Modifier.height(playerDim(R.dimen.vs_12)))
                 // TYPE_SET_DANMU_SETTINGS 第二参数:仅颜色行传 true
                 val postSettings: (Boolean) -> Unit = { forColor ->
@@ -65,9 +66,9 @@ fun DanmuSettingSheet(sheet: DanmuSettingSheetState, onDismiss: () -> Unit) {
                 var line by remember { mutableIntStateOf(DanmuHelper.getMaxLine()) }
                 var alpha by remember { mutableIntStateOf(Math.round(DanmuHelper.getAlpha() * 100)) }
 
-                SheetLabelRow("在线弹幕") {
+                SheetLabelRow(stringResource(R.string.danmu_online)) {
                     SheetButton(
-                        text = "搜索",
+                        text = stringResource(R.string.common_search),
                         onClick = {
                             onDismiss()
                             sheet.onOpenSearch()
@@ -75,23 +76,37 @@ fun DanmuSettingSheet(sheet: DanmuSettingSheetState, onDismiss: () -> Unit) {
                         modifier = Modifier.weight(1f),
                     )
                 }
-                SheetLabelRow("弹幕颜色") {
-                    SheetChipRow(listOf("默认", "随机"), colorIdx, onSelect = { idx ->
+                SheetLabelRow(stringResource(R.string.danmu_color)) {
+                    SheetChipRow(
+                        listOf(
+                            stringResource(R.string.common_default),
+                            stringResource(R.string.danmu_color_random),
+                        ),
+                        colorIdx,
+                        onSelect = { idx ->
                         colorIdx = idx
                         DanmuHelper.setRandomColor(idx == 1)
                         postSettings(true)
                     })
                 }
-                SheetLabelRow("弹幕速度") {
-                    SheetChipRow(listOf("超慢", "慢", "适中", "快"), speedIdx, onSelect = { idx ->
+                SheetLabelRow(stringResource(R.string.danmu_speed)) {
+                    SheetChipRow(
+                        listOf(
+                            stringResource(R.string.danmu_speed_very_slow),
+                            stringResource(R.string.danmu_speed_slow),
+                            stringResource(R.string.danmu_speed_normal),
+                            stringResource(R.string.danmu_speed_fast),
+                        ),
+                        speedIdx,
+                        onSelect = { idx ->
                         speedIdx = idx
                         DanmuHelper.setSpeed(DANMU_SPEEDS[idx])
                         postSettings(false)
                     })
                 }
-                SheetLabelRow("弹幕大小") {
+                SheetLabelRow(stringResource(R.string.danmu_size)) {
                     SheetStepper(
-                        "$size 档",
+                        stringResource(R.string.danmu_size_value, size),
                         onMinus = {
                             if (size > 6) {
                                 size--
@@ -108,9 +123,9 @@ fun DanmuSettingSheet(sheet: DanmuSettingSheetState, onDismiss: () -> Unit) {
                         },
                     )
                 }
-                SheetLabelRow("弹幕行数") {
+                SheetLabelRow(stringResource(R.string.danmu_lines)) {
                     SheetStepper(
-                        "$line 行",
+                        stringResource(R.string.danmu_lines_value, line),
                         onMinus = {
                             if (line > 1) {
                                 line--
@@ -127,7 +142,7 @@ fun DanmuSettingSheet(sheet: DanmuSettingSheetState, onDismiss: () -> Unit) {
                         },
                     )
                 }
-                SheetLabelRow("弹幕透明") {
+                SheetLabelRow(stringResource(R.string.danmu_alpha)) {
                     SheetStepper(
                         "$alpha%",
                         onMinus = {
@@ -167,7 +182,7 @@ fun DanmuSearchSheet(sheet: DanmuSearchSheetState, onDismiss: () -> Unit) {
     val search: (String) -> Unit = { raw ->
         val w = raw.trim()
         if (w.isEmpty()) {
-            Toast.makeText(context, "输入内容不能为空", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.toast_input_empty), Toast.LENGTH_SHORT).show()
         } else {
             loading = true
             results = emptyList()
@@ -177,7 +192,7 @@ fun DanmuSearchSheet(sheet: DanmuSearchSheetState, onDismiss: () -> Unit) {
                         loading = false
                         results = list ?: emptyList()
                         if (list.isNullOrEmpty()) {
-                            Toast.makeText(context, "未查询到匹配弹幕", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, context.getString(R.string.toast_danmu_not_found), Toast.LENGTH_SHORT).show()
                         }
                     }
                 }
@@ -217,12 +232,12 @@ fun DanmuSearchSheet(sheet: DanmuSearchSheetState, onDismiss: () -> Unit) {
                     SheetInput(
                         value = word,
                         onValueChange = { word = it },
-                        hint = "请输入弹幕名称",
+                        hint = stringResource(R.string.danmu_search_hint),
                         modifier = Modifier.weight(1f),
                         onSubmit = { search(word) },
                     )
                     Spacer(Modifier.width(playerDim(R.dimen.vs_5)))
-                    SheetButton(text = "搜索", onClick = { search(word) })
+                    SheetButton(text = stringResource(R.string.common_search), onClick = { search(word) })
                 }
                 Spacer(Modifier.height(playerDim(R.dimen.vs_10)))
                 Box(

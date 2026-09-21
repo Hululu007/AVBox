@@ -42,7 +42,7 @@ class ConfigManageActivity : BaseActivity() {
             if (!granted.isNullOrEmpty()) {
                 startLocalConfig(localConfigLauncher) { api -> onResult(api) }
             } else {
-                Toast.makeText(this, "请授予权限", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.toast_permission_required), Toast.LENGTH_SHORT).show()
             }
         }
     }

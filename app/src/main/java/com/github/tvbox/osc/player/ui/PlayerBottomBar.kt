@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -129,7 +130,7 @@ fun PlayerBottomBar(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            PlayerMenuButton("刷新", onClick = actions::onRefreshClicked)
+            PlayerMenuButton(stringResource(R.string.common_refresh), onClick = actions::onRefreshClicked)
             PlayerMenuButton(
                 state.scaleBtnText,
                 onClick = actions::onScaleClicked,
@@ -163,29 +164,29 @@ fun PlayerBottomBar(
                 )
             }
             if (state.castBtnVisible) {
-                PlayerMenuButton("投屏", onClick = actions::onCastClicked)
+                PlayerMenuButton(stringResource(R.string.common_cast), onClick = actions::onCastClicked)
             }
             PlayerMenuButton(
-                "字幕",
+                stringResource(R.string.player_menu_subtitle),
                 onClick = actions::onSubtitleClicked,
                 onLongClick = actions::onSubtitleLongClicked,
             )
             if (state.trackBtnVisible) {
-                PlayerMenuButton("音轨", onClick = actions::onAudioTrackClicked)
+                PlayerMenuButton(stringResource(R.string.player_menu_audio_track), onClick = actions::onAudioTrackClicked)
             }
             if (state.trackBtnVisible) {
-                PlayerMenuButton("视轨", onClick = actions::onVideoTrackClicked)
+                PlayerMenuButton(stringResource(R.string.player_menu_video_track), onClick = actions::onVideoTrackClicked)
             }
             if (state.danmuBtnVisible) {
                 PlayerMenuButton(
-                    "弹幕",
+                    stringResource(R.string.player_menu_danmu),
                     onClick = actions::onDanmuSettingClicked,
                     onLongClick = actions::onDanmuSettingLongClicked,
                 )
             }
             if (state.danmuSearchBtnVisible) {
                 PlayerMenuButton(
-                    "搜弹幕",
+                    stringResource(R.string.player_menu_search_danmu),
                     onClick = actions::onDanmuSearchClicked,
                     onLongClick = actions::onDanmuSearchLongClicked,
                 )
@@ -201,7 +202,7 @@ fun PlayerBottomBar(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "解析",
+                    text = stringResource(R.string.player_menu_parse),
                     color = Color.White,
                     fontSize = playerTextSize(R.dimen.ts_20),
                     maxLines = 1,
@@ -268,7 +269,7 @@ private fun PreviewPlayPauseButton(state: PlayerUiState, actions: PlayerActions)
             painter = painterResource(
                 if (playing) R.drawable.player_ic_pause else R.drawable.player_ic_play
             ),
-            contentDescription = if (playing) "暂停" else "播放",
+            contentDescription = stringResource(if (playing) R.string.common_pause else R.string.common_play),
             colorFilter = ColorFilter.tint(Color.White.copy(alpha = 0.9f)),
             modifier = Modifier.size(22.dp),
         )

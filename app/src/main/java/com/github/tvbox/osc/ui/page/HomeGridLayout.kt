@@ -54,6 +54,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -189,7 +190,7 @@ fun HomeGridLayout(
                 when (tabPartition?.state) {
                     null -> if (sorts.isEmpty()) {
                         item(key = "no_sort", span = { GridItemSpan(maxLineSpan) }) {
-                            HomeGridHint(text = "暂无内容")
+                            HomeGridHint(text = stringResource(R.string.common_empty_content))
                         }
                     } else {
                         items(6) {
@@ -217,7 +218,7 @@ fun HomeGridLayout(
                         key = "empty_$tabId",
                         span = { GridItemSpan(maxLineSpan) },
                     ) {
-                        HomeGridHint(text = "暂无内容")
+                        HomeGridHint(text = stringResource(R.string.common_empty_content))
                     }
 
                     HomeViewModel.PartitionState.Error -> item(
@@ -225,7 +226,7 @@ fun HomeGridLayout(
                         span = { GridItemSpan(maxLineSpan) },
                     ) {
                         HomeGridHint(
-                            text = "加载失败，请检查网络",
+                            text = stringResource(R.string.common_load_failed_network),
                             onRetry = { vm.retryPartition(tabPartition) },
                         )
                     }
@@ -252,7 +253,9 @@ fun HomeGridLayout(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(
-                                    text = if (tabPartition.hasMore) "加载中…" else "没有更多了",
+                                    text = stringResource(
+                    if (tabPartition.hasMore) R.string.common_loading_more else R.string.common_no_more,
+                ),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -296,7 +299,7 @@ private fun HomeGridHint(text: String, onRetry: (() -> Unit)? = null) {
         )
         if (onRetry != null) {
             TextButton(onClick = onRetry) {
-                Text(text = "重试")
+                Text(text = stringResource(R.string.common_retry))
             }
         }
     }
@@ -371,7 +374,7 @@ private fun HomeSortTabRow(
             ) {
                 Icon(
                     painter = painterResource(R.drawable.ic_filter),
-                    contentDescription = "筛选",
+                    contentDescription = stringResource(R.string.common_filter),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(22.dp),
                 )

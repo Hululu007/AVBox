@@ -305,7 +305,7 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
     private fun showCast() {
         val url = controller.webPlayUrl()
         if (url.isNullOrEmpty()) {
-            Toast.makeText(this, "暂无可投屏播放地址", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.toast_no_cast_url), Toast.LENGTH_SHORT).show()
             return
         }
         val title = listOf(ui.title, ui.subtitle)
@@ -329,7 +329,7 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
 
     private fun refreshMeta() {
         val series = vod.seriesMap?.get(vod.playFlag)?.getOrNull(vod.playIndex)
-        val title = vod.name.orEmpty().ifBlank { "音乐" }
+        val title = vod.name.orEmpty().ifBlank { getString(R.string.music_default_name) }
         val sourceName = ApiConfig.get().getSource(sourceKey)?.name.orEmpty()
         ui.title = title
         ui.subtitle = series?.name?.takeIf { it.isNotBlank() }.orEmpty()

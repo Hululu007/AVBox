@@ -11,6 +11,7 @@ import android.text.TextUtils;
 import android.util.Base64;
 
 import com.github.catvod.crawler.Spider;
+import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.base.App;
 import com.github.tvbox.osc.bean.Depot;
 import com.github.tvbox.osc.bean.LiveChannelGroup;
@@ -31,6 +32,7 @@ import com.github.tvbox.osc.util.FileUtils;
 import com.github.tvbox.osc.util.HawkConfig;
 import com.github.tvbox.osc.util.HistoryHelper;
 import com.github.tvbox.osc.util.LOG;
+import com.github.tvbox.osc.util.LanguageManager;
 import com.github.tvbox.osc.util.M3u8;
 import com.github.tvbox.osc.util.MD5;
 import com.github.tvbox.osc.util.OkGoHelper;
@@ -85,8 +87,6 @@ public class ApiConfig {
     private List<IJKCode> ijkCodes;
     private String currentPlaySourceKey = "";
     private String loadedLiveConfigUrl = "";
-    /** 直播设置「配置切换」组第 0 项的合成名称:代表"未单独配置直播源、跟随点播源" */
-    public static final String LIVE_FOLLOW_ITEM_NAME = "跟随点播源";
     private String danmaku = "";
     private volatile String configLogo = ""; // 配置级头像(接口 JSON 顶层 "logo")
 
@@ -201,7 +201,7 @@ public class ApiConfig {
                     callback.success();
                 } catch (Throwable th) {
                     th.printStackTrace();
-                    callback.error("配置解析失败");
+                    callback.error(str(R.string.toast_config_parse_failed));
                 }
             }
 
@@ -209,12 +209,12 @@ public class ApiConfig {
             public void error(String error) {
                 // 本地源无权限读不到文件时**不回落旧快照**:回落会让用户以为源正常、实则内容永不更新
                 if (isLocalSourceUnreadable(apiUrl)) {
-                    callback.error(LOCAL_SOURCE_UNREADABLE_MSG);
+                    callback.error(localSourceUnreadableMsg());
                     return;
                 }
                 // 文件已被删除/改名(2026-09-17)同理:回落快照只会显示删除前的旧内容,且快照重启/清缓存都不掉
                 if (isLocalSourceMissing(apiUrl)) {
-                    callback.error(LOCAL_SOURCE_MISSING_MSG);
+                    callback.error(localSourceMissingMsg());
                     return;
                 }
                 if (cache.exists()) {
@@ -232,7 +232,7 @@ public class ApiConfig {
                         th.printStackTrace();
                     }
                 }
-                callback.error("拉取配置失败\n" + error);
+                callback.error(str(R.string.toast_config_fetch_failed, error));
             }
         });
     }
@@ -303,7 +303,7 @@ public class ApiConfig {
                     clearLiveApiLinesIfUnmatched(liveApiUrl);
                     parseLiveConfigContent(liveApiUrl, json);
                     if (!hasLiveConfigResult()) {
-                        callback.error("直播配置解析失败");
+                        callback.error(str(R.string.toast_live_config_parse_failed));
                         return;
                     }
                     loadedLiveConfigUrl = liveApiUrl;
@@ -311,19 +311,19 @@ public class ApiConfig {
                     callback.success();
                 } catch (Throwable th) {
                     th.printStackTrace();
-                    callback.error("直播配置解析失败");
+                    callback.error(str(R.string.toast_live_config_parse_failed));
                 }
             }
 
             @Override
             public void error(String error) {
                 if (isLocalSourceUnreadable(liveApiUrl)) {
-                    callback.error(LOCAL_SOURCE_UNREADABLE_MSG);
+                    callback.error(localSourceUnreadableMsg());
                     return;
                 }
                 // 与点播同款(2026-09-17):本地直播源文件被删后不再静默回落旧快照
                 if (isLocalSourceMissing(liveApiUrl)) {
-                    callback.error(LOCAL_SOURCE_MISSING_MSG);
+                    callback.error(localSourceMissingMsg());
                     return;
                 }
                 if (live_cache.exists()) {
@@ -344,16 +344,30 @@ public class ApiConfig {
                         th.printStackTrace();
                     }
                 }
-                callback.error("直播配置拉取失败");
+                callback.error(str(R.string.toast_live_config_fetch_failed));
             }
         });
     }
 
     /** 本地源文件不可读的提示(UI 直接展示) */
-    private static final String LOCAL_SOURCE_UNREADABLE_MSG = "本地源文件读不到\n请开启「所有文件访问」后重试(或重新导入本地源)";
+    private static String localSourceUnreadableMsg() {
+        return str(R.string.toast_local_source_unreadable);
+    }
 
     /** 本地源文件已不存在的提示(UI 直接展示) */
-    private static final String LOCAL_SOURCE_MISSING_MSG = "本地源文件已不存在\n可能已在文件管理器里被删除或改名,请重新导入本地源";
+    private static String localSourceMissingMsg() {
+        return str(R.string.toast_local_source_missing);
+    }
+
+    /**
+     * 资源文案;App 未就绪(极早调用/单测)返回空串,不抛异常。
+     * 走 {@link LanguageManager#localized}:Application 的 base 只在进程启动时挂一次,切语言后
+     * 直接用 app.getString 会停在旧语言。
+     */
+    private static String str(int resId, Object... args) {
+        App app = App.getInstance();
+        return app == null ? "" : LanguageManager.INSTANCE.localized(app).getString(resId, args);
+    }
 
     /**
      * 本机文件源(`clan://localhost/` / `file://`)且当前无存储权限 ⇒ 本地服务按原始路径读必然 EACCES。
@@ -867,6 +881,7 @@ public class ApiConfig {
     }
 
     private void loadDefaultConfig() {
+        // i18n: keep —— 下面 ijk 分组的 "硬解码"/"软解码" 是 KV 值(ijk_codec)与 getIJKCodec 的比较键
         String defaultIJKADS="{\"ijk\":[{\"options\":[{\"name\":\"opensles\",\"category\":4,\"value\":\"0\"},{\"name\":\"framedrop\",\"category\":4,\"value\":\"1\"},{\"name\":\"soundtouch\",\"category\":4,\"value\":\"1\"},{\"name\":\"start-on-prepared\",\"category\":4,\"value\":\"1\"},{\"name\":\"http-detect-rangeupport\",\"category\":1,\"value\":\"0\"},{\"name\":\"fflags\",\"category\":1,\"value\":\"fastseek\"},{\"name\":\"skip_loop_filter\",\"category\":2,\"value\":\"48\"},{\"name\":\"reconnect\",\"category\":4,\"value\":\"1\"},{\"name\":\"enable-accurate-seek\",\"category\":4,\"value\":\"0\"},{\"name\":\"mediacodec\",\"category\":4,\"value\":\"0\"},{\"name\":\"mediacodec-all-videos\",\"category\":4,\"value\":\"0\"},{\"name\":\"mediacodec-auto-rotate\",\"category\":4,\"value\":\"0\"},{\"name\":\"mediacodec-handle-resolution-change\",\"category\":4,\"value\":\"0\"},{\"name\":\"mediacodec-hevc\",\"category\":4,\"value\":\"0\"},{\"name\":\"max-buffer-size\",\"category\":4,\"value\":\"15728640\"}],\"group\":\"软解码\"},{\"options\":[{\"name\":\"opensles\",\"category\":4,\"value\":\"0\"},{\"name\":\"framedrop\",\"category\":4,\"value\":\"1\"},{\"name\":\"soundtouch\",\"category\":4,\"value\":\"1\"},{\"name\":\"start-on-prepared\",\"category\":4,\"value\":\"1\"},{\"name\":\"http-detect-rangeupport\",\"category\":1,\"value\":\"0\"},{\"name\":\"fflags\",\"category\":1,\"value\":\"fastseek\"},{\"name\":\"skip_loop_filter\",\"category\":2,\"value\":\"48\"},{\"name\":\"reconnect\",\"category\":4,\"value\":\"1\"},{\"name\":\"enable-accurate-seek\",\"category\":4,\"value\":\"0\"},{\"name\":\"mediacodec\",\"category\":4,\"value\":\"1\"},{\"name\":\"mediacodec-all-videos\",\"category\":4,\"value\":\"1\"},{\"name\":\"mediacodec-auto-rotate\",\"category\":4,\"value\":\"1\"},{\"name\":\"mediacodec-handle-resolution-change\",\"category\":4,\"value\":\"1\"},{\"name\":\"mediacodec-hevc\",\"category\":4,\"value\":\"1\"},{\"name\":\"max-buffer-size\",\"category\":4,\"value\":\"15728640\"}],\"group\":\"硬解码\"}],\"ads\":[\"mimg.0c1q0l.cn\",\"www.googletagmanager.com\",\"www.google-analytics.com\",\"mc.usihnbcq.cn\",\"mg.g1mm3d.cn\",\"mscs.svaeuzh.cn\",\"cnzz.hhttm.top\",\"tp.vinuxhome.com\",\"cnzz.mmstat.com\",\"www.baihuillq.com\",\"s23.cnzz.com\",\"z3.cnzz.com\",\"c.cnzz.com\",\"stj.v1vo.top\",\"z12.cnzz.com\",\"img.mosflower.cn\",\"tips.gamevvip.com\",\"ehwe.yhdtns.com\",\"xdn.cqqc3.com\",\"www.jixunkyy.cn\",\"sp.chemacid.cn\",\"hm.baidu.com\",\"s9.cnzz.com\",\"z6.cnzz.com\",\"um.cavuc.com\",\"mav.mavuz.com\",\"wofwk.aoidf3.com\",\"z5.cnzz.com\",\"xc.hubeijieshikj.cn\",\"tj.tianwenhu.com\",\"xg.gars57.cn\",\"k.jinxiuzhilv.com\",\"cdn.bootcss.com\",\"ppl.xunzhuo123.com\",\"xomk.jiangjunmh.top\",\"img.xunzhuo123.com\",\"z1.cnzz.com\",\"s13.cnzz.com\",\"xg.huataisangao.cn\",\"z7.cnzz.com\",\"xg.huataisangao.cn\",\"z2.cnzz.com\",\"s96.cnzz.com\",\"q11.cnzz.com\",\"thy.dacedsfa.cn\",\"xg.whsbpw.cn\",\"s19.cnzz.com\",\"z8.cnzz.com\",\"s4.cnzz.com\",\"f5w.as12df.top\",\"ae01.alicdn.com\",\"www.92424.cn\",\"k.wudejia.com\",\"vivovip.mmszxc.top\",\"qiu.xixiqiu.com\",\"cdnjs.hnfenxun.com\",\"cms.qdwght.com\"]}";
         JsonObject defaultJson=gson.fromJson(defaultIJKADS, JsonObject.class);
         // 广告地址
@@ -880,7 +895,7 @@ public class ApiConfig {
         if(ijkCodes==null){
             ijkCodes = new ArrayList<>();
             boolean foundOldSelect = false;
-            String ijkCodec = KV.get(HawkConfig.IJK_CODEC, "硬解码");
+            String ijkCodec = KV.get(HawkConfig.IJK_CODEC, "硬解码"); // i18n: keep
             JsonArray ijkJsonArray = defaultJson.get("ijk").getAsJsonArray();
             for (JsonElement opt : ijkJsonArray) {
                 JsonObject obj = (JsonObject) opt;
@@ -992,13 +1007,21 @@ public class ApiConfig {
 
     private final List<LiveSettingGroup> liveSettingGroupList = new ArrayList<>();
     private void initLiveSettings() {
-        ArrayList<String> groupNames = new ArrayList<>(Arrays.asList("线路选择", "画面比例", "播放解码", "超时换源", "偏好设置", "多源切换", "配置切换"));
+        ArrayList<String> groupNames = new ArrayList<>(Arrays.asList(
+                str(R.string.live_group_line), str(R.string.live_group_scale), str(R.string.live_group_decoder),
+                str(R.string.live_group_timeout), str(R.string.settings_preference_title),
+                str(R.string.live_group_multi_source), str(R.string.live_group_config_switch)));
         ArrayList<ArrayList<String>> itemsArrayList = new ArrayList<>();
         ArrayList<String> sourceItems = new ArrayList<>();
-        ArrayList<String> scaleItems = new ArrayList<>(Arrays.asList("默认", "16:9", "4:3", "填充", "原始", "裁剪"));
-        ArrayList<String> playerDecoderItems = new ArrayList<>(Arrays.asList("ijk硬解", "ijk软解", "exo"));
+        ArrayList<String> scaleItems = new ArrayList<>(Arrays.asList(
+                str(R.string.common_default), "16:9", "4:3",
+                str(R.string.player_scale_fill), str(R.string.player_scale_origin), str(R.string.player_scale_crop)));
+        ArrayList<String> playerDecoderItems = new ArrayList<>(Arrays.asList(
+                str(R.string.live_decoder_ijk_hw), str(R.string.live_decoder_ijk_sw), "exo"));
         ArrayList<String> timeoutItems = new ArrayList<>(Arrays.asList("5s", "10s", "15s", "20s", "25s", "30s"));
-        ArrayList<String> personalSettingItems = new ArrayList<>(Arrays.asList("显示时间", "显示网速", "换台反转", "跨选分类"));
+        ArrayList<String> personalSettingItems = new ArrayList<>(Arrays.asList(
+                str(R.string.live_setting_show_time), str(R.string.live_setting_show_speed),
+                str(R.string.live_setting_reverse), str(R.string.live_setting_cross_group)));
         ArrayList<String> yumItems = new ArrayList<>();
         ArrayList<String> liveApiHistoryItems = new ArrayList<>();
 
@@ -1043,7 +1066,7 @@ public class ApiConfig {
         ArrayList<LiveSettingItem> liveSettingItemList = new ArrayList<>();
         LiveSettingItem followItem = new LiveSettingItem();
         followItem.setItemIndex(0);
-        followItem.setItemName(LIVE_FOLLOW_ITEM_NAME);
+        followItem.setItemName(str(R.string.live_follow_vod_source));
         liveSettingItemList.add(followItem);
         ArrayList<String> entries = getLiveConfigEntries();
         for (int i = 0; i < entries.size(); i++) {
@@ -1156,7 +1179,7 @@ public class ApiConfig {
                     if (splitText.length > 1)
                         sourceNames.add(splitText[1]);
                     else
-                        sourceNames.add("源" + Integer.toString(sourceIndex));
+                        sourceNames.add(str(R.string.live_source_index_name, sourceIndex));
                     sourceIndex++;
                 }
                 liveChannelItem.setChannelSourceNames(sourceNames);
@@ -1199,7 +1222,7 @@ public class ApiConfig {
             oldItem.setChannelSourceNames(oldSourceNames);
         }
         while (oldSourceNames.size() < oldUrls.size()) {
-            oldSourceNames.add("源" + Integer.toString(oldSourceNames.size() + 1));
+            oldSourceNames.add(str(R.string.live_source_index_name, oldSourceNames.size() + 1));
         }
         ArrayList<String> newUrls = newItem.getChannelUrls();
         ArrayList<String> newSourceNames = newItem.getChannelSourceNames();
@@ -1211,7 +1234,7 @@ public class ApiConfig {
             if (newSourceNames != null && i < newSourceNames.size()) {
                 oldSourceNames.add(newSourceNames.get(i));
             } else {
-                oldSourceNames.add("源" + Integer.toString(oldSourceNames.size() + 1));
+                oldSourceNames.add(str(R.string.live_source_index_name, oldSourceNames.size() + 1));
             }
         }
         oldItem.setChannelUrls(oldUrls);
@@ -1521,7 +1544,7 @@ public class ApiConfig {
             if ("push_agent".equals(key)) {
                 SourceBean sourceBean = new SourceBean();
                 sourceBean.setKey("push_agent");
-                sourceBean.setName("推送");
+                sourceBean.setName(str(R.string.source_push_agent));
                 sourceBean.setType(-1);
                 return sourceBean;
             }
@@ -1593,7 +1616,7 @@ public class ApiConfig {
     }
 
     public IJKCode getCurrentIJKCode() {
-        String codeName = KV.get(HawkConfig.IJK_CODEC, "硬解码");
+        String codeName = KV.get(HawkConfig.IJK_CODEC, "硬解码"); // i18n: keep
         return getIJKCodec(codeName);
     }
 
@@ -1629,6 +1652,7 @@ public class ApiConfig {
     private void addSuperParse()
     {
         ParseBean superPb = new ParseBean();
+        // i18n: keep —— 解析名参与 DEFAULT_PARSE 持久化与比较(见 setDefaultParse),不能翻
         superPb.setName("超级解析");
         superPb.setUrl("SuperParse");
         superPb.setExt("");

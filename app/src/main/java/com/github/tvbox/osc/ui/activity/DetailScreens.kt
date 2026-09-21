@@ -60,6 +60,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -182,7 +183,7 @@ fun DetailScreen(activity: DetailActivity, vm: DetailViewModel) {
             if (!fullBox) {
                 Icon(
                     painter = painterResource(R.drawable.ic_player_expand),
-                    contentDescription = "全屏播放",
+                    contentDescription = stringResource(R.string.detail_fullscreen_play),
                     tint = Color.White.copy(alpha = 0.9f),
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
@@ -206,7 +207,7 @@ fun DetailScreen(activity: DetailActivity, vm: DetailViewModel) {
                     Column(modifier = Modifier.fillMaxSize()) {
                         LoadStateBox(
                             state = LoadState.Empty,
-                            emptyText = state.msg ?: "暂无片源,可尝试换源或搜索",
+                            emptyText = state.msg ?: stringResource(R.string.detail_empty_source),
                             errorText = "",
                             retryText = "",
                             modifier = Modifier.weight(1f),
@@ -272,7 +273,7 @@ private fun DetailContent(
                     IconButton(onClick = { activity.openMusicPlayer() }) {
                         Icon(
                             painter = painterResource(R.drawable.ic_detail_music_player),
-                            contentDescription = "进入音乐播放器",
+                            contentDescription = stringResource(R.string.detail_music_player),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(24.dp),
                         )
@@ -280,7 +281,7 @@ private fun DetailContent(
                     IconButton(onClick = { activity.playContainer?.showCast() }) {
                         Icon(
                             painter = painterResource(R.drawable.ic_detail_cast),
-                            contentDescription = "投屏",
+                            contentDescription = stringResource(R.string.common_cast),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(24.dp),
                         )
@@ -298,7 +299,7 @@ private fun DetailContent(
                                 painter = painterResource(
                                     if (isCollected) R.drawable.ic_tab_collect_filled else R.drawable.ic_tab_collect
                                 ),
-                                contentDescription = if (isCollected) "取消收藏" else "加入收藏",
+                                contentDescription = stringResource(if (isCollected) R.string.detail_uncollect else R.string.detail_collect),
                                 tint = if (isCollected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(24.dp),
                             )
@@ -321,7 +322,7 @@ private fun DetailContent(
                             .padding(horizontal = 12.dp, vertical = 6.dp),
                     ) {
                         Text(
-                            text = "来源：$displaySourceName",
+                            text = stringResource(R.string.detail_source, displaySourceName),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
@@ -368,7 +369,7 @@ private fun DetailContent(
                         ) {
                             Spacer(Modifier.weight(1f))
                             Text(
-                                text = if (descExpanded) "收起" else "展开",
+                                text = stringResource(if (descExpanded) R.string.detail_collapse else R.string.detail_expand),
                                 style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.primary,
                             )
@@ -388,7 +389,7 @@ private fun DetailContent(
 
         if (qualityOptions.size > 1) {
             item(key = "quality") {
-                ChipRow(title = "清晰度") {
+                ChipRow(title = stringResource(R.string.detail_quality)) {
                     itemsIndexed(qualityOptions) { index, option ->
                         FilterChip(
                             selected = index == qualitySelected,
@@ -403,7 +404,7 @@ private fun DetailContent(
 
         if (flags.size > 1) {
             item(key = "flags") {
-                ChipRow(title = "线路") {
+                ChipRow(title = stringResource(R.string.detail_line)) {
                     itemsIndexed(flags, key = { i, f -> "${i}_${f.name}" }) { _, flag ->
                         FilterChip(
                             selected = flag.name == currentFlag,
@@ -453,20 +454,20 @@ private fun EpisodeRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "选集",
+                text = stringResource(R.string.detail_episodes),
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f),
             )
             PillAction(
                 iconRes = R.drawable.ic_episode_reverse,
-                text = if (info.reverseSort) "正序" else "倒序",
+                text = stringResource(if (info.reverseSort) R.string.detail_order_asc else R.string.detail_order_desc),
                 onClick = { vm.toggleReverse() },
             )
             Spacer(Modifier.width(8.dp))
             PillAction(
                 iconRes = R.drawable.ic_episode_grid_all,
-                text = "全部",
+                text = stringResource(R.string.common_all),
                 onClick = { vm.showEpisodeSheet() },
             )
         }
@@ -556,14 +557,14 @@ private fun SourceSection(vm: DetailViewModel, currentSourceName: String?, revis
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "换源",
+                text = stringResource(R.string.detail_switch_source),
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f),
             )
             if (sourcesSearching) {
                 Text(
-                    text = "寻找片源中…",
+                    text = stringResource(R.string.detail_finding_source),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -609,7 +610,7 @@ private fun RelatedSection(
     if (relatedVideos.isEmpty()) return
     Column(modifier = Modifier.padding(top = 20.dp)) {
         Text(
-            text = "相关推荐",
+            text = stringResource(R.string.detail_recommend),
             style = MaterialTheme.typography.titleLarge,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.padding(start = 16.dp, bottom = 8.dp),
@@ -709,7 +710,11 @@ private fun EpisodeSheet(vm: DetailViewModel, revision: Int) {
 
     AVBoxBottomSheet(
         onDismissRequest = { vm.dismissEpisodeSheet() },
-        title = if (info.name.isNullOrEmpty()) "选集" else "${info.name} 选集",
+        title = if (info.name.isNullOrEmpty()) {
+                stringResource(R.string.detail_episodes)
+            } else {
+                stringResource(R.string.detail_episodes_of, info.name.orEmpty())
+            },
         isScrollable = false,
     ) {
         val dismissAnimated = LocalSheetDismiss.current

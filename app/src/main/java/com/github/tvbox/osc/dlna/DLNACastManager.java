@@ -10,7 +10,10 @@ import android.os.IBinder;
 import android.os.Looper;
 
 import com.google.gson.Gson;
+import com.github.tvbox.osc.R;
+import com.github.tvbox.osc.base.App;
 import com.github.tvbox.osc.util.LOG;
+import com.github.tvbox.osc.util.LanguageManager;
 
 import org.fourthline.cling.android.AndroidUpnpService;
 import org.fourthline.cling.controlpoint.ControlPoint;
@@ -37,6 +40,13 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class DLNACastManager extends DefaultRegistryListener implements ServiceConnection {
+
+    /** 资源文案:Application 的 base 只在进程启动时挂一次,切语言后直接用 app.getString 会停在旧语言 */
+    private static String str(int resId, Object... args) {
+        App app = App.getInstance();
+        return app == null ? "" : LanguageManager.INSTANCE.localized(app).getString(resId, args);
+    }
+
     private static final UDADeviceType RENDERER_TYPE = new UDADeviceType("MediaRenderer", 1);
     private static final UDAServiceType AVT_TYPE = new UDAServiceType("AVTransport", 1);
     private static final DLNACastManager INSTANCE = new DLNACastManager();
@@ -172,7 +182,7 @@ public class DLNACastManager extends DefaultRegistryListener implements ServiceC
         ControlPoint control = upnpService == null ? null : upnpService.getControlPoint();
         RemoteService service = findAVTransport(device);
         if (control == null || service == null) {
-            postFail(callback, "设备离线");
+            postFail(callback, str(R.string.cast_device_offline));
             return;
         }
         LOG.i("dlna-cast start device=" + device.getName() + ", id=" + device.getId() + ", url=" + video.getUrl());
@@ -293,7 +303,7 @@ public class DLNACastManager extends DefaultRegistryListener implements ServiceC
         mainHandler.post(new Runnable() {
             @Override
             public void run() {
-                if (callback != null) callback.onResult(false, msg == null ? "投屏失败" : msg);
+                if (callback != null) callback.onResult(false, msg == null ? str(R.string.toast_cast_failed) : msg);
             }
         });
     }

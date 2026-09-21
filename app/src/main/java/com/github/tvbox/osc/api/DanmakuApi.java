@@ -8,10 +8,13 @@ import androidx.annotation.NonNull;
 import androidx.collection.ArrayMap;
 
 import com.github.catvod.net.OkHttp;
+import com.github.tvbox.osc.R;
+import com.github.tvbox.osc.base.App;
 import com.github.tvbox.osc.bean.DanmuSearchResult;
 import com.github.tvbox.osc.util.DanmuHelper;
 import com.github.tvbox.osc.util.HawkConfig;
 import com.github.tvbox.osc.util.LOG;
+import com.github.tvbox.osc.util.LanguageManager;
 import com.github.catvod.crawler.js.Trans;
 import com.github.tvbox.osc.util.KV;
 
@@ -30,6 +33,13 @@ import okhttp3.Callback;
 import okhttp3.Response;
 
 public class DanmakuApi {
+
+    /** 资源文案:Application 的 base 只在进程启动时挂一次,切语言后直接用 app.getString 会停在旧语言 */
+    private static String str(int resId, Object... args) {
+        App app = App.getInstance();
+        return app == null ? "" : LanguageManager.INSTANCE.localized(app).getString(resId, args);
+    }
+
     private static final String TAG = DanmakuApi.class.getSimpleName();
 //    private static final String BUILTIN_API = "https://saas-oa.shyeguang.cn";
     private static final String BUILTIN_API = "https://logvardanmu.konfan.cn/87654321";
@@ -132,7 +142,7 @@ public class DanmakuApi {
         int seq = searchSeq.incrementAndGet();
         String apiUrl = getApiUrl();
         if (TextUtils.isEmpty(apiUrl)) {
-            notifySearchListError(callback, seq, "弹幕搜索接口为空");
+            notifySearchListError(callback, seq, str(R.string.danmu_search_api_empty));
             return;
         }
         if (!hasPlaceholder(apiUrl) && !isDanmakuSearchApi(apiUrl)) {
@@ -169,7 +179,7 @@ public class DanmakuApi {
         OkHttp.cancel(TAG);
         int seq = searchSeq.incrementAndGet();
         if (result == null || TextUtils.isEmpty(result.getUrl())) {
-            notifySearchResultError(callback, seq, "弹幕地址为空");
+            notifySearchResultError(callback, seq, str(R.string.danmu_url_empty));
             return;
         }
         if (!result.isBuiltIn()) {
@@ -188,7 +198,7 @@ public class DanmakuApi {
                     if (!response.isSuccessful()) throw new IOException("HTTP " + response.code());
                     String body = response.body() == null ? "" : response.body().string();
                     String danmu = commentJsonToXml(body);
-                    if (TextUtils.isEmpty(danmu)) throw new IOException("未获取到弹幕内容");
+                    if (TextUtils.isEmpty(danmu)) throw new IOException(str(R.string.danmu_content_empty));
                     notifySearchResultSuccess(callback, seq, danmu);
                 } catch (Throwable th) {
                     notifySearchResultError(callback, seq, getErrorMessage(th));
@@ -839,7 +849,7 @@ public class DanmakuApi {
 
     private static String getErrorMessage(Throwable th) {
         String message = th == null ? "" : th.getMessage();
-        return TextUtils.isEmpty(message) ? "弹幕搜索失败" : message;
+        return TextUtils.isEmpty(message) ? str(R.string.danmu_search_failed) : message;
     }
 
     private static class EpisodeList {

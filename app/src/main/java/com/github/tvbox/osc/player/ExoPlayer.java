@@ -4,10 +4,13 @@ import android.content.Context;
 import android.os.Looper;
 import android.util.Pair;
 
+import com.github.tvbox.osc.R;
+import com.github.tvbox.osc.base.App;
 import com.github.tvbox.osc.util.AudioTrackMemory;
 import com.github.tvbox.osc.util.HawkConfig;
 import com.github.tvbox.osc.util.LOG;
 import com.github.tvbox.osc.util.KV;
+import com.github.tvbox.osc.util.LanguageManager;
 import com.github.tvbox.osc.util.PlayerHelper;
 import androidx.media3.common.C;
 import androidx.media3.common.Format;
@@ -40,6 +43,12 @@ import java.util.Map;
 import xyz.doikki.videoplayer.exo.ExoMediaPlayer;
 
 public class ExoPlayer extends ExoMediaPlayer {
+
+    /** 资源文案:Application 的 base 只在进程启动时挂一次,切语言后直接用 app.getString 会停在旧语言 */
+    private static String str(int resId, Object... args) {
+        App app = App.getInstance();
+        return app == null ? "" : LanguageManager.INSTANCE.localized(app).getString(resId, args);
+    }
 
     private volatile long internalSubtitleDelayUs;
     private OnCuesListener onCuesListener;
@@ -309,7 +318,7 @@ public class ExoPlayer extends ExoMediaPlayer {
                     String detail = type == C.TRACK_TYPE_VIDEO ? getVideoName(fmt) : getName(fmt);
                     TrackInfoBean bean = new TrackInfoBean();
                     bean.language = language;
-                    bean.name = buildDisplayName(type == C.TRACK_TYPE_AUDIO ? "\u97f3\u8f68" : type == C.TRACK_TYPE_VIDEO ? "\u89c6\u8f68" : "\u5b57\u5e55",
+                    bean.name = buildDisplayName(type == C.TRACK_TYPE_AUDIO ? str(R.string.player_menu_audio_track) : type == C.TRACK_TYPE_VIDEO ? str(R.string.player_menu_video_track) : str(R.string.player_menu_subtitle),
                             type == C.TRACK_TYPE_AUDIO ? data.getAudio().size() + 1 : type == C.TRACK_TYPE_VIDEO ? data.getVideo().size() + 1 : data.getSubtitle().size() + 1,
                             language, detail);
                     bean.renderId = rendererIndex;
@@ -398,7 +407,7 @@ public class ExoPlayer extends ExoMediaPlayer {
         defaultSubtitleTrackSelected = true;
         TrackInfoBean target = subtitles.get(0);
         for (TrackInfoBean subtitle : subtitles) {
-            if ("国语".equals(subtitle.language)) {
+            if ("国语".equals(subtitle.language)) { // i18n: keep(字幕语言匹配值)
                 target = subtitle;
                 break;
             }
@@ -534,11 +543,11 @@ public class ExoPlayer extends ExoMediaPlayer {
         if (fmt.channelCount <= 0) {
             channelLabel = "";
         } else if (fmt.channelCount == 1) {
-            channelLabel = "\u5355\u58f0\u9053";
+            channelLabel = str(R.string.player_channel_mono);
         } else if (fmt.channelCount == 2) {
-            channelLabel = "\u7acb\u4f53\u58f0";
+            channelLabel = str(R.string.player_channel_stereo);
         } else {
-            channelLabel = fmt.channelCount + " \u58f0\u9053";
+            channelLabel = str(R.string.player_channel_count, fmt.channelCount);
         }
 
         String codec = "";

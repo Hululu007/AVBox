@@ -45,6 +45,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -164,8 +165,8 @@ class SettingsViewModel : ViewModel() {
         playType = KV.get(HawkConfig.PLAY_TYPE, 2),
         playRender = KV.get(HawkConfig.PLAY_RENDER, 1),
         playScale = KV.get(HawkConfig.PLAY_SCALE, 0),
-        ijkCodec = KV.get(HawkConfig.IJK_CODEC, "硬解码"),
-        exoDecode = KV.get(HawkConfig.EXO_DECODE, "硬解码"),
+        ijkCodec = KV.get(HawkConfig.IJK_CODEC, "硬解码"), // i18n: keep
+        exoDecode = KV.get(HawkConfig.EXO_DECODE, "硬解码"), // i18n: keep
         ijkCachePlay = KV.get(HawkConfig.IJK_CACHE_PLAY, false),
         playTunnel = KV.get(HawkConfig.PLAY_TUNNEL, false),
         preferAac = KV.get(HawkConfig.PLAY_PREFER_AAC, false),
@@ -230,7 +231,7 @@ fun SettingsPage(
         topBarStartInset = navStart,
         titleContent = {
             Text(
-                text = "设置",
+                text = stringResource(R.string.settings_title),
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onSurface,
             )
@@ -251,40 +252,40 @@ fun SettingsPage(
             SettingsGroup(title = null) {
                 SettingsCard(SettingsCardPosition.FIRST) {
                     SettingsRow(
-                        title = "配置管理",
-                        subtitle = "导入或删除订阅源",
+                        title = stringResource(R.string.settings_config_manage),
+                        subtitle = stringResource(R.string.settings_config_manage_subtitle),
                         iconRes = R.drawable.ic_settings_api,
                         onClick = { ConfigManageActivity.start(context) },
                     )
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {
                     SettingsRow(
-                        title = "主题设置",
-                        subtitle = "修改应用的配色和效果",
+                        title = stringResource(R.string.settings_theme),
+                        subtitle = stringResource(R.string.settings_theme_subtitle),
                         iconRes = R.drawable.ic_settings_theme,
                         onClick = { ThemeSettingsActivity.start(context) },
                     )
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {
                     SettingsRow(
-                        title = "播放设置",
-                        subtitle = "播放核心和解码方式",
+                        title = stringResource(R.string.settings_play),
+                        subtitle = stringResource(R.string.settings_play_subtitle),
                         iconRes = R.drawable.ic_settings_play,
                         onClick = { PlaySettingsActivity.start(context) },
                     )
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {
                     SettingsRow(
-                        title = "偏好设置",
-                        subtitle = "修改应用的使用偏好",
+                        title = stringResource(R.string.settings_preference_title),
+                        subtitle = stringResource(R.string.settings_preference_subtitle),
                         iconRes = R.drawable.ic_settings_preference,
                         onClick = { PreferenceSettingsActivity.start(context) },
                     )
                 }
                 SettingsCard(SettingsCardPosition.LAST) {
                     SettingsRow(
-                        title = "预载设置",
-                        subtitle = "播放视频时预加载",
+                        title = stringResource(R.string.settings_preload),
+                        subtitle = stringResource(R.string.settings_preload_subtitle),
                         iconRes = R.drawable.ic_settings_preload,
                         onClick = { PreloadSettingsActivity.start(context) },
                     )
@@ -294,35 +295,43 @@ fun SettingsPage(
             SettingsGroup(title = null) {
                 SettingsCard(SettingsCardPosition.FIRST) {
                     SettingsOptionMenuRow(
-                        title = "默认启动页",
-                        subtitle = "首次打开应用的所在位置",
+                        title = stringResource(R.string.settings_default_page),
+                        subtitle = stringResource(R.string.settings_default_page_subtitle),
                         iconRes = R.drawable.ic_settings_start,
-                        valueText = if (state.defaultLoadLive) "直播" else "点播",
-                        options = listOf("点播", "直播"),
+                        valueText = stringResource(if (state.defaultLoadLive) R.string.common_live else R.string.common_vod),
+                        options = listOf(
+                            stringResource(R.string.common_vod),
+                            stringResource(R.string.common_live),
+                        ),
                         selectedIndex = if (state.defaultLoadLive) 1 else 0,
                         onSelect = { idx -> vm.put(HawkConfig.DEFAULT_LOAD_LIVE, idx == 1) },
                     )
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {
                     SettingsOptionMenuRow(
-                        title = "历史记录上限",
-                        subtitle = "最多保留多少条记录",
+                        title = stringResource(R.string.settings_history_limit),
+                        subtitle = stringResource(R.string.settings_history_limit_subtitle),
                         iconRes = R.drawable.ic_settings_history,
-                        valueText = HistoryHelper.getHistoryNumName(state.historyNumIndex),
-                        options = listOf(0, 1, 2).map { HistoryHelper.getHistoryNumName(it) },
+                        valueText = stringResource(
+                            R.string.settings_history_limit_value,
+                            HistoryHelper.getHisNum(state.historyNumIndex),
+                        ),
+                        options = listOf(0, 1, 2).map {
+                            stringResource(R.string.settings_history_limit_value, HistoryHelper.getHisNum(it))
+                        },
                         selectedIndex = state.historyNumIndex,
                         onSelect = { idx -> vm.put(HawkConfig.HISTORY_NUM, idx) },
                     )
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {
                     SettingsRow(
-                        title = "清除缓存",
-                        subtitle = "清理应用的使用缓存",
+                        title = stringResource(R.string.settings_clear_cache),
+                        subtitle = stringResource(R.string.settings_clear_cache_subtitle),
                         iconRes = R.drawable.ic_delete,
                         valueText = state.cacheSizeText,
                         onClick = {
                             vm.clearCache {
-                                Toast.makeText(context, "清理成功", Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, context.getString(R.string.toast_cache_cleared), Toast.LENGTH_LONG).show()
                             }
                         },
                     )
@@ -330,10 +339,14 @@ fun SettingsPage(
                 SettingsCard(SettingsCardPosition.LAST) {
                     SettingsOptionMenuRow(
                         title = "DOH",
-                        subtitle = "安全DNS",
+                        subtitle = stringResource(R.string.settings_doh_subtitle),
                         iconRes = R.drawable.ic_settings_doh,
-                        valueText = OkGoHelper.dnsHttpsList.getOrNull(state.dohIndex) ?: "关闭",
-                        options = OkGoHelper.dnsHttpsList,
+                        valueText = if (state.dohIndex == 0) stringResource(R.string.common_off)
+                        else OkGoHelper.dnsHttpsList.getOrNull(state.dohIndex)
+                            ?: stringResource(R.string.common_off),
+                        options = OkGoHelper.dnsHttpsList.mapIndexed { index, name ->
+                            if (index == 0) context.getString(R.string.common_off) else name
+                        },
                         selectedIndex = state.dohIndex,
                         onSelect = { idx -> vm.put(HawkConfig.DOH_URL, idx) },
                     )
@@ -343,8 +356,8 @@ fun SettingsPage(
             SettingsGroup(title = null) {
                 SettingsCard(SettingsCardPosition.FIRST) {
                     SettingsRow(
-                        title = "关于",
-                        subtitle = "查看详细信息",
+                        title = stringResource(R.string.settings_about),
+                        subtitle = stringResource(R.string.settings_about_subtitle),
                         iconRes = R.drawable.ic_settings_about,
                         onClick = { aboutSheet = true },
                     )
@@ -352,8 +365,8 @@ fun SettingsPage(
             
                 SettingsCard(SettingsCardPosition.LAST) {
                     SettingsRow(
-                        title = "访问 GitHub 仓库",
-                        subtitle = "访问项目源代码仓库",
+                        title = stringResource(R.string.settings_github),
+                        subtitle = stringResource(R.string.settings_github_subtitle),
                         iconRes = R.drawable.ic_settings_github,
                         onClick = { openExternalUrl(context, GITHUB_REPO_URL) },
                     )
@@ -391,7 +404,7 @@ private fun AppInfoHeaderCard(versionName: String) {
                     color = scheme.onPrimaryContainer,
                 )
                 Text(
-                    text = "TVBox手机版",
+                    text = stringResource(R.string.settings_app_tagline),
                     style = MaterialTheme.typography.bodyMedium,
                     color = scheme.onPrimaryContainer.copy(alpha = 0.75f),
                     modifier = Modifier.padding(top = 2.dp),
@@ -424,7 +437,7 @@ private fun AppInfoHeaderCard(versionName: String) {
 
 @Composable
 private fun AboutSheet(versionName: String, onDismiss: () -> Unit) {
-    AVBoxBottomSheet(onDismissRequest = onDismiss, title = "关于") {
+    AVBoxBottomSheet(onDismissRequest = onDismiss, title = stringResource(R.string.settings_about)) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -433,13 +446,13 @@ private fun AboutSheet(versionName: String, onDismiss: () -> Unit) {
         ) {
             if (versionName.isNotEmpty()) {
                 Text(
-                    text = "版本 v" + versionName,
+                    text = stringResource(R.string.settings_about_version, versionName),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Text(
-                text = "本软件只提供聚合展示功能，所有资源均来自互联网，软件不参与任何内置、制作、上传、储存、下载等内容，也不接受任何捐赠、打赏、付费等谋利行为，软件仅供开源学习参考, 请于安装后24小时内删除。\n\n打包分发请保留出处\nhttps://github.com/CatVodTVOfficial/TVBoxOSC\nhttps://github.com/q215613905/TVBoxOS",
+                text = stringResource(R.string.settings_about_disclaimer),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(top = 8.dp),
@@ -454,7 +467,7 @@ private fun openExternalUrl(context: Context, url: String) {
     try {
         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
     } catch (e: Exception) {
-        Toast.makeText(context, "未找到可打开链接的应用", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, context.getString(R.string.toast_no_app_for_link), Toast.LENGTH_SHORT).show()
     }
 }
 
@@ -475,11 +488,11 @@ fun TextEditDialog(
                 onValueChange = { text = it },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                placeholder = { Text("请输入 API 地址") },
+                placeholder = { Text(stringResource(R.string.dialog_api_url_hint)) },
             )
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(text.trim()) }) { Text("确定") }
+            TextButton(onClick = { onConfirm(text.trim()) }) { Text(stringResource(R.string.common_confirm)) }
         },
     )
 }

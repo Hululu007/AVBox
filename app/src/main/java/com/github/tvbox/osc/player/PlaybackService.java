@@ -31,6 +31,7 @@ import coil3.target.Target;
 
 import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.util.LOG;
+import com.github.tvbox.osc.util.LanguageManager;
 import com.github.tvbox.osc.util.ScreenUtils;
 
 import java.lang.ref.WeakReference;
@@ -220,6 +221,19 @@ public class PlaybackService extends Service {
     }
 
     // ==================== 生命周期 ====================
+
+    /** 通知文案走 Service 自身 Context,不包裹会是系统语言 */
+    @Override
+    protected void attachBaseContext(Context newBase) {
+        super.attachBaseContext(LanguageManager.INSTANCE.wrap(newBase));
+    }
+
+    /** Service 的 base 在创建时固化(切语言不会重挂)→ 文案改取 App 级(已按语言包裹过)的 Context */
+    @NonNull
+    private String text(int resId) {
+        Context app = getApplicationContext();
+        return (app == null ? this : LanguageManager.INSTANCE.localized(app)).getString(resId);
+    }
 
     @Override
     public void onCreate() {
@@ -548,10 +562,11 @@ public class PlaybackService extends Service {
                         .setShowActionsInCompactView(1, 2, 3));
         if (artwork != null) builder.setLargeIcon(artwork);
         builder.addAction(new NotificationCompat.Action(R.drawable.media_action_placeholder, "", actionIntent(ACTION_PLACEHOLDER)));
-        builder.addAction(new NotificationCompat.Action(R.drawable.exo_icon_previous, "上一个", actionIntent(ACTION_PREVIOUS)));
+        builder.addAction(new NotificationCompat.Action(R.drawable.exo_icon_previous, text(R.string.player_notification_previous), actionIntent(ACTION_PREVIOUS)));
         builder.addAction(new NotificationCompat.Action(playing ? R.drawable.exo_icon_pause : R.drawable.exo_icon_play,
-                playing ? "暂停" : "播放", actionIntent(playing ? ACTION_PAUSE : ACTION_PLAY)));
-        builder.addAction(new NotificationCompat.Action(R.drawable.exo_icon_next, "下一个", actionIntent(ACTION_NEXT)));
+                text(playing ? R.string.common_pause : R.string.common_play),
+                actionIntent(playing ? ACTION_PAUSE : ACTION_PLAY)));
+        builder.addAction(new NotificationCompat.Action(R.drawable.exo_icon_next, text(R.string.player_notification_next), actionIntent(ACTION_NEXT)));
         return builder.build();
     }
 
@@ -564,8 +579,9 @@ public class PlaybackService extends Service {
 
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
-        NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "播放控制", NotificationManager.IMPORTANCE_LOW);
-        channel.setDescription("后台播放控制");
+        NotificationChannel channel = new NotificationChannel(CHANNEL_ID,
+                text(R.string.player_notification_channel_name), NotificationManager.IMPORTANCE_LOW);
+        channel.setDescription(text(R.string.player_notification_channel_desc));
         NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (manager != null) manager.createNotificationChannel(channel);
     }

@@ -324,7 +324,8 @@ class LivePlayActivity : BaseActivity() {
         }
 
         override fun onGesturePercent(isBrightness: Boolean, percent: Int) {
-            gestureHintText = (if (isBrightness) "亮度" else "音量") + " " + percent + "%"
+            val label = getString(if (isBrightness) R.string.live_brightness else R.string.live_volume)
+            gestureHintText = getString(R.string.live_gesture_hint, label, percent)
             mHandler.removeCallbacks(mHideGestureHintRun)
             mHandler.postDelayed(mHideGestureHintRun, 1000)
         }
@@ -538,7 +539,7 @@ class LivePlayActivity : BaseActivity() {
 
     private fun isCurrentLiveChannelValid(): Boolean {
         if (currentLiveChannelItem == null) {
-            Toast.makeText(App.getInstance(), "请先选择频道", Toast.LENGTH_SHORT).show()
+            Toast.makeText(App.getInstance(), getString(R.string.live_please_select_channel), Toast.LENGTH_SHORT).show()
             return false
         }
         return true
@@ -602,7 +603,7 @@ class LivePlayActivity : BaseActivity() {
             channelVersion++
             loadChannelGroupDataAndPlay(groupIndex, target.second)
         } else {
-            Toast.makeText(App.getInstance(), "密码错误", Toast.LENGTH_SHORT).show()
+            Toast.makeText(App.getInstance(), getString(R.string.live_wrong_password), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -819,20 +820,20 @@ class LivePlayActivity : BaseActivity() {
     fun removeLiveConfigHistory(itemIndex: Int) {
         // 仓列表由仓地址推导,删单行既改不了仓内容、又会让下标与仓列表错位
         if (ApiConfig.get().isLiveApiLineMode()) {
-            Toast.makeText(this, "仓列表来自仓地址,不能单独删除", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.live_repo_entry_not_deletable), Toast.LENGTH_SHORT).show()
             return
         }
         val history = KV.get(HawkConfig.LIVE_API_HISTORY, ArrayList<String>())
         if (itemIndex < 0 || itemIndex >= history.size) return
         if (history[itemIndex] == KV.get(HawkConfig.LIVE_API_URL, "")) {
-            Toast.makeText(this, "当前使用中的配置不能删除", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.live_active_config_not_deletable), Toast.LENGTH_SHORT).show()
             return
         }
         history.removeAt(itemIndex)
         KV.put(HawkConfig.LIVE_API_HISTORY, history)
         ApiConfig.get().refreshLiveApiHistoryItems()
         settingsVersion++
-        Toast.makeText(this, "已从历史中删除", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, getString(R.string.toast_removed_from_history), Toast.LENGTH_SHORT).show()
     }
 
     fun settingChecked(position: Int): Boolean {
@@ -1153,7 +1154,7 @@ class LivePlayActivity : BaseActivity() {
         ui = if (channel.sourceNum <= 0) {
             ui.copy(sourceText = "1/1")
         } else {
-            ui.copy(sourceText = "线路" + (channel.sourceIndex + 1) + "/" + channel.sourceNum)
+            ui.copy(sourceText = getString(R.string.live_line_index, channel.sourceIndex + 1, channel.sourceNum))
         }
         var current = ""
         var currentTitle = ""
@@ -1192,7 +1193,7 @@ class LivePlayActivity : BaseActivity() {
                         nextTitle = list[size + 1].title
                     } else {
                         next = info.end + "-23:59"
-                        nextTitle = "精彩节目-暂无节目预告信息"
+                        nextTitle = getString(R.string.live_epg_hot_no_info)
                     }
                     hasInfo = true
                     break
@@ -1203,9 +1204,9 @@ class LivePlayActivity : BaseActivity() {
         }
         if (!hasInfo) {
             current = timeFormat.format(currentStart.time) + "-" + timeFormat.format(currentEnd.time)
-            currentTitle = "精彩节目"
+            currentTitle = getString(R.string.live_epg_hot)
             next = timeFormat.format(nextStart.time) + "-" + timeFormat.format(nextEnd.time)
-            nextTitle = "暂无节目预告信息"
+            nextTitle = getString(R.string.live_epg_no_info)
         }
         channelInfoUi = ui.copy(
             currentEpgTime = current,

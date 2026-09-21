@@ -3,7 +3,9 @@ package com.github.tvbox.osc.util;
 import android.app.Activity;
 import android.content.Context;
 
+import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.api.ApiConfig;
+import com.github.tvbox.osc.base.App;
 import com.github.tvbox.osc.bean.IJKCode;
 import com.github.tvbox.osc.player.ExoMediaPlayerFactory;
 import com.github.tvbox.osc.player.ExoPlayer;
@@ -41,8 +43,8 @@ public class PlayerHelper {
     public static void updateCfg(VideoView videoView, JSONObject playerCfg,int forcePlayerType) {
         int playerType = KV.get(HawkConfig.PLAY_TYPE, 2);
         int renderType = KV.get(HawkConfig.PLAY_RENDER, 1);
-        String ijkCode = KV.get(HawkConfig.IJK_CODEC, "硬解码");
-        String exoDecode = KV.get(HawkConfig.EXO_DECODE, "硬解码");
+        String ijkCode = KV.get(HawkConfig.IJK_CODEC, "硬解码"); // i18n: keep
+        String exoDecode = KV.get(HawkConfig.EXO_DECODE, "硬解码"); // i18n: keep
         int scale = KV.get(HawkConfig.PLAY_SCALE, 0);
         try {
             playerType = playerCfg.getInt("pl");
@@ -152,7 +154,7 @@ public class PlayerHelper {
      */
     private static boolean applyExoDecode(int playerType, String exoDecode) {
         if (playerType != 2) return false;
-        boolean prefer = "软解码".equals(exoDecode);
+        boolean prefer = "软解码".equals(exoDecode); // i18n: keep
         if (ExoPlayer.isPreferSoftwareDecode() == prefer) return false;
         ExoPlayer.setPreferSoftwareDecode(prefer);
         return true;
@@ -240,7 +242,7 @@ public class PlayerHelper {
         // 解码值来源与其它路径统一(2026-09-17):优先本次播放的有效值(updateCfg 下发的"本剧配置 → 全局"),
         // 拿不到(该视图从未走过 updateCfg)才回落全局 —— 否则"播放器里给这部剧选的解码"对 rtmp 永远不生效
         String ijkName = view.effectiveIjkCodec();
-        if (TextUtils.isEmpty(ijkName)) ijkName = KV.get(HawkConfig.IJK_CODEC, "硬解码");
+        if (TextUtils.isEmpty(ijkName)) ijkName = KV.get(HawkConfig.IJK_CODEC, "硬解码"); // i18n: keep
         IJKCode codec = ApiConfig.get().getIJKCodec(ijkName);
         view.forceIjkFactory(new PlayerFactory<IjkMediaPlayer>() {
             @Override
@@ -310,29 +312,32 @@ public class PlayerHelper {
         }
     }
 
+    /** 播放器名;每次调用重取文案(不缓存字符串 —— 缓存会让切语言后停在旧语言) */
     public static String getPlayerName(int playType) {
-        HashMap<Integer, String> playersInfo = getPlayersInfo();
-        if (playersInfo.containsKey(playType)) {
-            return playersInfo.get(playType);
-        } else {
-            return "EXO播放器";
+        switch (playType) {
+            case 1:
+                return str(R.string.player_ijk);
+            case 10:
+                return str(R.string.player_mx);
+            case 11:
+                return str(R.string.player_reex);
+            case 12:
+                return str(R.string.player_kodi);
+            case 13:
+                return str(R.string.player_nearby_tvbox);
+            case 14:
+                return str(R.string.player_vlc);
+            default:
+                return str(R.string.player_exo);
         }
     }
 
-    private static HashMap<Integer, String> mPlayersInfo = null;
     public static HashMap<Integer, String> getPlayersInfo() {
-        if (mPlayersInfo == null) {
-            HashMap<Integer, String> playersInfo = new HashMap<>();
-            playersInfo.put(1, "IJK播放器");
-            playersInfo.put(2, "EXO播放器");
-            playersInfo.put(10, "MX播放器");
-            playersInfo.put(11, "Reex播放器");
-            playersInfo.put(12, "Kodi播放器");
-            playersInfo.put(13, "附近TVBox");
-            playersInfo.put(14, "VLC播放器");
-            mPlayersInfo = playersInfo;
+        HashMap<Integer, String> playersInfo = new HashMap<>();
+        for (int type : new int[]{1, 2, 10, 11, 12, 13, 14}) {
+            playersInfo.put(type, getPlayerName(type));
         }
-        return mPlayersInfo;
+        return playersInfo;
     }
 
     private static HashMap<Integer, Boolean> mPlayersExistInfo = null;
@@ -421,29 +426,32 @@ public class PlayerHelper {
         }
     }
 
+    /** 画面缩放名;每次调用重取文案(不缓存字符串 —— 缓存会让切语言后停在旧语言) */
     public static String getScaleName(int screenScaleType) {
-        String scaleText = "默认";
         switch (screenScaleType) {
-            case VideoView.SCREEN_SCALE_DEFAULT:
-                scaleText = "默认";
-                break;
             case VideoView.SCREEN_SCALE_16_9:
-                scaleText = "16:9";
-                break;
+                return "16:9";
             case VideoView.SCREEN_SCALE_4_3:
-                scaleText = "4:3";
-                break;
+                return "4:3";
             case VideoView.SCREEN_SCALE_MATCH_PARENT:
-                scaleText = "填充";
-                break;
+                return str(R.string.player_scale_fill);
             case VideoView.SCREEN_SCALE_ORIGINAL:
-                scaleText = "原始";
-                break;
+                return str(R.string.player_scale_origin);
             case VideoView.SCREEN_SCALE_CENTER_CROP:
-                scaleText = "裁剪";
-                break;
+                return str(R.string.player_scale_crop);
+            default:
+                return str(R.string.common_default);
         }
-        return scaleText;
+    }
+
+    /**
+     * 资源文案;App 未就绪(极早调用/单测)返回空串,不抛异常。
+     * 走 {@link LanguageManager#localized}:Application 的 base 只在进程启动时挂一次,切语言后
+     * 直接用 app.getString 会停在旧语言。
+     */
+    private static String str(int resId) {
+        App app = App.getInstance();
+        return app == null ? "" : LanguageManager.INSTANCE.localized(app).getString(resId);
     }
 
     public static String getDisplaySpeed(long speed,boolean show) {

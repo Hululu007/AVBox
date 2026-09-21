@@ -512,7 +512,7 @@ public class JsSpider extends Spider {
 
     private void preloadTemplate() {
         try {
-            String template = "import tpl from '模板.js';\n"
+            String template = "import tpl from '模板.js';\n" // i18n: keep(R4:模板.js import 语句)
                     + "globalThis.muban = tpl.muban;\n"
                     + "globalThis.getMubans = tpl.getMubans;";
             ctx.evaluateModule(template, "tv_box_template.js");

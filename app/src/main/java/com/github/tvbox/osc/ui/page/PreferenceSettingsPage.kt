@@ -7,14 +7,20 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.tvbox.osc.R
@@ -23,12 +29,16 @@ import com.github.tvbox.osc.ui.components.AppTopBarScaffold
 import com.github.tvbox.osc.ui.components.SettingsCard
 import com.github.tvbox.osc.ui.components.SettingsCardPosition
 import com.github.tvbox.osc.ui.components.SettingsGroup
+import com.github.tvbox.osc.ui.components.SettingsOptionMenuRow
 import com.github.tvbox.osc.ui.components.SettingsRow
 import com.github.tvbox.osc.ui.components.SettingsSliderRow
 import com.github.tvbox.osc.ui.components.SettingsSwitchRow
 import com.github.tvbox.osc.ui.components.TopBarActionBox
+import com.github.tvbox.osc.util.AppLanguage
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.HistoryMerge
+import com.github.tvbox.osc.util.LanguageManager
+import com.github.tvbox.osc.util.restartApp
 import kotlin.math.roundToInt
 import org.greenrobot.eventbus.EventBus
 
@@ -44,13 +54,13 @@ fun PreferenceSettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel =
     AppTopBarScaffold(
         titleContent = {
             Text(
-                text = "偏好设置",
+                text = stringResource(R.string.settings_preference_title),
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onSurface,
             )
         },
         navigationIcon = {
-            TopBarActionBox(R.drawable.ic_arrow_left, "返回", onClick = onNavigateBack)
+            TopBarActionBox(R.drawable.ic_arrow_left, stringResource(R.string.common_back), onClick = onNavigateBack)
         },
     ) { topPad, _ ->
         Column(
@@ -63,9 +73,17 @@ fun PreferenceSettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel =
             Spacer(Modifier.height(topPad + 8.dp))
 
             SettingsGroup(title = null) {
+                SettingsCard(SettingsCardPosition.SINGLE) {
+                    LanguageRow()
+                }
+            }
+
+            Spacer(Modifier.height(28.dp))
+
+            SettingsGroup(title = null) {
                 SettingsCard(SettingsCardPosition.FIRST) {
                     SettingsSwitchRow(
-                        title = "历史合并",
+                        title = stringResource(R.string.settings_history_merge),
                         checked = state.historyMerge,
                         onCheckedChange = {
                             HistoryMerge.setEnabled(it)
@@ -76,23 +94,23 @@ fun PreferenceSettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel =
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {
                     SettingsSwitchRow(
-                        title = "无痕模式",
+                        title = stringResource(R.string.settings_incognito),
                         checked = state.incognito,
                         onCheckedChange = { vm.put(HawkConfig.INCOGNITO, it) },
                     )
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {
                     SettingsSwitchRow(
-                        title = "禁用手势控制",
-                        subtitle = "开启后将禁用手势控制亮度和音量",
+                        title = stringResource(R.string.settings_gesture_disable),
+                        subtitle = stringResource(R.string.settings_gesture_disable_subtitle),
                         checked = state.gestureControlDisabled,
                         onCheckedChange = { vm.put(HawkConfig.GESTURE_CONTROL_DISABLED, it) },
                     )
                 }
                 SettingsCard(SettingsCardPosition.LAST) {
                     SettingsSwitchRow(
-                        title = "禁用导航动画",
-                        subtitle = "开启后将禁用底部导航的侧滑动画",
+                        title = stringResource(R.string.settings_nav_animation_disable),
+                        subtitle = stringResource(R.string.settings_nav_animation_disable_subtitle),
                         checked = state.navAnimationDisabled,
                         onCheckedChange = { vm.put(HawkConfig.NAV_ANIMATION_DISABLED, it) },
                     )
@@ -104,35 +122,35 @@ fun PreferenceSettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel =
             SettingsGroup(title = null) {
                 SettingsCard(SettingsCardPosition.FIRST) {
                     SettingsSwitchRow(
-                        title = "自动换线",
+                        title = stringResource(R.string.settings_auto_switch_line),
                         checked = state.autoSwitchLine,
                         onCheckedChange = { vm.put(HawkConfig.AUTO_SWITCH_LINE, it) },
                     )
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {
                     SettingsSwitchRow(
-                        title = "M3U8 净化",
+                        title = stringResource(R.string.settings_m3u8_purify),
                         checked = state.m3u8Purify,
                         onCheckedChange = { vm.put(HawkConfig.M3U8_PURIFY, it) },
                     )
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {
                     SettingsSwitchRow(
-                        title = "弹幕开关",
+                        title = stringResource(R.string.settings_danmu_switch),
                         checked = state.danmuOpen,
                         onCheckedChange = { vm.put(HawkConfig.DANMU_OPEN, it) },
                     )
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {
                     SettingsRow(
-                        title = "弹幕 API",
-                        valueText = state.danmuApi.ifEmpty { "未设置" },
+                        title = stringResource(R.string.settings_danmu_api),
+                        valueText = state.danmuApi.ifEmpty { stringResource(R.string.common_not_set) },
                         onClick = { danmuApiDialog = true },
                     )
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {
                     SettingsSliderRow(
-                        title = "长按倍速",
+                        title = stringResource(R.string.settings_long_press_speed),
                         value = sliderSpeed.toFloat(),
                         valueText = "${sliderSpeed}x",
                         valueRange = 2f..10f,
@@ -147,7 +165,7 @@ fun PreferenceSettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel =
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {
                     SettingsSliderRow(
-                        title = "缓冲时间",
+                        title = stringResource(R.string.settings_buffer_time),
                         value = sliderBuffer.toFloat(),
                         valueText = "${sliderBuffer}x",
                         valueRange = 1f..10f,
@@ -162,7 +180,7 @@ fun PreferenceSettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel =
                 }
                 SettingsCard(SettingsCardPosition.LAST) {
                     SettingsSliderRow(
-                        title = "搜索线程",
+                        title = stringResource(R.string.settings_search_threads),
                         value = sliderThreads.toFloat(),
                         valueText = "$sliderThreads",
                         valueRange = 16f..64f,
@@ -183,7 +201,7 @@ fun PreferenceSettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel =
 
     if (danmuApiDialog) {
         TextEditDialog(
-            title = "弹幕 API",
+            title = stringResource(R.string.settings_danmu_api),
             initialText = state.danmuApi,
             onDismiss = { danmuApiDialog = false },
             onConfirm = { text ->
@@ -192,4 +210,64 @@ fun PreferenceSettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel =
             },
         )
     }
+}
+
+/** 语言入口:选中即写 KV(给落盘留出弹窗交互的时间),确认后立即自重启;取消回滚 */
+@Composable
+private fun LanguageRow() {
+    val available = LanguageManager.available()
+    val current = LanguageManager.current()
+    val context = LocalContext.current
+    var pending by remember { mutableStateOf<AppLanguage?>(null) }
+    var rollback by remember { mutableStateOf(AppLanguage.System) }
+    var restarting by remember { mutableStateOf(false) }
+    SettingsOptionMenuRow(
+        title = stringResource(R.string.settings_language),
+        subtitle = stringResource(R.string.settings_language_subtitle),
+        valueText = stringResource(languageLabelRes(current)),
+        options = available.map { stringResource(languageLabelRes(it)) },
+        selectedIndex = available.indexOf(current),
+        onSelect = { idx ->
+            val target = available.getOrNull(idx)
+            if (target != null && target != current) {
+                rollback = current
+                LanguageManager.set(target)
+                pending = target
+            }
+        },
+    )
+    val cancel = {
+        LanguageManager.set(rollback)
+        pending = null
+    }
+    pending?.let {
+        AlertDialog(
+            onDismissRequest = cancel,
+            text = { Text(stringResource(R.string.settings_language_restart_message)) },
+            dismissButton = {
+                TextButton(onClick = cancel) { Text(stringResource(R.string.common_cancel)) }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    pending = null
+                    restarting = true
+                }) { Text(stringResource(R.string.common_confirm)) }
+            },
+        )
+    }
+    if (restarting) {
+        LaunchedEffect(Unit) {
+            withFrameNanos { }
+            withFrameNanos { }
+            restartApp(context.applicationContext)
+        }
+    }
+}
+
+private fun languageLabelRes(lang: AppLanguage): Int = when (lang) {
+    AppLanguage.System -> R.string.settings_language_system
+    AppLanguage.SimplifiedChinese -> R.string.settings_language_zh_hans
+    AppLanguage.English -> R.string.settings_language_en
+    AppLanguage.TraditionalTW -> R.string.settings_language_zh_hant_tw
+    AppLanguage.TraditionalHK -> R.string.settings_language_zh_hant_hk
 }

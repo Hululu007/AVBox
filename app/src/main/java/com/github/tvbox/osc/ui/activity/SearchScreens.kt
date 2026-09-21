@@ -55,6 +55,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -133,7 +134,7 @@ internal fun SearchField(
                 ) {
                     if (query.isEmpty()) {
                         Text(
-                            text = "搜索片名、演员",
+                            text = stringResource(R.string.search_field_hint),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
@@ -147,7 +148,7 @@ internal fun SearchField(
         if (query.isNotEmpty()) {
             Icon(
                 imageVector = Icons.Filled.Close,
-                contentDescription = "清空",
+                contentDescription = stringResource(R.string.common_clear),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
@@ -179,7 +180,7 @@ internal fun LayoutSwitchAction(
     Box {
         Icon(
             painter = painterResource(R.drawable.ic_more_vert),
-            contentDescription = "结果展示方式",
+            contentDescription = stringResource(R.string.search_result_layout),
             tint = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier
                 .clip(RoundedCornerShape(50))
@@ -202,7 +203,7 @@ internal fun LayoutSwitchAction(
             ) {
                 LayoutSwitchCard(
                     iconRes = R.drawable.ic_layout_horizontal,
-                    label = "横向展示",
+                    label = stringResource(R.string.search_layout_horizontal),
                     selected = selected == SearchSettings.SearchLayout.Horizontal,
                     onClick = {
                         expanded = false
@@ -211,7 +212,7 @@ internal fun LayoutSwitchAction(
                 )
                 LayoutSwitchCard(
                     iconRes = R.drawable.ic_layout_vertical,
-                    label = "竖向展示",
+                    label = stringResource(R.string.search_layout_vertical),
                     selected = selected == SearchSettings.SearchLayout.Vertical,
                     onClick = {
                         expanded = false
@@ -301,7 +302,7 @@ internal fun RailResults(
         ) {
             item(key = "rail_all") {
                 SearchRailItem(
-                    name = "全部",
+                    name = stringResource(R.string.common_all),
                     pending = running,
                     selected = selectedSource == null,
                     onClick = { onSelectSource(null) },
@@ -346,7 +347,7 @@ internal fun RailResults(
             if (rows.isEmpty() && !running) {
                 item(key = "rail_empty") {
                     Text(
-                        text = "该站点暂无结果",
+                        text = stringResource(R.string.search_site_empty),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,

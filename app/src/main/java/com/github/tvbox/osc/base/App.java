@@ -2,6 +2,7 @@ package com.github.tvbox.osc.base;
 
 import android.app.Activity;
 import android.app.Application;
+import android.content.Context;
 
 import com.github.tvbox.osc.bean.VodInfo;
 import com.github.tvbox.osc.data.AppDataManager;
@@ -12,6 +13,7 @@ import com.github.tvbox.osc.util.FileUtils;
 import com.github.tvbox.osc.util.HawkConfig;
 import com.github.tvbox.osc.util.KV;
 import com.github.tvbox.osc.util.LOG;
+import com.github.tvbox.osc.util.LanguageManager;
 import com.github.tvbox.osc.util.OkGoHelper;
 import com.github.tvbox.osc.util.PlayerHelper;
 import com.p2p.P2PClass;
@@ -33,6 +35,16 @@ public class App extends Application {
     private static P2PClass p;
     public static String burl;
     private static String dashData;
+
+    /**
+     * 语言资源包裹必须最早做(attachBaseContext 早于 onCreate),而语言选择存在 KV 里
+     * ⇒ 在这里提前 KV.init(幂等,onCreate 里那处保留不动)。
+     */
+    @Override
+    protected void attachBaseContext(Context base) {
+        KV.init(base);
+        super.attachBaseContext(LanguageManager.INSTANCE.wrap(base));
+    }
 
     @Override
     public void onCreate() {

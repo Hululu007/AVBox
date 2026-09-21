@@ -10,7 +10,9 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.tvbox.osc.api.ApiConfig
+import com.github.tvbox.osc.R
 import com.github.tvbox.osc.base.App
+import com.github.tvbox.osc.util.LanguageManager
 import com.github.tvbox.osc.bean.AbsXml
 import com.github.tvbox.osc.bean.Movie
 import com.github.tvbox.osc.bean.VodInfo
@@ -41,6 +43,12 @@ import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 
 class DetailViewModel : ViewModel() {
+
+    /** 资源文案:ViewModel 无 Context,走 LanguageManager(Application 的 base 切语言不会重挂) */
+    private fun str(resId: Int, vararg args: Any): String {
+        val app = App.getInstance() ?: return ""
+        return LanguageManager.localized(app).getString(resId, *args)
+    }
 
     sealed interface PageState {
         data object Loading : PageState
@@ -204,9 +212,9 @@ class DetailViewModel : ViewModel() {
             }
             if (wasFallback) {
                 val fallbackSource = ApiConfig.get().getSource(sourceKey)
-                toastEvent.value = "站点切换至" + (fallbackSource?.name ?: sourceKey)
+                toastEvent.value = str(R.string.detail_switch_site, fallbackSource?.name ?: sourceKey)
             }
-            if (!absXml.msg.isNullOrEmpty() && absXml.msg != "数据列表") {
+            if (!absXml.msg.isNullOrEmpty() && absXml.msg != "数据列表") { // i18n: keep
                 if (!rollbackManualSwitch(absXml.msg)) {
                     toastEvent.value = absXml.msg
                     enterEmpty(absXml.msg)
@@ -401,7 +409,7 @@ class DetailViewModel : ViewModel() {
         if (switchSnapshot == null) {
             switchSnapshot = SwitchSnapshot(info, vodId, sourceKey, firstsourceKey, vodName, vodPicture)
         }
-        playContainerRef?.stopForSourceSwitch("正在切换片源")
+        playContainerRef?.stopForSourceSwitch(str(R.string.detail_switching_source))
     }
 
     private fun rollbackManualSwitch(reason: String? = null): Boolean {
@@ -416,7 +424,11 @@ class DetailViewModel : ViewModel() {
         vodPicture = snapshot.vodPicture
         resetEngineState(keepChips = true)
         toastEvent.value =
-            if (reason.isNullOrEmpty()) "换源失败，继续原片源" else "换源失败：$reason，继续原片源"
+            if (reason.isNullOrEmpty()) {
+                str(R.string.detail_switch_failed)
+            } else {
+                str(R.string.detail_switch_failed_reason, reason)
+            }
         pageState.value = PageState.Ready
         bumpRevision()
         requestPlay()
@@ -607,10 +619,10 @@ class DetailViewModel : ViewModel() {
         val info = vodInfo ?: return
         if (collected.value) {
             RoomDataManger.deleteVodCollect(sourceKey, info)
-            toastEvent.value = "已移除收藏夹"
+            toastEvent.value = str(R.string.toast_removed_from_collect)
         } else {
             RoomDataManger.insertVodCollect(sourceKey, info)
-            toastEvent.value = "已加入收藏夹"
+            toastEvent.value = str(R.string.toast_added_to_collect)
         }
         collected.value = !collected.value
         EventBus.getDefault().post(RefreshEvent(RefreshEvent.TYPE_COLLECT_REFRESH))
@@ -776,7 +788,8 @@ class DetailViewModel : ViewModel() {
             var text = name.replace(Regex("\\[.*?]|\\(.*?\\)"), "")
             text = text.replace(Regex("\\b(19|20)\\d{2}\\b"), "")
             text = text.lowercase(Locale.ROOT).replace(Regex("2160p|1080p|720p|480p|4k|h26[45]|x26[45]|mp4"), "")
-            val matcher = Regex("(?i)(?:ep|第|e|[\\-\\.\\s])\\s?(\\d{1,4})").find(text)
+            // i18n: keep —— 从源侧片名/集名里抽集数,关键词是数据规则
+        val matcher = Regex("(?i)(?:ep|第|e|[\\-\\.\\s])\\s?(\\d{1,4})").find(text)
             if (matcher != null) {
                 matcher.groupValues[1].toInt()
             } else {

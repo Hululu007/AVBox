@@ -26,9 +26,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.github.tvbox.osc.R
 import com.github.tvbox.osc.bean.Movie
 import kotlin.math.abs
 
@@ -101,7 +103,7 @@ fun HeroCarousel(
                     ),
             )
             Text(
-                text = "热门推荐",
+                text = stringResource(R.string.home_hot_recommend),
                 style = MaterialTheme.typography.labelMedium,
                 color = Color.White,
                 modifier = Modifier
@@ -125,7 +127,7 @@ fun HeroCarousel(
                 val sub = ratingBadgeText(video.note)
                 if (!sub.isNullOrBlank()) {
                     Text(
-                        text = if (sub != video.note?.trim()) "评分 $sub" else sub,
+                        text = if (sub != video.note?.trim()) stringResource(R.string.detail_rating, sub) else sub,
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color.White.copy(alpha = 0.8f),
                         maxLines = 1,

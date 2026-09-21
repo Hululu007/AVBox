@@ -119,7 +119,7 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     else -> null
 }
 
-@Preview(name = "浅色", showBackground = true)
+@Preview(name = "浅色", showBackground = true) // i18n: keep(IDE 预览名,不进应用)
 @Composable
 private fun AVBoxThemeLightPreview() {
     AVBoxTheme(
@@ -131,7 +131,7 @@ private fun AVBoxThemeLightPreview() {
     }
 }
 
-@Preview(name = "深色", showBackground = true)
+@Preview(name = "深色", showBackground = true) // i18n: keep(IDE 预览名,不进应用)
 @Composable
 private fun AVBoxThemeDarkPreview() {
     AVBoxTheme(

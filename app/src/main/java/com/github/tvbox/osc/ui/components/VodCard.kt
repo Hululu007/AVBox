@@ -138,8 +138,8 @@ private fun RatingBadge(video: Movie.Video, modifier: Modifier = Modifier) {
     )
 }
 
-private val RATING_SCORE_REGEX = Regex("评分[:：]?\\s*(\\d+(?:\\.\\d+)?)")
-private val RATING_SCORE_SUFFIX_REGEX = Regex("^(\\d+(?:\\.\\d+)?)\\s*分$")
+private val RATING_SCORE_REGEX = Regex("评分[:：]?\\s*(\\d+(?:\\.\\d+)?)") // i18n: keep(源备注评分提取)
+private val RATING_SCORE_SUFFIX_REGEX = Regex("^(\\d+(?:\\.\\d+)?)\\s*分$") // i18n: keep(源备注评分提取)
 
 internal fun ratingBadgeText(note: String?): String? {
     val n = note?.trim().orEmpty()

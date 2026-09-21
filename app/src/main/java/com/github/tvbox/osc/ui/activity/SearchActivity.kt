@@ -60,6 +60,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -494,7 +495,7 @@ fun SearchScreen(vm: SearchViewModel = viewModel()) {
             ) {
                 Icon(
                     painter = painterResource(R.drawable.ic_arrow_left),
-                    contentDescription = "返回",
+                    contentDescription = stringResource(R.string.common_back),
                     tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(22.dp),
                 )
@@ -502,7 +503,7 @@ fun SearchScreen(vm: SearchViewModel = viewModel()) {
         },
     ) { topPad, _ ->
         if (results.isEmpty() && !running && sitesEmpty) {
-            SearchEmptyBox(topPad = topPad, text = "未选择搜索站点，请到首页「搜索设置」里勾选")
+            SearchEmptyBox(topPad = topPad, text = stringResource(R.string.search_no_site))
         } else if (results.isEmpty() && !running) {
             SearchIdleContent(
                 history = history,
@@ -581,23 +582,23 @@ private fun SearchIdleContent(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                SettingsIconBadge(R.drawable.ic_search_history, "搜索历史")
+                SettingsIconBadge(R.drawable.ic_search_history, stringResource(R.string.search_history))
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
-                    text = "搜索历史",
+                    text = stringResource(R.string.search_history),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.weight(1f),
                 )
                 ManageActionIcon(
                     iconRes = R.drawable.ic_delete,
-                    contentDescription = "清空搜索历史",
+                    contentDescription = stringResource(R.string.search_history_clear),
                     onClick = onClearHistory,
                 )
             }
             if (history.isEmpty()) {
                 Text(
-                    text = "暂无搜索历史",
+                    text = stringResource(R.string.search_history_empty),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -631,7 +632,11 @@ private fun SearchIdleContent(
                 .background(MaterialTheme.colorScheme.cardContainer)
                 .padding(horizontal = 12.dp, vertical = 8.dp),
         ) {
-            val suggestTitle = if (suggest.isEmpty()) "热搜榜" else "搜索建议"
+            val suggestTitle = if (suggest.isEmpty()) {
+        stringResource(R.string.search_hot_rank)
+    } else {
+        stringResource(R.string.search_suggest)
+    }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -658,7 +663,7 @@ private fun SearchIdleContent(
                 }
             } else if (hotSearch.isEmpty()) {
                 Text(
-                    text = "暂无热搜数据",
+                    text = stringResource(R.string.search_hot_empty),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -734,9 +739,9 @@ private fun SearchResultsContent(
         SearchEmptyBox(
             topPad = topPad,
             text = if (exactMatch) {
-                "未找到与「$searchedTitle」完全一致的结果"
+                stringResource(R.string.search_no_exact_result, searchedTitle)
             } else {
-                "「$searchedTitle」暂无搜索结果"
+                stringResource(R.string.search_no_result, searchedTitle)
             },
         )
         return
@@ -822,7 +827,7 @@ private fun SearchListResults(
                                 FilterChip(
                                     selected = selectedSource == null,
                                     onClick = { onSelectSource(null) },
-                                    label = { Text("全部") },
+                                    label = { Text(stringResource(R.string.common_all)) },
                                     shape = RoundedCornerShape(20.dp),
                                 )
                             }
@@ -868,7 +873,7 @@ private fun SearchListResults(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = "全部",
+                            text = stringResource(R.string.common_all),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

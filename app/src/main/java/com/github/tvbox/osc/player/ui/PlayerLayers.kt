@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.tvbox.osc.R
@@ -78,7 +79,7 @@ fun PlayerPauseLayer(state: PlayerUiState, actions: PlayerActions) {
         ) {
             Image(
                 painter = painterResource(R.drawable.player_ic_play),
-                contentDescription = "播放",
+                contentDescription = stringResource(R.string.common_play),
                 modifier = Modifier.size(60.dp * 0.55f),
             )
         }
@@ -189,7 +190,7 @@ fun PlayerLockButton(state: PlayerUiState, actions: PlayerActions) {
                     painter = painterResource(
                         if (state.locked) R.drawable.icon_lock else R.drawable.icon_unlock
                     ),
-                    contentDescription = "锁屏",
+                    contentDescription = stringResource(R.string.player_lock),
                     alpha = if (shown) 1f else 0f,
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
@@ -210,7 +211,9 @@ fun PlayerLockButton(state: PlayerUiState, actions: PlayerActions) {
                 val rotateShown = shown && !state.locked
                 Image(
                     painter = painterResource(R.drawable.ic_player_rotate),
-                    contentDescription = if (state.isPortrait) "旋转到横屏" else "旋转到竖屏",
+                    contentDescription = stringResource(
+                        if (state.isPortrait) R.string.player_rotate_landscape else R.string.player_rotate_portrait
+                    ),
                     alpha = if (rotateShown) 1f else 0f,
                     modifier = Modifier
                         .align(Alignment.CenterEnd)

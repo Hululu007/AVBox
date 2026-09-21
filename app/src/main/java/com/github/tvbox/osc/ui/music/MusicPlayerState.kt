@@ -1,14 +1,16 @@
 package com.github.tvbox.osc.ui.music
 
+import androidx.annotation.StringRes
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.github.tvbox.osc.R
 import com.github.tvbox.osc.player.state.CastSheetState
 
-enum class MusicPlayMode(val label: String) {
-    SINGLE("单曲循环"),
-    LIST("列表循环"),
-    ORDER("顺序播放");
+enum class MusicPlayMode(@StringRes val labelRes: Int) {
+    SINGLE(R.string.music_mode_single),
+    LIST(R.string.music_mode_list),
+    ORDER(R.string.music_mode_order);
 
     fun toggled(): MusicPlayMode = when (this) {
         SINGLE -> LIST

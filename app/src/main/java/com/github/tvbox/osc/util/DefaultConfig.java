@@ -37,7 +37,7 @@ public class DefaultConfig {
                     data.add(sortData);
                 }
                 if (withMy)
-                    data.add(0, new MovieSort.SortData("my0", "主页"));
+                    data.add(0, new MovieSort.SortData("my0", "主页")); // i18n: keep(默认配置数据)
                 Collections.sort(data);
                 return data;
             }
@@ -61,7 +61,7 @@ public class DefaultConfig {
             }
         }
         if (withMy)
-            data.add(0, new MovieSort.SortData("my0", "主页"));
+            data.add(0, new MovieSort.SortData("my0", "主页")); // i18n: keep(默认配置数据)
         Collections.sort(data);
         return data;
     }
@@ -195,7 +195,7 @@ public class DefaultConfig {
     }
 
     private static final List<String> NO_AD_KEYWORDS = Arrays.asList(
-            "tx", "youku", "qq","qiyi", "letv", "leshi","sohu", "mgtv", "bilibili", "imgo","优酷", "芒果", "腾讯", "奇艺"
+            "tx", "youku", "qq","qiyi", "letv", "leshi","sohu", "mgtv", "bilibili", "imgo","优酷", "芒果", "腾讯", "奇艺" // i18n: keep(默认配置数据)
     );
 
     public static boolean noAd(String flag) {

@@ -8,6 +8,7 @@ import android.os.Build
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -59,6 +60,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -83,11 +85,11 @@ import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.github.tvbox.osc.util.KV
 import kotlinx.coroutines.launch
 
-private enum class AppTab(val label: String, @DrawableRes val icon: Int) {
-    HOME("首页", R.drawable.ic_tab_home),
-    HISTORY("历史", R.drawable.ic_tab_history),
-    COLLECT("收藏", R.drawable.ic_tab_collect),
-    SETTINGS("设置", R.drawable.ic_tab_settings),
+private enum class AppTab(@StringRes val labelRes: Int, @DrawableRes val icon: Int) {
+    HOME(R.string.tab_home, R.drawable.ic_tab_home),
+    HISTORY(R.string.history_title, R.drawable.ic_tab_history),
+    COLLECT(R.string.common_collect, R.drawable.ic_tab_collect),
+    SETTINGS(R.string.settings_title, R.drawable.ic_tab_settings),
 }
 
 @Composable
@@ -106,13 +108,13 @@ fun MainScreen() {
 private fun BootErrorDialog(msg: String) {
     AlertDialog(
         onDismissRequest = {},
-        title = { Text("配置加载失败") },
+        title = { Text(stringResource(R.string.config_load_failed)) },
         text = { Text(msg) },
         confirmButton = {
-            TextButton(onClick = { AppBootstrap.retry() }) { Text("重试") }
+            TextButton(onClick = { AppBootstrap.retry() }) { Text(stringResource(R.string.common_retry)) }
         },
         dismissButton = {
-            TextButton(onClick = { AppBootstrap.continueOffline() }) { Text("取消") }
+            TextButton(onClick = { AppBootstrap.continueOffline() }) { Text(stringResource(R.string.common_cancel)) }
         },
     )
 }
@@ -132,7 +134,7 @@ private fun MainContent() {
                 // 上次启动被看门狗自动停用的源(有值才提示);默认源不会自动跳到别的源,需用户去配置管理重选
                 val disabled = BootGuard.takeSafeDisabledNotice()
                 if (disabled.isNotEmpty()) {
-                    Toast.makeText(context, "该源无法使用，会导致崩溃，已自动停用（可在配置管理中重新启用）", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, context.getString(R.string.toast_source_auto_disabled), Toast.LENGTH_LONG).show()
                 }
                 if (KV.get(HawkConfig.DEFAULT_LOAD_LIVE, false)) {
                     context.startActivity(Intent(context, LivePlayActivity::class.java))
@@ -149,7 +151,7 @@ private fun MainContent() {
             (context as? Activity)?.finishAffinity()
         } else {
             homeViewModel.lastBackTime = now
-            Toast.makeText(context, "再按一次返回键退出", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.toast_press_again_to_exit), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -214,7 +216,10 @@ private fun MainContent() {
 
         else -> PaddingValues(0.dp)
     }
-    val glassTabs = remember { AppTab.entries.map { GlassTabItem(it.icon, it.label) } }
+    val tabLabels = AppTab.entries.map { stringResource(it.labelRes) }
+    val glassTabs = remember(tabLabels) {
+        AppTab.entries.mapIndexed { index, tab -> GlassTabItem(tab.icon, tabLabels[index]) }
+    }
     CompositionLocalProvider(LocalSheetHost provides sheetHost) {
         Box(modifier = Modifier.fillMaxSize()) {
             Scaffold(
@@ -229,8 +234,13 @@ private fun MainContent() {
                                 NavigationBarItem(
                                     selected = pagerState.currentPage == index,
                                     onClick = { selectTab(index) },
-                                    icon = { Icon(painterResource(tab.icon), contentDescription = tab.label) },
-                                    label = { Text(tab.label) },
+                                    icon = {
+                                        Icon(
+                                            painterResource(tab.icon),
+                                            contentDescription = stringResource(tab.labelRes),
+                                        )
+                                    },
+                                    label = { Text(stringResource(tab.labelRes)) },
                                 )
                             }
                         }
@@ -344,8 +354,13 @@ private fun MainContent() {
                         NavigationRailItem(
                             selected = pagerState.currentPage == index,
                             onClick = { selectTab(index) },
-                            icon = { Icon(painterResource(tab.icon), contentDescription = tab.label) },
-                            label = { Text(tab.label) },
+                            icon = {
+                                Icon(
+                                    painterResource(tab.icon),
+                                    contentDescription = stringResource(tab.labelRes),
+                                )
+                            },
+                            label = { Text(stringResource(tab.labelRes)) },
                         )
                     }
                 }

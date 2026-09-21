@@ -60,6 +60,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -232,7 +233,7 @@ fun HistoryPage(
         topBarStartInset = navStart,
         titleContent = {
             Text(
-                text = "历史",
+                text = stringResource(R.string.history_title),
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onSurface,
             )
@@ -241,7 +242,7 @@ fun HistoryPage(
             
             ManageActionIcon(
                 iconRes = R.drawable.ic_delete,
-                contentDescription = "清空历史",
+                contentDescription = stringResource(R.string.history_clear),
                 onClick = { showDeleteAllDialog = true },
             )
         },
@@ -258,7 +259,7 @@ fun HistoryPage(
 
             items.isEmpty() -> LoadStateBox(
                 state = LoadState.Empty,
-                emptyText = "暂无观看历史",
+                emptyText = stringResource(R.string.history_empty),
                 errorText = "",
                 retryText = "",
                 emptyIconRes = R.drawable.ic_empty_record,
@@ -304,16 +305,19 @@ fun HistoryPage(
 
     if (showDeleteAllDialog) {
         ConfirmDeleteDialog(
-            title = "清空历史",
-            text = "将删除全部观看历史记录，此操作不可恢复",
+            title = stringResource(R.string.history_clear),
+            text = stringResource(R.string.history_clear_message),
             onConfirm = { vm.deleteAll() },
             onDismiss = { showDeleteAllDialog = false },
         )
     }
     deleteTarget?.let { target ->
         ConfirmDeleteDialog(
-            title = "删除记录",
-            text = "删除「${target.name ?: "未命名"}」的观看记录？",
+            title = stringResource(R.string.history_delete_title),
+            text = stringResource(
+                R.string.history_delete_message,
+                target.name ?: stringResource(R.string.common_unnamed),
+            ),
             onConfirm = { vm.deleteOne(target) },
             onDismiss = { deleteTarget = null },
         )
@@ -388,7 +392,7 @@ private fun HistoryRow(
                     text = if (item.playNote.isNullOrEmpty()) {
                         item.note ?: ""
                     } else {
-                        "上次看到${item.playNote}"
+                        stringResource(R.string.history_last_watched, item.playNote)
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -432,9 +436,13 @@ private fun HistoryRow(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = if (eps != null) {
-                                "第${(item.playIndex + 1).coerceIn(1, eps)}集/共${eps}集"
+                                stringResource(
+                                        R.string.history_episode_progress,
+                                        (item.playIndex + 1).coerceIn(1, eps),
+                                        eps,
+                                    )
                             } else {
-                                "已看${(barProgress * 100).roundToInt()}%"
+                                stringResource(R.string.history_watched_percent, (barProgress * 100).roundToInt())
                             },
                             style = MaterialTheme.typography.labelSmall,
                             color = barColor,
@@ -448,6 +456,7 @@ private fun HistoryRow(
     }
 }
 
+// i18n: keep —— 匹配源数据(片名/备注)里的"第N集/期",不能翻
 private val EpisodeTotalRegex = Regex("(\\d+)\\s*[集期]")
 
 private fun parseEpisodeTotal(note: String?): Int? {
@@ -491,10 +500,10 @@ internal fun ConfirmDeleteDialog(
         title = { Text(title) },
         text = { Text(text) },
         confirmButton = {
-            TextButton(onClick = { onConfirm(); onDismiss() }) { Text("删除") }
+            TextButton(onClick = { onConfirm(); onDismiss() }) { Text(stringResource(R.string.common_delete)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
         },
     )
 }

@@ -3,7 +3,9 @@ package com.github.tvbox.osc.ui.page
 import androidx.lifecycle.Observer
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.github.tvbox.osc.R
 import com.github.tvbox.osc.api.ApiConfig
+import com.github.tvbox.osc.base.App
 import com.github.tvbox.osc.bean.AbsSortXml
 import com.github.tvbox.osc.bean.AbsXml
 import com.github.tvbox.osc.bean.Movie
@@ -12,6 +14,7 @@ import com.github.tvbox.osc.bean.SourceBean
 import com.github.tvbox.osc.event.RefreshEvent
 import com.github.tvbox.osc.util.DefaultConfig
 import com.github.tvbox.osc.util.HomeSettings
+import com.github.tvbox.osc.util.LanguageManager
 import com.github.tvbox.osc.viewmodel.SourceViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
@@ -30,6 +33,12 @@ import org.json.JSONObject
 import kotlin.coroutines.resume
 
 class HomeViewModel : ViewModel() {
+    /** 资源文案:ViewModel 无 Context,走 LanguageManager(Application 的 base 切语言不会重挂) */
+    private fun str(resId: Int, vararg args: Any): String {
+        val app = App.getInstance() ?: return ""
+        return LanguageManager.localized(app).getString(resId, *args)
+    }
+
     sealed interface PartitionState {
         data object Idle : PartitionState
         data object Loading : PartitionState
@@ -184,8 +193,8 @@ class HomeViewModel : ViewModel() {
             }
         }
         pageErrorEvents.tryEmit(
-            if (recLoading) "首页加载失败，请检查网络后重试"
-            else "部分内容加载超时，可下拉刷新重试"
+            if (recLoading) str(R.string.home_load_failed)
+            else str(R.string.home_load_partial_timeout)
         )
         pageLoading.value = false
     }

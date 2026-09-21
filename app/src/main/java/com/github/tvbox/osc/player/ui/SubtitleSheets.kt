@@ -36,6 +36,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.res.stringResource
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.bean.Subtitle
 import com.github.tvbox.osc.player.state.SubtitleSearchSheetState
@@ -78,18 +79,18 @@ fun SubtitleSheet(sheet: SubtitleSheetState, onDismiss: () -> Unit) {
                         .padding(vertical = playerDim(R.dimen.vs_30)),
                 ) {
                     if (sheet.hasInternal) {
-                        SheetButton("选择内置字幕", onClick = {
+                        SheetButton(stringResource(R.string.subtitle_builtin), onClick = {
                             onDismiss()
                             sheet.onSelectInternal()
                         }, modifier = Modifier.fillMaxWidth())
                         Spacer(Modifier.height(playerDim(R.dimen.vs_10)))
                     }
-                    SheetButton("选择本地字幕", onClick = {
+                    SheetButton(stringResource(R.string.subtitle_local), onClick = {
                         onDismiss()
                         sheet.onSelectLocal()
                     }, modifier = Modifier.fillMaxWidth())
                     Spacer(Modifier.height(playerDim(R.dimen.vs_10)))
-                    SheetButton("在线搜索字幕", onClick = {
+                    SheetButton(stringResource(R.string.subtitle_online), onClick = {
                         onDismiss()
                         sheet.onSelectRemote()
                     }, modifier = Modifier.fillMaxWidth())
@@ -101,7 +102,7 @@ fun SubtitleSheet(sheet: SubtitleSheetState, onDismiss: () -> Unit) {
                             .height(playerDim(R.dimen.vs_60)),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        SheetButton("字号减小", onClick = {
+                        SheetButton(stringResource(R.string.subtitle_size_minus), onClick = {
                             if (exo) {
                                 val scale = (SubtitleHelper.getExoSubtitleScale() - 5).coerceAtLeast(50)
                                 sizeText = "$scale%"
@@ -123,7 +124,7 @@ fun SubtitleSheet(sheet: SubtitleSheetState, onDismiss: () -> Unit) {
                                 .weight(1f)
                                 .padding(horizontal = playerDim(R.dimen.vs_10)),
                         )
-                        SheetButton("字号增大", onClick = {
+                        SheetButton(stringResource(R.string.subtitle_size_plus), onClick = {
                             if (exo) {
                                 val scale = (SubtitleHelper.getExoSubtitleScale() + 5).coerceAtMost(200)
                                 sizeText = "$scale%"
@@ -146,7 +147,7 @@ fun SubtitleSheet(sheet: SubtitleSheetState, onDismiss: () -> Unit) {
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         SheetButton(
-                            if (exo) "字幕上移" else "字幕样式一",
+                            stringResource(if (exo) R.string.subtitle_move_up else R.string.subtitle_style_one),
                             onClick = {
                                 if (exo) {
                                     val position = (SubtitleHelper.getExoSubtitlePosition() + 0.5f).coerceAtMost(80.0f)
@@ -156,7 +157,7 @@ fun SubtitleSheet(sheet: SubtitleSheetState, onDismiss: () -> Unit) {
                                     // 样式一 = 外挂字幕白色
                                     sheet.onSelectStyle(0)
                                     onDismiss()
-                                    Toast.makeText(context, "设置样式成功", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, context.getString(R.string.toast_subtitle_style_ok), Toast.LENGTH_SHORT).show()
                                 }
                             },
                             modifier = Modifier.width(playerDim(R.dimen.vs_140)),
@@ -171,7 +172,7 @@ fun SubtitleSheet(sheet: SubtitleSheetState, onDismiss: () -> Unit) {
                                 .padding(horizontal = playerDim(R.dimen.vs_10)),
                         )
                         SheetButton(
-                            if (exo) "字幕下移" else "字幕样式二",
+                            stringResource(if (exo) R.string.subtitle_move_down else R.string.subtitle_style_two),
                             onClick = {
                                 if (exo) {
                                     val position = (SubtitleHelper.getExoSubtitlePosition() - 0.5f).coerceAtLeast(-80.0f)
@@ -181,7 +182,7 @@ fun SubtitleSheet(sheet: SubtitleSheetState, onDismiss: () -> Unit) {
                                     // 样式二 = 外挂字幕粉色 #FFB6C1
                                     sheet.onSelectStyle(1)
                                     onDismiss()
-                                    Toast.makeText(context, "设置样式成功", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, context.getString(R.string.toast_subtitle_style_ok), Toast.LENGTH_SHORT).show()
                                 }
                             },
                             modifier = Modifier.width(playerDim(R.dimen.vs_140)),
@@ -189,7 +190,7 @@ fun SubtitleSheet(sheet: SubtitleSheetState, onDismiss: () -> Unit) {
                     }
                     Spacer(Modifier.height(playerDim(R.dimen.vs_10)))
                     Text(
-                        text = if (exo) "字幕延时对内置字幕有效" else "字幕延时仅对外挂字幕有效",
+                        text = stringResource(if (exo) R.string.subtitle_delay_exo_hint else R.string.subtitle_delay_hint),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontSize = playerTextSize(R.dimen.ts_20),
                         textAlign = TextAlign.Center,
@@ -203,7 +204,7 @@ fun SubtitleSheet(sheet: SubtitleSheetState, onDismiss: () -> Unit) {
                             .height(playerDim(R.dimen.vs_60)),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        SheetButton("字幕提前", onClick = {
+                        SheetButton(stringResource(R.string.subtitle_advance), onClick = {
                             var time = (delayText.toDoubleOrNull() ?: 0.0) - 0.5
                             SubtitleHelper.setTimeDelay((time * 1000).toInt())
                             delayText = if (time == 0.0) "0" else time.toString()
@@ -217,7 +218,7 @@ fun SubtitleSheet(sheet: SubtitleSheetState, onDismiss: () -> Unit) {
                                 .weight(1f)
                                 .padding(horizontal = playerDim(R.dimen.vs_10)),
                         )
-                        SheetButton("字幕推迟", onClick = {
+                        SheetButton(stringResource(R.string.subtitle_delay), onClick = {
                             var time = (delayText.toDoubleOrNull() ?: 0.0) + 0.5
                             SubtitleHelper.setTimeDelay((time * 1000).toInt())
                             delayText = if (time == 0.0) "0" else time.toString()
@@ -251,7 +252,7 @@ fun SubtitleSearchSheet(sheet: SubtitleSearchSheetState, onDismiss: () -> Unit) 
     val search: (String) -> Unit = { raw ->
         val w = raw.trim()
         if (w.isEmpty()) {
-            Toast.makeText(context, "输入内容不能为空", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.toast_input_empty), Toast.LENGTH_SHORT).show()
         } else {
             mode = "search"
             items = emptyList()
@@ -269,7 +270,7 @@ fun SubtitleSearchSheet(sheet: SubtitleSearchSheetState, onDismiss: () -> Unit) 
                 loading = false
                 val list = data.subtitleList
                 if (list == null) {
-                    Toast.makeText(context, "未查询到匹配字幕", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.toast_subtitle_not_found), Toast.LENGTH_SHORT).show()
                     return@post
                 }
                 if (list.isNotEmpty()) {
@@ -349,12 +350,12 @@ fun SubtitleSearchSheet(sheet: SubtitleSearchSheetState, onDismiss: () -> Unit) 
                     SheetInput(
                         value = word,
                         onValueChange = { word = it },
-                        hint = "请输入字幕名称",
+                        hint = stringResource(R.string.subtitle_search_hint),
                         modifier = Modifier.weight(1f),
                         onSubmit = { search(word) },
                     )
                     Spacer(Modifier.width(playerDim(R.dimen.vs_5)))
-                    SheetButton(text = "搜索", onClick = { search(word) })
+                    SheetButton(text = stringResource(R.string.common_search), onClick = { search(word) })
                 }
                 Spacer(Modifier.height(playerDim(R.dimen.vs_10)))
                 Box(

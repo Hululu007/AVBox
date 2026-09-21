@@ -30,6 +30,7 @@ import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.player.state.PlayerActions
 import com.github.tvbox.osc.player.state.PlayerUiState
@@ -99,7 +100,7 @@ fun PlayerTopBar(state: PlayerUiState, actions: PlayerActions) {
                     ) {
                         Image(
                             painter = painterResource(R.drawable.player_ic_back),
-                            contentDescription = "返回",
+                            contentDescription = stringResource(R.string.common_back),
                             modifier = Modifier.size(24.dp),
                         )
                     }

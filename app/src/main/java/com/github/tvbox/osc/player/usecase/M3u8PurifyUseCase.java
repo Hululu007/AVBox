@@ -3,9 +3,12 @@ package com.github.tvbox.osc.player.usecase;
 import android.content.Context;
 import android.widget.Toast;
 
+import com.github.tvbox.osc.R;
+import com.github.tvbox.osc.base.App;
 import com.github.tvbox.osc.server.ControlManager;
 import com.github.tvbox.osc.server.RemoteServer;
 import com.github.tvbox.osc.util.LOG;
+import com.github.tvbox.osc.util.LanguageManager;
 import com.github.tvbox.osc.util.M3u8;
 import com.lzy.okgo.OkGo;
 import com.lzy.okgo.callback.AbsCallback;
@@ -24,6 +27,12 @@ import java.util.Map;
  * 命中广告时走本地代理播放，否则回退直链。纯网络/解析逻辑，与 UI 无关。
  */
 public final class M3u8PurifyUseCase {
+
+    /** 资源文案:Application 的 base 只在进程启动时挂一次,切语言后直接用 app.getString 会停在旧语言 */
+    private static String str(int resId, Object... args) {
+        App app = App.getInstance();
+        return app == null ? "" : LanguageManager.INSTANCE.localized(app).getString(resId, args);
+    }
 
     public interface Callback {
         void startPlayUrl(String url, HashMap<String, String> headers);
@@ -123,7 +132,7 @@ public final class M3u8PurifyUseCase {
             String proxyUrl = ControlManager.get().getAddress(true) + "proxyM3u8?k=" + key;
             callback.onM3u8ProxyUrl(proxyUrl, url);
             callback.startPlayUrl(proxyUrl, headers);
-            Toast.makeText(context, "已移除视频广告 " + M3u8.currentAdCount + " 条", Toast.LENGTH_SHORT).show();
+            Toast.makeText(context, str(R.string.toast_ads_removed, M3u8.currentAdCount), Toast.LENGTH_SHORT).show();
         }
     }
 

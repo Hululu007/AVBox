@@ -12,12 +12,14 @@ import com.github.catvod.crawler.JsLoader;
 import com.github.catvod.crawler.Spider;
 import com.github.catvod.crawler.pyLoader;
 import com.github.catvod.crawler.python.IPyLoader;
+import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.base.App;
 import com.github.tvbox.osc.bean.SourceBean;
 import com.github.tvbox.osc.util.BootGuard;
 import com.github.tvbox.osc.util.DefaultConfig;
 import com.github.tvbox.osc.util.FileUtils;
 import com.github.tvbox.osc.util.LOG;
+import com.github.tvbox.osc.util.LanguageManager;
 import com.github.tvbox.osc.util.MD5;
 import com.github.tvbox.osc.util.OkGoHelper;
 import com.google.gson.JsonObject;
@@ -44,6 +46,13 @@ import java.util.regex.Pattern;
  * 源列表、代理分发时的"当前源"、KV 读写留在 ApiConfig。
  */
 final class SpiderLoader {
+
+    /** 资源文案:Application 的 base 只在进程启动时挂一次,切语言后直接用 app.getString 会停在旧语言 */
+    private static String str(int resId, Object... args) {
+        App app = App.getInstance();
+        return app == null ? "" : LanguageManager.INSTANCE.localized(app).getString(resId, args);
+    }
+
 
     private static final int LOAD_JAR_MAX_RETRY = 1;
 
@@ -245,7 +254,7 @@ final class SpiderLoader {
                             if (success) {
                                 callback.success();
                             } else {
-                                callback.error("JAR加载失败");
+                                callback.error(str(R.string.toast_jar_load_failed));
                             }
                         }
                     });
@@ -254,7 +263,7 @@ final class SpiderLoader {
                 if (jarLoader.load(cache.getAbsolutePath())) {
                     callback.success();
                 } else {
-                    callback.error("JAR加载失败");
+                    callback.error(str(R.string.toast_jar_load_failed));
                 }
                 return;
             }
@@ -308,7 +317,7 @@ final class SpiderLoader {
                             } else {
                                 LOG.e("echo---jar Loader returned false");
                                 if (retryLoad("loader_false")) return;
-                                callback.error("JAR加载失败");
+                                callback.error(str(R.string.toast_jar_load_failed));
                             }
                         }
                     });
@@ -325,14 +334,14 @@ final class SpiderLoader {
                                 callback.success();
                             } else {
                                 if (retryLoad("request_error")) return;
-                                callback.error("网络错误");
+                                callback.error(str(R.string.toast_network_error));
                             }
                         }
                     });
                     return;
                 }
                 if (retryLoad("request_error")) return;
-                callback.error("网络错误");
+                callback.error(str(R.string.toast_network_error));
             }
         });
     }

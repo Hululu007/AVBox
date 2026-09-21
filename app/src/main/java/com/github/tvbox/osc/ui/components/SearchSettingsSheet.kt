@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -77,18 +78,18 @@ fun SearchSettingsSheet(onDismiss: () -> Unit) {
 
     AVBoxBottomSheet(
         onDismissRequest = onDismiss,
-        title = "搜索设置",
+        title = stringResource(R.string.search_settings),
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
         headerContent = {
             CapsuleSegmentedButton(
                 options = listOf(
                     SegmentOption(
-                        label = "横向展示",
+                        label = stringResource(R.string.search_layout_horizontal),
                         value = HomeSettings.HomeLayout.Horizontal,
                         iconPainter = painterResource(R.drawable.ic_layout_horizontal),
                     ),
                     SegmentOption(
-                        label = "竖向展示",
+                        label = stringResource(R.string.search_layout_vertical),
                         value = HomeSettings.HomeLayout.Vertical,
                         iconPainter = painterResource(R.drawable.ic_layout_vertical),
                     ),
@@ -110,7 +111,7 @@ fun SearchSettingsSheet(onDismiss: () -> Unit) {
                     color = MaterialTheme.colorScheme.surfaceBright,
                 ) {
                     SettingsSwitchRow(
-                        title = "精准搜索",
+                        title = stringResource(R.string.search_exact),
                         checked = exactMatch,
                         onCheckedChange = {
                             exactMatch = it
@@ -125,26 +126,26 @@ fun SearchSettingsSheet(onDismiss: () -> Unit) {
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "搜索站点",
+                        text = stringResource(R.string.search_sites),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
                         text = if (selected.isEmpty()) {
-                            "未选择站点，将搜不到结果"
+                            stringResource(R.string.search_sites_none_hint)
                         } else {
-                            "已选 ${selected.size}/${allKeys.size}，全选即搜索全部站点"
+                            stringResource(R.string.search_sites_selected_hint, selected.size, allKeys.size)
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                TextButton(onClick = { applySelection(allKeys) }) { Text("全选") }
-                TextButton(onClick = { applySelection(allKeys - selected) }) { Text("反选") }
+                TextButton(onClick = { applySelection(allKeys) }) { Text(stringResource(R.string.common_select_all)) }
+                TextButton(onClick = { applySelection(allKeys - selected) }) { Text(stringResource(R.string.common_invert_selection)) }
             }
             if (sources.isEmpty()) {
                 Text(
-                    text = "暂无可用站点",
+                    text = stringResource(R.string.search_sites_empty),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 12.dp),

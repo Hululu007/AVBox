@@ -12,6 +12,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.tvbox.osc.R
@@ -27,6 +28,10 @@ import com.github.tvbox.osc.util.MusicSettings
 import com.github.tvbox.osc.util.PlayerHelper
 import xyz.doikki.videoplayer.player.VideoView
 
+// KV 持久化值(ijk_codec/exo_decode),不能翻;显示走 player_decode_* 资源
+private const val DecodeHard = "硬解码" // i18n: keep
+private const val DecodeSoft = "软解码" // i18n: keep
+
 @Composable
 fun PlaySettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = viewModel()) {
     val state by vm.state
@@ -35,13 +40,13 @@ fun PlaySettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = viewM
     AppTopBarScaffold(
         titleContent = {
             Text(
-                text = "播放设置",
+                text = stringResource(R.string.settings_play),
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onSurface,
             )
         },
         navigationIcon = {
-            TopBarActionBox(R.drawable.ic_arrow_left, "返回", onClick = onNavigateBack)
+            TopBarActionBox(R.drawable.ic_arrow_left, stringResource(R.string.common_back), onClick = onNavigateBack)
         },
     ) { topPad, _ ->
         Column(
@@ -57,7 +62,7 @@ fun PlaySettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = viewM
                 SettingsCard(SettingsCardPosition.FIRST) {
                     val playerTypes = PlayerHelper.getExistPlayerTypes().sortedDescending()
                     SettingsOptionMenuRow(
-                        title = "播放内核",
+                        title = stringResource(R.string.settings_play_kernel),
                         valueText = PlayerHelper.getPlayerName(state.playType),
                         options = playerTypes.map { PlayerHelper.getPlayerName(it) },
                         selectedIndex = playerTypes.indexOf(state.playType).coerceAtLeast(0),
@@ -66,7 +71,7 @@ fun PlaySettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = viewM
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {
                     SettingsOptionMenuRow(
-                        title = "画面渲染",
+                        title = stringResource(R.string.settings_play_render),
                         valueText = PlayerHelper.getRenderName(state.playRender),
                         options = listOf("SurfaceView", "TextureView"),
                         selectedIndex = 1 - state.playRender,
@@ -79,15 +84,15 @@ fun PlaySettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = viewM
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {
                     val scales = listOf(
-                        VideoView.SCREEN_SCALE_DEFAULT to "默认",
+                        VideoView.SCREEN_SCALE_DEFAULT to stringResource(R.string.common_default),
                         VideoView.SCREEN_SCALE_16_9 to "16:9",
                         VideoView.SCREEN_SCALE_4_3 to "4:3",
-                        VideoView.SCREEN_SCALE_MATCH_PARENT to "填充",
-                        VideoView.SCREEN_SCALE_ORIGINAL to "原始",
-                        VideoView.SCREEN_SCALE_CENTER_CROP to "裁剪",
+                        VideoView.SCREEN_SCALE_MATCH_PARENT to stringResource(R.string.player_scale_fill),
+                        VideoView.SCREEN_SCALE_ORIGINAL to stringResource(R.string.player_scale_origin),
+                        VideoView.SCREEN_SCALE_CENTER_CROP to stringResource(R.string.player_scale_crop),
                     )
                     SettingsOptionMenuRow(
-                        title = "画面缩放",
+                        title = stringResource(R.string.settings_play_scale),
                         valueText = PlayerHelper.getScaleName(state.playScale),
                         options = scales.map { it.second },
                         selectedIndex = scales.indexOfFirst { it.first == state.playScale },
@@ -100,16 +105,24 @@ fun PlaySettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = viewM
                     val isIjkKernel = state.playType == 1
                     val isExoKernel = state.playType == 2
                     val codec = if (isIjkKernel) state.ijkCodec else state.exoDecode
+                    val decodeLabels = listOf(
+                        stringResource(R.string.player_decode_hard),
+                        stringResource(R.string.player_decode_soft),
+                    )
                     SettingsOptionMenuRow(
-                        title = "解码方式",
-                        valueText = codec,
+                        title = stringResource(R.string.settings_play_decode),
+                        valueText = when (codec) {
+                            DecodeSoft -> decodeLabels[1]
+                            DecodeHard -> decodeLabels[0]
+                            else -> codec
+                        },
                         enabled = isIjkKernel || isExoKernel,
-                        options = listOf("硬解码", "软解码"),
-                        selectedIndex = if (codec == "软解码") 1 else 0,
+                        options = decodeLabels,
+                        selectedIndex = if (codec == DecodeSoft) 1 else 0,
                         onSelect = { idx ->
                             vm.put(
                                 if (isIjkKernel) HawkConfig.IJK_CODEC else HawkConfig.EXO_DECODE,
-                                if (idx == 1) "软解码" else "硬解码",
+                                if (idx == 1) DecodeSoft else DecodeHard,
                             )
                         },
                     )
@@ -121,14 +134,14 @@ fun PlaySettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = viewM
             SettingsGroup(title = null) {
                 SettingsCard(SettingsCardPosition.FIRST) {
                     SettingsSwitchRow(
-                        title = "IJK 缓存播放",
+                        title = stringResource(R.string.settings_ijk_cache_play),
                         checked = state.ijkCachePlay,
                         onCheckedChange = { vm.put(HawkConfig.IJK_CACHE_PLAY, it) },
                     )
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {
                     SettingsSwitchRow(
-                        title = "隧道模式",
+                        title = stringResource(R.string.settings_play_tunnel),
                         checked = state.playTunnel,
                         onCheckedChange = { checked ->
                             if (checked && state.playRender != 1) vm.put(HawkConfig.PLAY_RENDER, 1)
@@ -138,15 +151,15 @@ fun PlaySettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = viewM
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {
                     SettingsSwitchRow(
-                        title = "AAC 优先",
+                        title = stringResource(R.string.settings_play_prefer_aac),
                         checked = state.preferAac,
                         onCheckedChange = { vm.put(HawkConfig.PLAY_PREFER_AAC, it) },
                     )
                 }
                 SettingsCard(SettingsCardPosition.LAST) {
                     SettingsSwitchRow(
-                        title = "音乐播放页",
-                        subtitle = "识别为纯音频时自动打开",
+                        title = stringResource(R.string.settings_music_page),
+                        subtitle = stringResource(R.string.settings_music_page_subtitle),
                         checked = state.musicPlayerPage,
                         onCheckedChange = {
                             MusicSettings.setAutoOpenPage(it)

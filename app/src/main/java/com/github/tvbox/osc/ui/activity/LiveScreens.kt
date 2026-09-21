@@ -61,6 +61,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -69,6 +70,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.github.tvbox.osc.R
 import com.github.tvbox.osc.bean.LiveChannelGroup
 import com.github.tvbox.osc.bean.LiveChannelItem
 import com.github.tvbox.osc.ui.components.AVBoxBottomSheet
@@ -105,10 +107,10 @@ internal fun LiveScreen(activity: LivePlayActivity) {
             )
 
             PageState.EMPTY -> LoadStateBox(
-                state = LoadState.Error("暂无直播频道,请检查直播配置"),
+                state = LoadState.Error(stringResource(R.string.live_empty_channels)),
                 emptyText = "",
-                errorText = "暂无直播频道,请检查直播配置",
-                retryText = "重试",
+                errorText = stringResource(R.string.live_empty_channels),
+                retryText = stringResource(R.string.common_retry),
                 modifier = Modifier.fillMaxSize(),
                 onRetry = { activity.loadLiveConfigOnEnter() },
             )
@@ -134,12 +136,12 @@ private fun LivePasswordDialog(
     var password by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("请输入密码") },
+        title = { Text(stringResource(R.string.live_password_title)) },
         text = {
             OutlinedTextField(
                 value = password,
                 onValueChange = { password = it },
-                placeholder = { Text("频道分组密码") },
+                placeholder = { Text(stringResource(R.string.live_password_hint)) },
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(
@@ -155,10 +157,10 @@ private fun LivePasswordDialog(
             TextButton(
                 enabled = password.isNotBlank(),
                 onClick = { onConfirm(password.trim()) },
-            ) { Text("确定") }
+            ) { Text(stringResource(R.string.common_confirm)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
         },
     )
 }
@@ -259,7 +261,7 @@ private fun PlayerArea(activity: LivePlayActivity, modifier: Modifier) {
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "退出全屏",
+                    contentDescription = stringResource(R.string.live_exit_fullscreen),
                     tint = Color.White,
                 )
             }
@@ -272,11 +274,25 @@ private fun PlayerArea(activity: LivePlayActivity, modifier: Modifier) {
 private fun PlayerCornerButtons(activity: LivePlayActivity, modifier: Modifier) {
     Row(modifier = modifier.padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         PlayerCornerButton(
-            icon = { Icon(Icons.Filled.Event, contentDescription = "节目单", tint = Color.White, modifier = Modifier.size(20.dp)) },
+            icon = {
+                Icon(
+                    Icons.Filled.Event,
+                    contentDescription = stringResource(R.string.live_epg),
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp),
+                )
+            },
             onClick = { activity.epgSheetVisible = true },
         )
         PlayerCornerButton(
-            icon = { Icon(Icons.Filled.Settings, contentDescription = "直播设置", tint = Color.White, modifier = Modifier.size(20.dp)) },
+            icon = {
+                Icon(
+                    Icons.Filled.Settings,
+                    contentDescription = stringResource(R.string.live_settings),
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp),
+                )
+            },
             onClick = { activity.openSettingsSheet() },
         )
     }
@@ -304,7 +320,7 @@ private fun TimeshiftBar(activity: LivePlayActivity, modifier: Modifier) {
         IconButton(onClick = { activity.onTimeshiftTogglePlay() }) {
             Icon(
                 imageVector = if (activity.playState == VideoView.STATE_PAUSED) Icons.Filled.PlayArrow else Icons.Filled.Pause,
-                contentDescription = "播放/暂停",
+                contentDescription = stringResource(R.string.player_play_pause),
                 tint = Color.White,
             )
         }
@@ -349,9 +365,9 @@ private fun ChannelInfoSection(activity: LivePlayActivity) {
                 modifier = Modifier.weight(1f),
             )
             if (activity.isBackState) {
-                Text(text = "回看中", fontSize = 12.sp, color = MaterialTheme.colorScheme.tertiary)
+                Text(text = stringResource(R.string.live_replaying), fontSize = 12.sp, color = MaterialTheme.colorScheme.tertiary)
             } else {
-                Text(text = "直播中", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                Text(text = stringResource(R.string.live_on_air), fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
             }
             if (info.sourceText.isNotEmpty()) {
                 Spacer(modifier = Modifier.width(8.dp))
@@ -445,7 +461,7 @@ private fun GroupHeaderRow(activity: LivePlayActivity, group: LiveChannelGroup) 
         if (locked) {
             Icon(
                 imageVector = Icons.Filled.Lock,
-                contentDescription = "需密码",
+                contentDescription = stringResource(R.string.live_need_password),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(16.dp),
             )
@@ -503,7 +519,11 @@ private fun EpgSheet(activity: LivePlayActivity) {
     val channelNameStr = activity.channelName?.channelName ?: ""
     AVBoxBottomSheet(
         onDismissRequest = { activity.epgSheetVisible = false },
-        title = if (channelNameStr.isEmpty()) "节目单" else "节目单 · $channelNameStr",
+        title = if (channelNameStr.isEmpty()) {
+            stringResource(R.string.live_epg)
+        } else {
+            stringResource(R.string.live_epg_of, channelNameStr)
+        },
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
         isScrollable = false,
     ) {
@@ -511,7 +531,7 @@ private fun EpgSheet(activity: LivePlayActivity) {
         val epgList = activity.epgdata
         if (epgList.isEmpty()) {
             Text(
-                text = "暂无节目单",
+                text = stringResource(R.string.live_epg_empty),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
@@ -560,8 +580,16 @@ private fun EpgSheet(activity: LivePlayActivity) {
                         modifier = Modifier.weight(1f),
                     )
                     when {
-                        selected -> Text(text = "回看中", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                        isNow -> Text(text = "正在播出", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                        selected -> Text(
+                            text = stringResource(R.string.live_replaying),
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        isNow -> Text(
+                            text = stringResource(R.string.live_now_playing),
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
                     }
                 }
             }
@@ -576,7 +604,7 @@ private fun SettingsSheet(activity: LivePlayActivity) {
     val groups = activity.visibleSettingGroups()
     AVBoxBottomSheet(
         onDismissRequest = { activity.settingsSheetVisible = false },
-        title = "直播设置",
+        title = stringResource(R.string.live_settings),
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
         isScrollable = false,
     ) {
@@ -591,7 +619,7 @@ private fun SettingsSheet(activity: LivePlayActivity) {
                     SettingsGroup(
                         // 仓列表不允许单独删除,故"长按可删除"只在配置历史模式显示
                         title = if (group.groupIndex == 6 && !activity.isLiveApiLineMode()) {
-                            group.groupName + "（长按可删除）"
+                            stringResource(R.string.live_group_long_press_delete, group.groupName.orEmpty())
                         } else {
                             group.groupName
                         },

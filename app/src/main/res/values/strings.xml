@@ -1,3 +1,496 @@
 <resources>
     <string name="app_name">AVBox</string>
+
+    <!-- 设置:语言 -->
+    <string name="settings_language">语言</string>
+    <string name="settings_language_subtitle">切换应用的界面语言</string>
+    <string name="settings_language_system">跟随系统</string>
+    <string name="settings_language_zh_hans">简体中文</string>
+    <string name="settings_language_en">English</string>
+    <string name="settings_language_zh_hant_tw">繁體(台灣)</string>
+    <string name="settings_language_zh_hant_hk">繁體(香港)</string>
+    <string name="settings_language_restart_message">重启后生效</string>
+
+    <!-- 播放器:通知栏 -->
+    <string name="player_notification_previous">上一个</string>
+    <string name="player_notification_next">下一个</string>
+    <string name="player_notification_channel_name">播放控制</string>
+    <string name="player_notification_channel_desc">后台播放控制</string>
+
+    <!-- 通用(续) -->
+    <string name="common_search">搜索</string>
+    <string name="common_retry">重试</string>
+
+    <!-- 直播 -->
+    <string name="live_empty_channels">暂无直播频道,请检查直播配置</string>
+    <string name="live_password_title">请输入密码</string>
+    <string name="live_password_hint">频道分组密码</string>
+    <string name="live_exit_fullscreen">退出全屏</string>
+    <string name="live_epg">节目单</string>
+    <string name="live_epg_of">节目单 · %1$s</string>
+    <string name="live_epg_empty">暂无节目单</string>
+    <string name="live_settings">直播设置</string>
+    <string name="live_need_password">需密码</string>
+    <string name="live_replaying">回看中</string>
+    <string name="live_on_air">直播中</string>
+    <string name="live_now_playing">正在播出</string>
+    <string name="live_group_long_press_delete">%1$s（长按可删除）</string>
+    <string name="player_play_pause">播放/暂停</string>
+
+    <!-- 字幕面板 -->
+    <string name="subtitle_builtin">选择内置字幕</string>
+    <string name="subtitle_local">选择本地字幕</string>
+    <string name="subtitle_online">在线搜索字幕</string>
+    <string name="subtitle_size_minus">字号减小</string>
+    <string name="subtitle_size_plus">字号增大</string>
+    <string name="subtitle_move_up">字幕上移</string>
+    <string name="subtitle_move_down">字幕下移</string>
+    <string name="subtitle_style_one">字幕样式一</string>
+    <string name="subtitle_style_two">字幕样式二</string>
+    <string name="subtitle_delay_exo_hint">字幕延时对内置字幕有效</string>
+    <string name="subtitle_delay_hint">字幕延时仅对外挂字幕有效</string>
+    <string name="subtitle_advance">字幕提前</string>
+    <string name="subtitle_delay">字幕推迟</string>
+    <string name="subtitle_search_hint">请输入字幕名称</string>
+    <string name="toast_subtitle_style_ok">设置样式成功</string>
+    <string name="toast_subtitle_not_found">未查询到匹配字幕</string>
+
+    <!-- 播放容器/播放器提示 -->
+    <string name="player_error_sniff">嗅探错误</string>
+    <string name="player_error_play">视频播放出错</string>
+    <string name="player_no_audio_track">没有音轨</string>
+    <string name="player_switch_audio_track">切换音轨</string>
+    <string name="player_no_video_track">没有视轨</string>
+    <string name="player_switch_video_track">切换视轨</string>
+    <string name="player_no_internal_subtitle">没有内置字幕</string>
+    <string name="player_switch_internal_subtitle">切换内置字幕</string>
+    <string name="player_next_episode_ready">下一集已就绪</string>
+    <string name="player_last_episode">已经是最后一集了!</string>
+    <string name="player_first_episode">已经是第一集了!</string>
+    <string name="toast_no_cast_url">暂无可投屏播放地址</string>
+    <string name="toast_subtitle_read_failed">读取字幕文件失败</string>
+
+    <!-- 弹幕面板 -->
+    <string name="danmu_settings">弹幕设置</string>
+    <string name="danmu_online">在线弹幕</string>
+    <string name="danmu_color">弹幕颜色</string>
+    <string name="danmu_color_random">随机</string>
+    <string name="danmu_speed">弹幕速度</string>
+    <string name="danmu_speed_very_slow">超慢</string>
+    <string name="danmu_speed_slow">慢</string>
+    <string name="danmu_speed_normal">适中</string>
+    <string name="danmu_speed_fast">快</string>
+    <string name="danmu_size">弹幕大小</string>
+    <string name="danmu_size_value">%1$d 档</string>
+    <string name="danmu_lines">弹幕行数</string>
+    <string name="danmu_lines_value">%1$d 行</string>
+    <string name="danmu_alpha">弹幕透明</string>
+    <string name="danmu_search_hint">请输入弹幕名称</string>
+    <string name="toast_input_empty">输入内容不能为空</string>
+    <string name="toast_danmu_not_found">未查询到匹配弹幕</string>
+
+    <!-- 首页 -->
+    <string name="home_subscription_source">订阅源</string>
+    <string name="home_no_source">尚未配置订阅接口</string>
+    <string name="home_load_timeout">首页加载超时，请检查网络后重试</string>
+    <string name="home_recommend">推荐</string>
+
+    <!-- 搜索 -->
+    <string name="search_settings">搜索设置</string>
+    <string name="search_no_site">未选择搜索站点，请到首页「搜索设置」里勾选</string>
+    <string name="search_history">搜索历史</string>
+    <string name="search_history_clear">清空搜索历史</string>
+    <string name="search_history_empty">暂无搜索历史</string>
+    <string name="search_hot_rank">热搜榜</string>
+    <string name="search_suggest">搜索建议</string>
+    <string name="search_hot_empty">暂无热搜数据</string>
+    <string name="search_no_exact_result">未找到与「%1$s」完全一致的结果</string>
+    <string name="search_no_result">「%1$s」暂无搜索结果</string>
+
+    <!-- 投屏 -->
+    <string name="cast_title">投屏到设备</string>
+    <string name="cast_hint">确认电视/盒子已安装AVBox或已打开DLNA投屏\n电视/盒子与手机连接在同一Wi-Fi下</string>
+    <string name="cast_permission_hint">需要允许「附近的设备」权限才能搜索投屏设备\n开启后点「刷新」重试</string>
+    <string name="cast_searching">正在搜索设备...</string>
+    <string name="cast_no_device">未找到可用设备</string>
+    <string name="toast_cast_tvbox_failed">TVBox投屏失败</string>
+    <string name="toast_cast_success">投屏成功</string>
+    <string name="toast_cast_failed">投屏失败</string>
+
+    <!-- 通用 -->
+    <string name="common_back">返回</string>
+    <string name="common_not_set">未设置</string>
+    <string name="common_vod">点播</string>
+    <string name="common_live">直播</string>
+    <string name="common_off">关闭</string>
+    <string name="common_confirm">确定</string>
+    <string name="common_cancel">取消</string>
+    <string name="common_save">保存</string>
+    <string name="common_edit">编辑</string>
+    <string name="common_delete">删除</string>
+    <string name="common_default">默认</string>
+    <string name="common_unnamed">未命名</string>
+    <string name="common_all">全部</string>
+    <string name="common_cast">投屏</string>
+    <string name="common_refresh">刷新</string>
+    <string name="common_empty_content">暂无内容</string>
+    <string name="common_load_failed_network">加载失败，请检查网络</string>
+    <string name="common_play">播放</string>
+    <string name="common_pause">暂停</string>
+    <string name="common_select_all">全选</string>
+    <string name="common_invert_selection">反选</string>
+
+    <!-- 播放器底栏 -->
+    <string name="player_menu_subtitle">字幕</string>
+    <string name="player_menu_audio_track">音轨</string>
+    <string name="player_menu_video_track">视轨</string>
+    <string name="player_menu_danmu">弹幕</string>
+    <string name="player_menu_search_danmu">搜弹幕</string>
+    <string name="player_menu_parse">解析</string>
+
+    <!-- 音乐播放页 -->
+    <string name="music_queue">播放队列</string>
+    <string name="music_song_index">第 %1$d 首</string>
+    <string name="tab_home">首页</string>
+    <string name="common_collect">收藏</string>
+    <string name="config_load_failed">配置加载失败</string>
+    <string name="toast_source_auto_disabled">该源无法使用，会导致崩溃，已自动停用（可在配置管理中重新启用）</string>
+    <string name="toast_press_again_to_exit">再按一次返回键退出</string>
+
+    <!-- 详情页:换源与收藏 -->
+    <string name="detail_switch_site">站点切换至%1$s</string>
+    <string name="detail_switching_source">正在切换片源</string>
+    <string name="detail_switch_failed">换源失败，继续原片源</string>
+    <string name="detail_switch_failed_reason">换源失败：%1$s，继续原片源</string>
+    <string name="toast_removed_from_collect">已移除收藏夹</string>
+    <string name="toast_added_to_collect">已加入收藏夹</string>
+
+    <!-- 设置:预载设置 -->
+    <string name="preload_next_episode">下一集预载</string>
+    <string name="preload_next_episode_subtitle">仅EXO播放器和部分源支持</string>
+    <string name="preload_duration">预载时长</string>
+    <string name="preload_play_cache">边播边缓存</string>
+    <string name="preload_play_cache_subtitle">开启后可能导致EXO播放器无法使用</string>
+    <string name="preload_cache_size">缓存容量</string>
+
+    <!-- 搜索页 -->
+    <string name="search_field_hint">搜索片名、演员</string>
+    <string name="search_result_layout">结果展示方式</string>
+    <string name="search_site_empty">该站点暂无结果</string>
+    <string name="common_clear">清空</string>
+    <string name="common_loading_more">加载中…</string>
+    <string name="common_no_more">没有更多了</string>
+    <string name="common_filter">筛选</string>
+    <string name="vodcard_search_similar">搜索相似内容</string>
+
+    <!-- 收藏页 -->
+    <string name="collect_clear">清空收藏</string>
+    <string name="collect_empty">暂无收藏</string>
+    <string name="collect_clear_message">将删除全部收藏，此操作不可恢复</string>
+    <string name="collect_uncollect_message">取消收藏「%1$s」？</string>
+
+    <!-- 主题:取色 -->
+    <string name="theme_brightness_value">亮度 %1$d%%</string>
+    <string name="theme_initial_color">初始颜色</string>
+    <string name="theme_current_color">当前颜色</string>
+    <string name="music_episodes">音乐选集</string>
+    <string name="music_previous">上一首</string>
+    <string name="music_next">下一首</string>
+
+    <!-- 搜索设置面板 -->
+    <string name="search_layout_horizontal">横向展示</string>
+    <string name="search_layout_vertical">竖向展示</string>
+    <string name="search_exact">精准搜索</string>
+    <string name="search_sites">搜索站点</string>
+    <string name="search_sites_none_hint">未选择站点，将搜不到结果</string>
+    <string name="search_sites_selected_hint">已选 %1$d/%2$d，全选即搜索全部站点</string>
+    <string name="search_sites_empty">暂无可用站点</string>
+
+    <!-- 直播:手势与提示 -->
+    <string name="live_brightness">亮度</string>
+    <string name="live_volume">音量</string>
+    <string name="live_gesture_hint">%1$s %2$d%%</string>
+    <string name="live_please_select_channel">请先选择频道</string>
+    <string name="live_wrong_password">密码错误</string>
+    <string name="live_repo_entry_not_deletable">仓列表来自仓地址,不能单独删除</string>
+    <string name="live_active_config_not_deletable">当前使用中的配置不能删除</string>
+    <string name="toast_removed_from_history">已从历史中删除</string>
+    <string name="live_line_index">线路%1$d/%2$d</string>
+    <string name="live_epg_hot">精彩节目</string>
+    <string name="live_epg_hot_no_info">精彩节目-暂无节目预告信息</string>
+    <string name="live_epg_no_info">暂无节目预告信息</string>
+
+    <!-- 对话框 -->
+    <string name="dialog_api_url_hint">请输入 API 地址</string>
+    <string name="dialog_source_disabled_title">该源已被自动停用</string>
+    <string name="dialog_source_disabled_message">「%1$s」此前导致应用崩溃，已被自动停用。\n\n若该源已经修好，可以重新启用；否则切换后很可能再次闪退。</string>
+    <string name="dialog_source_disabled_confirm">仍要启用</string>
+
+    <!-- 提示 -->
+    <string name="toast_cache_cleared">清理成功</string>
+    <string name="toast_no_app_for_link">未找到可打开链接的应用</string>
+    <string name="toast_live_follow_vod">直播已跟随点播源</string>
+    <string name="toast_source_in_use">正在使用的源不能删除</string>
+
+    <!-- 播放器 -->
+    <string name="player_ijk">IJK播放器</string>
+    <string name="player_exo">EXO播放器</string>
+    <string name="player_mx">MX播放器</string>
+    <string name="player_reex">Reex播放器</string>
+    <string name="player_kodi">Kodi播放器</string>
+    <string name="player_nearby_tvbox">附近TVBox</string>
+    <string name="player_vlc">VLC播放器</string>
+    <string name="player_decode_hard">硬解码</string>
+    <string name="player_decode_soft">软解码</string>
+    <string name="player_scale_fill">填充</string>
+    <string name="player_scale_origin">原始</string>
+    <string name="player_scale_crop">裁剪</string>
+    <string name="player_parse_failed_prefix">解析失败 >>> %1$s</string>
+
+    <!-- 详情页 -->
+    <string name="detail_fullscreen_play">全屏播放</string>
+    <string name="detail_empty_source">暂无片源,可尝试换源或搜索</string>
+    <string name="detail_music_player">进入音乐播放器</string>
+    <string name="detail_uncollect">取消收藏</string>
+    <string name="detail_collect">加入收藏</string>
+    <string name="detail_source">来源：%1$s</string>
+    <string name="detail_collapse">收起</string>
+    <string name="detail_expand">展开</string>
+    <string name="detail_quality">清晰度</string>
+    <string name="detail_line">线路</string>
+    <string name="detail_episodes">选集</string>
+    <string name="detail_episodes_of">%1$s 选集</string>
+    <string name="detail_order_asc">正序</string>
+    <string name="detail_order_desc">倒序</string>
+    <string name="detail_switch_source">换源</string>
+    <string name="detail_finding_source">寻找片源中…</string>
+    <string name="detail_recommend">相关推荐</string>
+
+    <!-- 历史 -->
+    <string name="history_title">历史</string>
+    <string name="history_clear">清空历史</string>
+    <string name="history_empty">暂无观看历史</string>
+    <string name="history_clear_message">将删除全部观看历史记录，此操作不可恢复</string>
+    <string name="history_delete_title">删除记录</string>
+    <string name="history_delete_message">删除「%1$s」的观看记录？</string>
+    <string name="history_last_watched">上次看到%1$s</string>
+    <string name="history_episode_progress">第%1$d集/共%2$d集</string>
+    <string name="history_watched_percent">已看%1$d%%</string>
+
+    <!-- 设置:主题设置 -->
+    <string name="theme_color">主题颜色</string>
+    <string name="theme_liquid_glass">液态玻璃效果</string>
+    <string name="theme_liquid_glass_hint">Android 13 及以上支持液态玻璃</string>
+    <string name="theme_reset">重置</string>
+    <string name="theme_nav_bar">底部导航</string>
+    <string name="theme_app_controls">应用控件</string>
+    <string name="theme_blur">模糊效果</string>
+    <string name="theme_distortion">扭曲效果</string>
+    <string name="theme_custom_color">自定义颜色</string>
+    <string name="theme_custom_theme">自定义主题</string>
+    <string name="theme_mode">主题模式</string>
+    <string name="theme_mode_auto">自动</string>
+    <string name="theme_mode_light">浅色</string>
+    <string name="theme_mode_dark">深色</string>
+    <string name="theme_palette_style">配色风格</string>
+    <string name="theme_preset_palette">预设色卡</string>
+    <string name="theme_seed_red">红色</string>
+    <string name="theme_seed_orange">橙色</string>
+    <string name="theme_seed_yellow">黄色</string>
+    <string name="theme_seed_green">绿色</string>
+    <string name="theme_seed_cyan">青色</string>
+    <string name="theme_seed_blue">蓝色</string>
+    <string name="theme_seed_purple">紫色</string>
+    <string name="theme_seed_pink">粉色</string>
+    <string name="theme_style_tonal_spot">柔和</string>
+    <string name="theme_style_vibrant">鲜艳</string>
+    <string name="theme_style_expressive">表现力</string>
+    <string name="theme_style_neutral">中性</string>
+    <string name="theme_style_monochrome">单色</string>
+    <string name="theme_style_fidelity">保真</string>
+    <string name="theme_style_content">内容</string>
+    <string name="theme_style_rainbow">彩虹</string>
+    <string name="theme_style_fruit_salad">水果沙拉</string>
+
+    <!-- 设置:播放设置 -->
+    <string name="settings_play_kernel">播放内核</string>
+    <string name="settings_play_render">画面渲染</string>
+    <string name="settings_play_scale">画面缩放</string>
+    <string name="settings_play_decode">解码方式</string>
+    <string name="settings_ijk_cache_play">IJK 缓存播放</string>
+    <string name="settings_play_tunnel">隧道模式</string>
+    <string name="settings_play_prefer_aac">AAC 优先</string>
+    <string name="settings_music_page">音乐播放页</string>
+    <string name="settings_music_page_subtitle">识别为纯音频时自动打开</string>
+
+    <!-- 提示:源加载 -->
+    <string name="toast_config_parse_failed">配置解析失败</string>
+    <string name="toast_config_fetch_failed">拉取配置失败\n%1$s</string>
+    <string name="toast_live_config_parse_failed">直播配置解析失败</string>
+    <string name="toast_live_config_fetch_failed">直播配置拉取失败</string>
+    <string name="toast_local_source_unreadable">本地源文件读不到\n请开启「所有文件访问」后重试(或重新导入本地源)</string>
+    <string name="toast_local_source_missing">本地源文件已不存在\n可能已在文件管理器里被删除或改名,请重新导入本地源</string>
+    <string name="source_push_agent">推送</string>
+
+    <!-- 直播:设置面板 -->
+    <string name="live_group_line">线路选择</string>
+    <string name="live_group_scale">画面比例</string>
+    <string name="live_group_decoder">播放解码</string>
+    <string name="live_group_timeout">超时换源</string>
+    <string name="live_group_multi_source">多源切换</string>
+    <string name="live_group_config_switch">配置切换</string>
+    <string name="live_decoder_ijk_hw">ijk硬解</string>
+    <string name="live_decoder_ijk_sw">ijk软解</string>
+    <string name="live_setting_show_time">显示时间</string>
+    <string name="live_setting_show_speed">显示网速</string>
+    <string name="live_setting_reverse">换台反转</string>
+    <string name="live_setting_cross_group">跨选分类</string>
+    <string name="live_source_index_name">源%1$d</string>
+
+    <!-- 配置管理 -->
+    <string name="config_no_source">未配置</string>
+    <string name="config_switched_to">已切换到:%1$s</string>
+    <string name="config_switch_repo">换仓</string>
+    <string name="config_add_subscribe">添加订阅</string>
+    <string name="config_add_live_source">添加直播源</string>
+    <string name="config_edit_subscribe">编辑订阅</string>
+    <string name="config_edit_live_source">编辑直播源</string>
+    <string name="config_empty_subscribe">暂无订阅</string>
+    <string name="config_empty_live_source">暂无直播源</string>
+    <string name="config_no_vod_source">未配置点播源</string>
+    <string name="config_current_vod_source">当前点播源:%1$s</string>
+    <string name="config_live_source_hint">支持配置 JSON / m3u / txt 直播源</string>
+    <string name="config_source_disabled_tag">已禁用</string>
+    <string name="config_pick_local">从本地选择</string>
+    <string name="config_field_name">名字</string>
+    <string name="config_field_url">链接</string>
+    <string name="live_follow_vod_source">跟随点播源</string>
+
+    <!-- 设置 -->
+    <string name="settings_title">设置</string>
+    <string name="settings_config_manage">配置管理</string>
+    <string name="settings_config_manage_subtitle">导入或删除订阅源</string>
+    <string name="settings_theme">主题设置</string>
+    <string name="settings_theme_subtitle">修改应用的配色和效果</string>
+    <string name="settings_play">播放设置</string>
+    <string name="settings_play_subtitle">播放核心和解码方式</string>
+    <string name="settings_preference_subtitle">修改应用的使用偏好</string>
+    <string name="settings_preload">预载设置</string>
+    <string name="settings_preload_subtitle">播放视频时预加载</string>
+    <string name="settings_default_page">默认启动页</string>
+    <string name="settings_default_page_subtitle">首次打开应用的所在位置</string>
+    <string name="settings_history_limit">历史记录上限</string>
+    <string name="settings_history_limit_subtitle">最多保留多少条记录</string>
+    <string name="settings_history_limit_value">%1$d条</string>
+    <string name="settings_clear_cache">清除缓存</string>
+    <string name="settings_clear_cache_subtitle">清理应用的使用缓存</string>
+    <string name="settings_doh_subtitle">安全DNS</string>
+    <string name="settings_about">关于</string>
+    <string name="settings_about_subtitle">查看详细信息</string>
+    <string name="settings_about_version">版本 v%1$s</string>
+    <string name="settings_about_disclaimer">本软件只提供聚合展示功能，所有资源均来自互联网，软件不参与任何内置、制作、上传、储存、下载等内容，也不接受任何捐赠、打赏、付费等谋利行为，软件仅供开源学习参考, 请于安装后24小时内删除。\n\n打包分发请保留出处\nhttps://github.com/CatVodTVOfficial/TVBoxOSC\nhttps://github.com/q215613905/TVBoxOS</string>
+    <string name="settings_github">访问 GitHub 仓库</string>
+    <string name="settings_github_subtitle">访问项目源代码仓库</string>
+    <string name="settings_app_tagline">TVBox手机版</string>
+
+    <!-- 设置:偏好设置 -->
+    <string name="settings_preference_title">偏好设置</string>
+    <string name="settings_history_merge">历史合并</string>
+    <string name="settings_incognito">无痕模式</string>
+    <string name="settings_gesture_disable">禁用手势控制</string>
+    <string name="settings_gesture_disable_subtitle">开启后将禁用手势控制亮度和音量</string>
+    <string name="settings_nav_animation_disable">禁用导航动画</string>
+    <string name="settings_nav_animation_disable_subtitle">开启后将禁用底部导航的侧滑动画</string>
+    <string name="settings_auto_switch_line">自动换线</string>
+    <string name="settings_m3u8_purify">M3U8 净化</string>
+    <string name="settings_danmu_switch">弹幕开关</string>
+    <string name="settings_danmu_api">弹幕 API</string>
+    <string name="settings_long_press_speed">长按倍速</string>
+    <string name="settings_buffer_time">缓冲时间</string>
+    <string name="settings_search_threads">搜索线程</string>
+
+    <!-- 播放链路提示(PlaybackController / ComposeVideoController) -->
+    <string name="common_success">成功</string>
+    <string name="common_failed">失败</string>
+    <string name="player_time_start">片头</string>
+    <string name="player_time_end">片尾</string>
+    <string name="player_decode_hard_short">硬解</string>
+    <string name="player_decode_soft_short">软解</string>
+    <string name="player_brightness_value">亮度%1$d%%</string>
+    <string name="player_volume_value">音量%1$d%%</string>
+    <string name="player_select_player">请选择播放器</string>
+    <string name="player_select_scale">请选择画面尺寸</string>
+    <string name="player_select_speed">请选择播放倍速</string>
+    <string name="player_subtitle_closed">字幕已关闭</string>
+    <string name="player_danmu_opened">弹幕已开启</string>
+    <string name="player_danmu_temp_closed">弹幕已临时关闭</string>
+    <string name="player_switch_line">线路切换至%1$s</string>
+    <string name="player_get_url_timeout">获取播放地址超时</string>
+    <string name="player_play_timeout">播放超时</string>
+    <string name="player_get_info_error">获取播放信息错误</string>
+    <string name="player_getting_info">正在获取播放信息</string>
+    <string name="player_play_url_empty">获取播放地址为空</string>
+    <string name="player_play_error_retry">播放出错，自动重试</string>
+    <string name="player_decode_fallback_tip">硬解失败，已切换软解重试</string>
+    <string name="player_call_external_play">调用外部播放器%1$s进行播放</string>
+    <string name="player_call_external_result">调用外部播放器%1$s%2$s</string>
+
+    <!-- ui 层剩余外置(2026-09-22 续做) -->
+    <string name="player_lock">锁屏</string>
+    <string name="player_rotate_landscape">旋转到横屏</string>
+    <string name="player_rotate_portrait">旋转到竖屏</string>
+    <string name="player_prev_episode">上一集</string>
+    <string name="player_next_episode">下一集</string>
+    <string name="home_hot_recommend">热门推荐</string>
+    <string name="home_load_failed">首页加载失败，请检查网络后重试</string>
+    <string name="home_load_partial_timeout">部分内容加载超时，可下拉刷新重试</string>
+    <string name="detail_rating">评分 %1$s</string>
+    <string name="detail_content_not_ready">内容还没加载好</string>
+    <string name="detail_no_playable_content">暂无可播放的内容</string>
+    <string name="filter_title">筛选 · %1$s</string>
+    <string name="filter_clear">清除</string>
+    <string name="music_default_name">音乐</string>
+    <string name="music_mode_single">单曲循环</string>
+    <string name="music_mode_list">列表循环</string>
+    <string name="music_mode_order">顺序播放</string>
+    <string name="live_source_auto_disabled">该源已被自动停用，可在配置管理中重新启用</string>
+    <string name="toast_file_picker_unavailable">无法打开文件选择器</string>
+    <string name="toast_permission_required">请授予权限</string>
+    <string name="toast_folder_data_missing">目录数据缺失,无法打开</string>
+
+    <!-- 解析/嗅探/下载/弹幕/投屏/本地源(非 UI 层,2026-09-22 续做) -->
+    <string name="player_sniffing_url">正在嗅探播放地址</string>
+    <string name="player_resolving_url">正在解析播放地址</string>
+    <string name="player_parse_error">解析错误</string>
+    <string name="player_parse_from">解析来自:%1$s</string>
+    <string name="player_super_parsing">超级解析中</string>
+    <string name="thunder_error_parse">解析异常</string>
+    <string name="thunder_error_download">下载出错</string>
+    <string name="thunder_error_timeout">解析下载超时</string>
+    <string name="thunder_error_name_too_long">文件名太长</string>
+    <string name="thunder_error_path_too_long">文件路径太长</string>
+    <string name="thunder_error_file_too_small">文件太小</string>
+    <string name="thunder_error_no_space">磁盘空间不足</string>
+    <string name="thunder_error_network_refused">拒绝的网络连接</string>
+    <string name="thunder_error_buffer">缓冲区不足</string>
+    <string name="thunder_error_copyright">版权限制：无权下载</string>
+    <string name="thunder_error_invalid_url">无效链接</string>
+    <string name="danmu_search_api_empty">弹幕搜索接口为空</string>
+    <string name="danmu_url_empty">弹幕地址为空</string>
+    <string name="danmu_content_empty">未获取到弹幕内容</string>
+    <string name="danmu_search_failed">弹幕搜索失败</string>
+    <string name="toast_jar_load_failed">JAR加载失败</string>
+    <string name="toast_network_error">网络错误</string>
+    <string name="toast_ads_removed">已移除视频广告 %1$d 条</string>
+    <string name="cast_device_offline">设备离线</string>
+    <string name="toast_local_config_read_failed">读取本地配置失败</string>
+    <string name="toast_local_direct_grant_hint">本地源要直引原目录,得给一次目录授权:请选择该配置所在的文件夹</string>
+    <string name="toast_local_missing_files_hint">还有 %1$d 个同目录文件没搬过来,请选择该配置所在的文件夹</string>
+    <string name="toast_local_missing_files_all_files">还有 %1$d 个同目录文件没搬过来,请选择该配置所在的文件夹(开启「所有文件访问」后可直接引用原目录,不必搬文件)</string>
+    <string name="toast_local_tree_denied">没拿到该配置所在文件夹的授权,已取消导入(可再点一次重试)</string>
+    <string name="toast_local_grant_not_persisted">目录授权没能长期保留,重启后该源可能失效(建议开启「所有文件访问」)</string>
+    <string name="toast_local_refs_missing">还有 %1$d 个同目录引用的文件没搬过来,该源可能不可用(可重新导入)</string>
+    <string name="player_channel_mono">单声道</string>
+    <string name="player_channel_stereo">立体声</string>
+    <string name="player_channel_count">%1$d 声道</string>
 </resources>

@@ -25,12 +25,15 @@ import android.webkit.WebViewClient;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.github.catvod.crawler.Spider;
+import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.api.ApiConfig;
+import com.github.tvbox.osc.base.App;
 import com.github.tvbox.osc.bean.ParseBean;
 import com.github.tvbox.osc.bean.SourceBean;
 import com.github.tvbox.osc.util.AdBlocker;
 import com.github.tvbox.osc.util.DefaultConfig;
 import com.github.tvbox.osc.util.LOG;
+import com.github.tvbox.osc.util.LanguageManager;
 import com.github.tvbox.osc.util.VideoParseRuler;
 import com.github.tvbox.osc.util.parser.SuperParse;
 import com.lzy.okgo.OkGo;
@@ -80,12 +83,18 @@ final class PlayUrlResolver {
 
     private final Host host;
 
+    /** 资源文案:Application 的 base 只在进程启动时挂一次,切语言后直接用 app.getString 会停在旧语言 */
+    private static String str(int resId, Object... args) {
+        App app = App.getInstance();
+        return app == null ? "" : LanguageManager.INSTANCE.localized(app).getString(resId, args);
+    }
+
     private final Handler parseHandler = new Handler(Looper.getMainLooper(), new Handler.Callback() {
         @Override
         public boolean handleMessage(@NonNull Message msg) {
             if (msg.what == MSG_PARSE_TIMEOUT) {
                 stopParse();
-                if (host.view() != null) host.view().showErrorWithRetry("嗅探错误", false);
+                if (host.view() != null) host.view().showErrorWithRetry(str(R.string.player_error_sniff), false);
                 return true;
             }
             return false;
@@ -263,7 +272,7 @@ final class PlayUrlResolver {
         if (pb.getType() == 4) {
             parseMix(pb, true, gen);
         } else if (pb.getType() == 0) {
-            if (host.view() != null) host.view().showTip("正在嗅探播放地址", true, false);
+            if (host.view() != null) host.view().showTip(str(R.string.player_sniffing_url), true, false);
             parseHandler.removeMessages(MSG_PARSE_TIMEOUT);
             parseHandler.sendEmptyMessageDelayed(MSG_PARSE_TIMEOUT, PARSE_TIMEOUT_MS);
             if (pb.getExt() != null) {
@@ -287,7 +296,7 @@ final class PlayUrlResolver {
             }
             loadWebView(pb.getUrl() + webUrl);
         } else if (pb.getType() == 1) { // json 解析
-            if (host.view() != null) host.view().showTip("正在解析播放地址", true, false);
+            if (host.view() != null) host.view().showTip(str(R.string.player_resolving_url), true, false);
             HttpHeaders reqHeaders = new HttpHeaders();
             try {
                 JSONObject jsonObject = new JSONObject(pb.getExt());
@@ -309,7 +318,7 @@ final class PlayUrlResolver {
                             if (response.body() != null) {
                                 return response.body().string();
                             } else {
-                                throw new IllegalStateException("网络请求错误");
+                                throw new IllegalStateException("网络请求错误"); // i18n: keep(异常消息,只进日志)
                             }
                         }
 
@@ -333,18 +342,18 @@ final class PlayUrlResolver {
                                 }
                             } catch (Throwable e) {
                                 e.printStackTrace();
-                                errorWithRetry("解析错误", false);
+                                errorWithRetry(str(R.string.player_parse_error), false);
                             }
                         }
 
                         @Override
                         public void onError(Response<String> response) {
                             super.onError(response);
-                            errorWithRetry("解析错误", false);
+                            errorWithRetry(str(R.string.player_parse_error), false);
                         }
                     });
         } else if (pb.getType() == 2) { // json 扩展
-            if (host.view() != null) host.view().showTip("正在解析播放地址", true, false);
+            if (host.view() != null) host.view().showTip(str(R.string.player_resolving_url), true, false);
             parseThreadPool = Executors.newSingleThreadExecutor();
             LinkedHashMap<String, String> jxs = new LinkedHashMap<>();
             for (ParseBean p : ApiConfig.get().getParseBeanList()) {
@@ -359,12 +368,12 @@ final class PlayUrlResolver {
                     if (!isParseResultCurrent(gen)) return;
                     JSONObject rs = ApiConfig.get().jsonExt(pb.getUrl(), jxs, webUrl);
                     if (rs == null || !rs.has("url") || rs.optString("url").isEmpty()) {
-                        if (isParseResultCurrent(gen) && host.view() != null) host.view().showTip("解析错误", false, true);
+                        if (isParseResultCurrent(gen) && host.view() != null) host.view().showTip(str(R.string.player_parse_error), false, true);
                     } else {
                         HashMap<String, String> headers = PlaybackController.extractHeaders(rs);
                         if (rs.has("jxFrom") && host.view() != null) {
                             final String jxFrom = rs.optString("jxFrom");
-                            host.view().runOnUi(() -> host.view().toast("解析来自:" + jxFrom));
+                            host.view().runOnUi(() -> host.view().toast(str(R.string.player_parse_from, jxFrom)));
                         }
                         boolean parseWV = rs.optInt("parse", 0) == 1;
                         if (parseWV) {
@@ -387,7 +396,7 @@ final class PlayUrlResolver {
 
     /** 聚合解析(type 3/4):超级解析 = 嗅探与 json 并发;普通聚合 = jsonExtMix */
     private void parseMix(ParseBean pb, boolean isSuper, final int gen) {
-        if (host.view() != null) host.view().showTip("正在解析播放地址", true, false);
+        if (host.view() != null) host.view().showTip(str(R.string.player_resolving_url), true, false);
         parseThreadPool = Executors.newSingleThreadExecutor();
         LinkedHashMap<String, HashMap<String, String>> jxs = new LinkedHashMap<>();
         LinkedHashMap<String, String> json_jxs = new LinkedHashMap<>();
@@ -417,13 +426,13 @@ final class PlayUrlResolver {
                 if (isSuper) {
                     JSONObject rs = SuperParse.parse(jxs, parseFlag + "123", webUrl, parseTargets);
                     if (!rs.has("url") || rs.optString("url").isEmpty()) {
-                        if (isParseResultCurrent(gen) && host.view() != null) host.view().showTip("解析错误", false, true);
+                        if (isParseResultCurrent(gen) && host.view() != null) host.view().showTip(str(R.string.player_parse_error), false, true);
                     } else {
                         if (rs.has("parse") && rs.optInt("parse", 0) == 1) {
                             if (rs.has("ua")) {
                                 host.setWebUserAgent(rs.optString("ua").trim());
                             }
-                            if (host.view() != null) host.view().showTip("超级解析中", true, false);
+                            if (host.view() != null) host.view().showTip(str(R.string.player_super_parsing), true, false);
                             final String mixParseUrl = DefaultConfig.checkReplaceProxy(rs.optString("url", ""));
                             if (host.view() != null) {
                                 host.view().runOnUi(() -> {
@@ -449,7 +458,7 @@ final class PlayUrlResolver {
                 } else {
                     JSONObject rs = ApiConfig.get().jsonExtMix(parseFlag + "111", pb.getUrl(), finalExtendName, jxs, webUrl);
                     if (rs == null || !rs.has("url") || rs.optString("url").isEmpty()) {
-                        if (isParseResultCurrent(gen) && host.view() != null) host.view().showTip("解析错误", false, true);
+                        if (isParseResultCurrent(gen) && host.view() != null) host.view().showTip(str(R.string.player_parse_error), false, true);
                     } else {
                         if (rs.has("parse") && rs.optInt("parse", 0) == 1) {
                             if (rs.has("ua")) {
@@ -461,7 +470,7 @@ final class PlayUrlResolver {
                                     // 同上:排队期可能已切集
                                     if (!isParseResultCurrent(gen)) return;
                                     stopParse();
-                                    host.view().showTip("正在嗅探播放地址", true, false);
+                                    host.view().showTip(str(R.string.player_sniffing_url), true, false);
                                     parseHandler.removeMessages(MSG_PARSE_TIMEOUT);
                                     parseHandler.sendEmptyMessageDelayed(MSG_PARSE_TIMEOUT, PARSE_TIMEOUT_MS);
                                     loadWebView(mixParseUrl);
@@ -486,7 +495,7 @@ final class PlayUrlResolver {
         HashMap<String, String> headers = PlaybackController.extractHeaders(rs);
         if (rs.has("jxFrom") && host.view() != null) {
             final String jxFrom = rs.optString("jxFrom");
-            host.view().runOnUi(() -> host.view().toast("解析来自:" + jxFrom));
+            host.view().runOnUi(() -> host.view().toast(str(R.string.player_parse_from, jxFrom)));
         }
         if (host.view() != null) host.playUrl(gen, rs.optString("url", ""), headers);
     }

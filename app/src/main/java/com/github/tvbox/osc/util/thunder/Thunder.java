@@ -4,12 +4,14 @@ import android.content.Context;
 import android.net.Uri;
 import android.text.TextUtils;
 
+import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.base.App;
 import com.github.tvbox.osc.bean.Movie;
 import com.github.tvbox.osc.util.FileUtils;
 import com.github.tvbox.osc.util.HawkConfig;
 import com.github.tvbox.osc.util.KV;
 import com.github.tvbox.osc.util.LOG;
+import com.github.tvbox.osc.util.LanguageManager;
 import com.xunlei.downloadlib.XLDownloadManager;
 import com.xunlei.downloadlib.XLTaskHelper;
 import com.xunlei.downloadlib.android.XLUtil;
@@ -27,6 +29,12 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class Thunder {
+
+    /** 资源文案:Application 的 base 只在进程启动时挂一次,切语言后直接用 app.getString 会停在旧语言 */
+    private static String str(int resId, Object... args) {
+        App app = App.getInstance();
+        return app == null ? "" : LanguageManager.INSTANCE.localized(app).getString(resId, args);
+    }
 
     private static String cacheRoot = "";
     private static String localPath = "";
@@ -211,7 +219,7 @@ public class Thunder {
                 if (urlMap.size() > 0) {
                     callback.list(urlMap);
                 } else {
-                    callback.status(-1, "解析异常");
+                    callback.status(-1, str(R.string.thunder_error_parse));
                 }
             }});
     }
@@ -232,12 +240,12 @@ public class Thunder {
                     String cache = cacheRoot + File.separator + torrentName.substring(0, torrentName.lastIndexOf("."));
                     currentTask = XLTaskHelper.instance().addTorrentTask(info.torrentPath, cache, info.mFileIndex);
                     if (currentTask < 0)
-                        callback.status(-1, "下载出错");
+                        callback.status(-1, str(R.string.thunder_error_download));
                     int count = 30;
                     while (true) {
                         count--;
                         if (count <= 0) {
-                            callback.status(-1, "解析下载超时");
+                            callback.status(-1, str(R.string.thunder_error_timeout));
                             break;
                         }
                         XLTaskInfo taskInfo = XLTaskHelper.instance().getBtSubTaskInfo(currentTask, info.mFileIndex).mTaskInfo;
@@ -280,7 +288,7 @@ public class Thunder {
                     while (true) {
                         count--;
                         if (count <= 0) {
-                            callback.status(-1, "解析下载超时");
+                            callback.status(-1, str(R.string.thunder_error_timeout));
                             break;
                         }
                         String playUrl=getPlayUrl();
@@ -320,7 +328,7 @@ public class Thunder {
                     while (true) {
                         count--;
                         if (count <= 0) {
-                            callback.status(-1, "解析下载超时");
+                            callback.status(-1, str(R.string.thunder_error_timeout));
                             break;
                         }
                         String playUrl=getPlayUrl();
@@ -345,17 +353,17 @@ public class Thunder {
     private static String errorInfo(int code) {
         switch (code) {
             case 9125:
-                return "文件名太长";
+                return str(R.string.thunder_error_name_too_long);
             case 111120:
-                return "文件路径太长";
+                return str(R.string.thunder_error_path_too_long);
             case 111142:
-                return "文件太小";
+                return str(R.string.thunder_error_file_too_small);
             case 111085:
-                return "磁盘空间不足";
+                return str(R.string.thunder_error_no_space);
             case 111171:
-                return "拒绝的网络连接";
+                return str(R.string.thunder_error_network_refused);
             case 9301:
-                return "缓冲区不足";
+                return str(R.string.thunder_error_buffer);
             case 114001:
             case 114004:
             case 114005:
@@ -364,9 +372,9 @@ public class Thunder {
             case 114011:
             case 9304:
             case 111154:
-                return "版权限制：无权下载";
+                return str(R.string.thunder_error_copyright);
             case 114101:
-                return "无效链接";
+                return str(R.string.thunder_error_invalid_url);
             default:
                 return "ErrorCode=" + code;
         }

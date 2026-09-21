@@ -528,7 +528,7 @@ class ComposeVideoController @JvmOverloads constructor(
         val percent = (newBrightness * 100).toInt()
         attributes.screenBrightness = newBrightness
         window.attributes = attributes
-        state.slideHintText = "亮度$percent%"
+        state.slideHintText = context.getString(R.string.player_brightness_value, percent)
         state.slideHintVisible = true
     }
 
@@ -543,7 +543,7 @@ class ComposeVideoController @JvmOverloads constructor(
         if (index < 0) index = 0f
         val percent = (index / streamMaxVolume * 100).toInt()
         am.setStreamVolume(AudioManager.STREAM_MUSIC, index.toInt(), 0)
-        state.slideHintText = "音量$percent%"
+        state.slideHintText = context.getString(R.string.player_volume_value, percent)
         state.slideHintVisible = true
     }
 
@@ -644,17 +644,18 @@ class ComposeVideoController @JvmOverloads constructor(
             state.playerBtnText = PlayerHelper.getPlayerName(playerType)
             state.scaleBtnText = PlayerHelper.getScaleName(cfg.getInt("sc"))
             // 解码文案按当前内核读各自的键(2026-09-17):IJK 读 cfg.ijk,EXO 读 cfg.exo
-            val codecName = cfg.optString(if (playerType == 2) "exo" else "ijk", "硬解码")
+            val codecName = cfg.optString(if (playerType == 2) "exo" else "ijk", "硬解码") // i18n: keep
             state.ijkBtnText = when (codecName) {
-                "硬解码" -> "硬解"
-                "软解码" -> "软解"
+                // i18n: keep —— 解码取值是数据键,只显示走资源
+                "硬解码" -> context.getString(R.string.player_decode_hard_short)
+                "软解码" -> context.getString(R.string.player_decode_soft_short) // i18n: keep
                 else -> codecName
             }
             state.speedBtnText = cfg.getDouble("sp").toString() + "x"
             val start = cfg.getInt("st")
             val end = cfg.getInt("et")
-            state.timeStartText = if (start == 0) "片头" else PlayerUtils.stringForTime(start * 1000)
-            state.timeEndText = if (end == 0) "片尾" else PlayerUtils.stringForTime(end * 1000)
+            state.timeStartText = if (start == 0) context.getString(R.string.player_time_start) else PlayerUtils.stringForTime(start * 1000)
+            state.timeEndText = if (end == 0) context.getString(R.string.player_time_end) else PlayerUtils.stringForTime(end * 1000)
         } catch (e: JSONException) {
             e.printStackTrace()
         }
@@ -940,7 +941,7 @@ class ComposeVideoController @JvmOverloads constructor(
                 }
             }
             state.selectDialog = SelectDialogState(
-                tip = "请选择播放器",
+                tip = context.getString(R.string.player_select_player),
                 items = names,
                 defaultIndex = defaultPos,
                 onSelected = { pos ->
@@ -972,8 +973,8 @@ class ComposeVideoController @JvmOverloads constructor(
             if (playerType == 2) {
                 // EXO(2026-09-17):硬解/软解两个取值直接互切;软解 = 系统软件解码器(c2.android.*)优先,
                 // 不看 ApiConfig.ijkCodes —— 那是 IJK 的 options 列表,与 media3 的选择器无关
-                val current = cfg.optString("exo", "硬解码")
-                cfg.put("exo", if (current == "软解码") "硬解码" else "软解码")
+                val current = cfg.optString("exo", "硬解码") // i18n: keep
+                cfg.put("exo", if (current == "软解码") "硬解码" else "软解码") // i18n: keep
             } else {
                 var ijk = cfg.getString("ijk")
                 val codecs = ApiConfig.get().ijkCodes
@@ -1090,7 +1091,7 @@ class ComposeVideoController @JvmOverloads constructor(
             e.printStackTrace()
         }
         hideBottom()
-        Toast.makeText(context, "字幕已关闭", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, context.getString(R.string.player_subtitle_closed), Toast.LENGTH_SHORT).show()
     }
 
     override fun onAudioTrackClicked() {
@@ -1114,7 +1115,7 @@ class ComposeVideoController @JvmOverloads constructor(
         if (!fastClickAllowed("danmu_long")) return
         val opened = listener?.toggleDanmu() ?: false
         hideBottom()
-        Toast.makeText(context, if (opened) "弹幕已开启" else "弹幕已临时关闭", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, context.getString(if (opened) R.string.player_danmu_opened else R.string.player_danmu_temp_closed), Toast.LENGTH_SHORT).show()
     }
 
     override fun onDanmuSearchClicked() {
@@ -1294,7 +1295,7 @@ class ComposeVideoController @JvmOverloads constructor(
                 scales.add(PlayerHelper.getScaleName(i))
             }
             state.selectDialog = SelectDialogState(
-                tip = "请选择画面尺寸",
+                tip = context.getString(R.string.player_select_scale),
                 items = scales,
                 defaultIndex = scaleType.coerceIn(0, 5),
                 onSelected = { index ->
@@ -1330,7 +1331,7 @@ class ComposeVideoController @JvmOverloads constructor(
                 }
             }
             state.selectDialog = SelectDialogState(
-                tip = "请选择播放倍速",
+                tip = context.getString(R.string.player_select_speed),
                 items = speeds,
                 defaultIndex = defaultPos,
                 onSelected = { index ->

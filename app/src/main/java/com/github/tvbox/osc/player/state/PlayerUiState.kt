@@ -97,8 +97,9 @@ class PlayerUiState {
     var scaleBtnText: String by mutableStateOf("")
     var speedBtnText: String by mutableStateOf("")
     var ijkBtnText: String by mutableStateOf("")
-    var timeStartText: String by mutableStateOf("片头")
-    var timeEndText: String by mutableStateOf("片尾")
+    /** 片头/片尾按钮文案:初始为空,由控制器写入资源文案 */
+    var timeStartText: String by mutableStateOf("")
+    var timeEndText: String by mutableStateOf("")
     /** 解析列表版本号：setDefaultParse 后自增以驱动重绘 */
     var parseListVersion: Int by mutableStateOf(0)
 

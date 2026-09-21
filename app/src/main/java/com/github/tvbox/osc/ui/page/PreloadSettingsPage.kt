@@ -17,6 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.res.stringResource
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.ui.components.AppTopBarScaffold
 import com.github.tvbox.osc.ui.components.SettingsCard
@@ -38,13 +39,13 @@ fun PreloadSettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = vi
     AppTopBarScaffold(
         titleContent = {
             Text(
-                text = "预载设置",
+                text = stringResource(R.string.settings_preload),
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onSurface,
             )
         },
         navigationIcon = {
-            TopBarActionBox(R.drawable.ic_arrow_left, "返回", onClick = onNavigateBack)
+            TopBarActionBox(R.drawable.ic_arrow_left, stringResource(R.string.common_back), onClick = onNavigateBack)
         },
     ) { topPad, _ ->
         Column(
@@ -59,15 +60,15 @@ fun PreloadSettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = vi
             SettingsGroup(title = null) {
                 SettingsCard(SettingsCardPosition.FIRST) {
                     SettingsSwitchRow(
-                        title = "下一集预载",
-                        subtitle = "仅EXO播放器和部分源支持",
+                        title = stringResource(R.string.preload_next_episode),
+                        subtitle = stringResource(R.string.preload_next_episode_subtitle),
                         checked = state.preloadNextEpisode,
                         onCheckedChange = { vm.put(HawkConfig.PRELOAD_NEXT_EPISODE, it) },
                     )
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {
                     SettingsSliderRow(
-                        title = "预载时长",
+                        title = stringResource(R.string.preload_duration),
                         value = sliderPreloadDuration.toFloat(),
                         valueText = "${sliderPreloadDuration}s",
                         valueRange = 20f..120f,
@@ -82,15 +83,15 @@ fun PreloadSettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = vi
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {
                     SettingsSwitchRow(
-                        title = "边播边缓存",
-                        subtitle = "开启后可能导致EXO播放器无法使用",
+                        title = stringResource(R.string.preload_play_cache),
+                        subtitle = stringResource(R.string.preload_play_cache_subtitle),
                         checked = state.playCache,
                         onCheckedChange = { vm.put(HawkConfig.PLAY_CACHE, it) },
                     )
                 }
                 SettingsCard(SettingsCardPosition.LAST) {
                     SettingsSliderRow(
-                        title = "缓存容量",
+                        title = stringResource(R.string.preload_cache_size),
                         value = sliderCacheSize.toFloat(),
                         valueText = if (sliderCacheSize >= 1024) "%.1fGB".format(sliderCacheSize / 1024f) else "${sliderCacheSize}MB",
                         valueRange = 128f..4096f,

@@ -156,7 +156,7 @@ public class Proxy {
         try {
             return client.newCall(request).execute();
         } catch (IOException e) {
-            System.err.println("网络请求异常：" + e.getMessage());
+            System.err.println("网络请求异常：" + e.getMessage()); // i18n: keep(异常消息,只进日志)
             throw e; // 重新抛出异常，让外层处理
         }
     }
@@ -331,7 +331,7 @@ public class Proxy {
             if (response.isSuccessful()) {
                 return response.body().string(); // 获取 m3u8 文件内容
             } else {
-                throw new IOException("请求失败，HTTP 状态码: " + response.code());
+                throw new IOException("请求失败，HTTP 状态码: " + response.code()); // i18n: keep(异常消息,只进日志)
             }
         }
     }

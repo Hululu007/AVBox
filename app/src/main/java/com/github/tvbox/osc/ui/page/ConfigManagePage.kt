@@ -54,6 +54,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.github.tvbox.osc.R
@@ -137,9 +138,9 @@ private fun updateSubscribe(mode: ConfigMode, original: SubscribeSource, name: S
     return list
 }
 
-private fun badgeText(name: String, url: String): String = when {
+private fun badgeText(name: String, url: String, emptyText: String): String = when {
     name.isNotEmpty() -> name
-    url.isEmpty() -> "未配置"
+    url.isEmpty() -> emptyText
     else -> url.substringAfter("://").substringBefore('/').ifEmpty { url }
 }
 
@@ -288,7 +289,7 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
             liveActiveUrl = ""
             liveFollow = true
         }
-        Toast.makeText(context, "已切换到:" + item.name, Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, context.getString(R.string.config_switched_to, item.name), Toast.LENGTH_SHORT).show()
     }
 
     fun switchToLive(item: SubscribeSource) {
@@ -296,7 +297,7 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
         applyLiveSource(item)
         liveActiveUrl = item.url
         liveFollow = false
-        Toast.makeText(context, "已切换到:" + item.name, Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, context.getString(R.string.config_switched_to, item.name), Toast.LENGTH_SHORT).show()
     }
 
     /**
@@ -343,13 +344,13 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
         applyLiveFollowVod()
         liveActiveUrl = ""
         liveFollow = true
-        Toast.makeText(context, "直播已跟随点播源", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, context.getString(R.string.toast_live_follow_vod), Toast.LENGTH_SHORT).show()
     }
 
     fun deleteSelected() {
         val target = selected.filterNot { isInUse(parseSubscribe(it).url) }
         if (target.size != selected.size) {
-            Toast.makeText(context, "正在使用的源不能删除", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.toast_source_in_use), Toast.LENGTH_SHORT).show()
         }
         val remaining = currentItems.filterNot { it in target }
         KV.put(subscribeKeyOf(mode), ArrayList(remaining))
@@ -410,14 +411,24 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
         }
     }
 
-    val vodBadge = remember(vodItems, activeUrl) {
-        badgeText(vodItems.firstOrNull { parseSubscribe(it).url == activeUrl }?.let { parseSubscribe(it).name }.orEmpty(), activeUrl)
+    val noSourceText = stringResource(R.string.config_no_source)
+    val vodBadge = remember(vodItems, activeUrl, noSourceText) {
+        badgeText(
+            vodItems.firstOrNull { parseSubscribe(it).url == activeUrl }?.let { parseSubscribe(it).name }.orEmpty(),
+            activeUrl,
+            noSourceText,
+        )
     }
-    val liveBadge = remember(liveItems, liveActiveUrl, liveFollow) {
+    val followText = stringResource(R.string.live_follow_vod_source)
+    val liveBadge = remember(liveItems, liveActiveUrl, liveFollow, noSourceText, followText) {
         if (liveFollow) {
-            ApiConfig.LIVE_FOLLOW_ITEM_NAME
+            followText
         } else {
-            badgeText(liveItems.firstOrNull { parseSubscribe(it).url == liveActiveUrl }?.let { parseSubscribe(it).name }.orEmpty(), liveActiveUrl)
+            badgeText(
+                liveItems.firstOrNull { parseSubscribe(it).url == liveActiveUrl }?.let { parseSubscribe(it).name }.orEmpty(),
+                liveActiveUrl,
+                noSourceText,
+            )
         }
     }
 
@@ -425,7 +436,7 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
         collapseEnabled = false,
         titleContent = {
             Text(
-                text = "配置管理",
+                text = stringResource(R.string.settings_config_manage),
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onSurface,
             )
@@ -433,7 +444,7 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
         navigationIcon = {
             TopBarActionBox(
                 R.drawable.ic_arrow_left,
-                "返回",
+                stringResource(R.string.common_back),
                 onClick = { if (manageMode) exitManageMode() else onNavigateBack() },
             )
         },
@@ -454,13 +465,13 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
                     ) {
                         ManageActionIcon(
                             iconRes = R.drawable.ic_edit,
-                            contentDescription = "编辑",
+                            contentDescription = stringResource(R.string.common_edit),
                             enabled = selected.size == 1,
                             onClick = { editTarget = selected.firstOrNull()?.let { parseSubscribe(it) } },
                         )
                         ManageActionIcon(
                             iconRes = R.drawable.ic_delete,
-                            contentDescription = "删除",
+                            contentDescription = stringResource(R.string.common_delete),
                             enabled = selected.isNotEmpty(),
                             onClick = { deleteSelected() },
                         )
@@ -475,13 +486,17 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
                         if (canSwitchRepo) {
                             TopBarActionBox(
                                 iconRes = R.drawable.ic_switch_repo,
-                                contentDescription = "换仓",
+                                contentDescription = stringResource(R.string.config_switch_repo),
                                 onClick = { repoSheetOpen = true },
                             )
                         }
                         TopBarActionBox(
                             iconRes = R.drawable.ic_subscribe_add,
-                            contentDescription = if (isVod) "添加订阅" else "添加直播源",
+                            contentDescription = if (isVod) {
+                                stringResource(R.string.config_add_subscribe)
+                            } else {
+                                stringResource(R.string.config_add_live_source)
+                            },
                             onClick = { addDialogOpen = true },
                         )
                     }
@@ -492,8 +507,8 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
         Column(modifier = Modifier.fillMaxSize()) {
             CapsuleSegmentedButton(
                 options = listOf(
-                    SegmentOption(label = "点播", value = ConfigMode.Vod, badge = vodBadge),
-                    SegmentOption(label = "直播", value = ConfigMode.Live, badge = liveBadge),
+                    SegmentOption(label = stringResource(R.string.common_vod), value = ConfigMode.Vod, badge = vodBadge),
+                    SegmentOption(label = stringResource(R.string.common_live), value = ConfigMode.Live, badge = liveBadge),
                 ),
                 selectedValue = mode,
                 onOptionSelected = { mode = it },
@@ -524,7 +539,7 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
                 if (mIsVod && mItems.isEmpty()) {
                     LoadStateBox(
                         state = LoadState.Empty,
-                        emptyText = "暂无订阅",
+                        emptyText = stringResource(R.string.config_empty_subscribe),
                         errorText = "",
                         retryText = "",
                         emptyIconRes = R.drawable.ic_empty_record,
@@ -552,7 +567,11 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
                             item(key = "Live#follow") {
                                 FollowVodCard(
                                     checked = liveFollow,
-                                    subtitle = if (activeUrl.isEmpty()) "未配置点播源" else "当前点播源:$vodBadge",
+                                    subtitle = if (activeUrl.isEmpty()) {
+                                        stringResource(R.string.config_no_vod_source)
+                                    } else {
+                                        stringResource(R.string.config_current_vod_source, vodBadge)
+                                    },
                                     onFollow = { followLiveNow() },
                                     modifier = Modifier.animateItem(),
                                 )
@@ -602,7 +621,7 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
                             item(key = "Live#empty") {
                                 LoadStateBox(
                                     state = LoadState.Empty,
-                                    emptyText = "暂无直播源",
+                                    emptyText = stringResource(R.string.config_empty_live_source),
                                     errorText = "",
                                     retryText = "",
                                     emptyIconRes = R.drawable.ic_empty_record,
@@ -622,11 +641,11 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
     if (addDialogOpen || editing != null) {
         AddSubscribeDialog(
             title = if (editing != null) {
-                if (isVod) "编辑订阅" else "编辑直播源"
+                if (isVod) stringResource(R.string.config_edit_subscribe) else stringResource(R.string.config_edit_live_source)
             } else {
-                if (isVod) "添加订阅" else "添加直播源"
+                if (isVod) stringResource(R.string.config_add_subscribe) else stringResource(R.string.config_add_live_source)
             },
-            urlSupportingText = if (isVod) "" else "支持配置 JSON / m3u / txt 直播源",
+            urlSupportingText = if (isVod) "" else stringResource(R.string.config_live_source_hint),
             initialName = editing?.name.orEmpty(),
             initialUrl = editing?.url.orEmpty(),
             onDismiss = {
@@ -646,18 +665,15 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
     if (pending != null) {
         AlertDialog(
             onDismissRequest = { pendingSwitch = null },
-            title = { Text("该源已被自动停用") },
+            title = { Text(stringResource(R.string.dialog_source_disabled_title)) },
             text = {
-                Text(
-                    "「" + pending.item.name + "」此前导致应用崩溃，已被自动停用。\n\n" +
-                        "若该源已经修好，可以重新启用；否则切换后很可能再次闪退。",
-                )
+                Text(stringResource(R.string.dialog_source_disabled_message, pending.item.name))
             },
             confirmButton = {
-                TextButton(onClick = { enableAndSwitch() }) { Text("仍要启用") }
+                TextButton(onClick = { enableAndSwitch() }) { Text(stringResource(R.string.dialog_source_disabled_confirm)) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingSwitch = null }) { Text("取消") }
+                TextButton(onClick = { pendingSwitch = null }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }
@@ -699,7 +715,7 @@ private fun RepoSwitchSheet(
     var accepted by remember { mutableStateOf(false) }
     AVBoxBottomSheet(
         onDismissRequest = onDismiss,
-        title = "换仓",
+        title = stringResource(R.string.config_switch_repo),
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
     ) {
         SettingsGroup(
@@ -761,7 +777,7 @@ private fun FollowVodCard(
 ) {
     SettingsCard(position = SettingsCardPosition.SINGLE, modifier = modifier) {
         SettingsSwitchRow(
-            title = "跟随点播源",
+            title = stringResource(R.string.live_follow_vod_source),
             subtitle = subtitle,
             checked = checked,
             onCheckedChange = { next -> if (next) onFollow() },
@@ -849,7 +865,7 @@ private fun DisabledSourceTag() {
         color = MaterialTheme.colorScheme.errorContainer,
     ) {
         Text(
-            text = "已禁用",
+            text = stringResource(R.string.config_source_disabled_tag),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onErrorContainer,
             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
@@ -900,7 +916,7 @@ private fun AddSubscribeDialog(
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.ic_file_choose),
-                        contentDescription = "从本地选择",
+                        contentDescription = stringResource(R.string.config_pick_local),
                         tint = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.size(22.dp),
                     )
@@ -914,7 +930,7 @@ private fun AddSubscribeDialog(
                     onValueChange = { name = it },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    label = { Text("名字") },
+                    label = { Text(stringResource(R.string.config_field_name)) },
                 )
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
@@ -922,7 +938,7 @@ private fun AddSubscribeDialog(
                     onValueChange = { url = it },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    label = { Text("链接") },
+                    label = { Text(stringResource(R.string.config_field_url)) },
                     supportingText = urlHint,
                 )
             }
@@ -931,7 +947,7 @@ private fun AddSubscribeDialog(
             TextButton(
                 onClick = { onSave(name.trim(), url.trim()) },
                 enabled = url.isNotBlank(),
-            ) { Text("保存") }
+            ) { Text(stringResource(R.string.common_save)) }
         },
     )
 }

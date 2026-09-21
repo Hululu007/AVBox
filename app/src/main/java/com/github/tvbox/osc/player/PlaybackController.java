@@ -13,6 +13,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.lifecycle.Observer;
 
+import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.player.ExoPlayer;
 import com.github.tvbox.osc.player.IjkMediaPlayer;
 import com.github.tvbox.osc.player.TrackInfo;
@@ -33,6 +34,7 @@ import com.github.tvbox.osc.util.HawkConfig;
 import com.github.tvbox.osc.util.ImgUtil;
 import com.github.tvbox.osc.util.KV;
 import com.github.tvbox.osc.util.LOG;
+import com.github.tvbox.osc.util.LanguageManager;
 import com.github.tvbox.osc.util.MD5;
 import com.github.tvbox.osc.util.PlayerHelper;
 import com.github.tvbox.osc.util.thunder.Jianpian;
@@ -61,6 +63,12 @@ import xyz.doikki.videoplayer.player.VideoView;
  * 取流/解析调度见 {@link PlayUrlResolver},尝试/意图状态见 {@link PlaybackAttemptState}。
  */
 public class PlaybackController {
+
+    /** 资源文案:Application 的 base 只在进程启动时挂一次,切语言后直接用 app.getString 会停在旧语言 */
+    private static String str(int resId, Object... args) {
+        App app = App.getInstance();
+        return app == null ? "" : LanguageManager.INSTANCE.localized(app).getString(resId, args);
+    }
 
     // ==================== 会话数据 ====================
 
@@ -158,10 +166,10 @@ public class PlaybackController {
             // 于本剧播放器里显式选过(ijkSet / exoSet,见 ComposeVideoController.onIjkClicked)才按剧记忆 ——
             // 否则播放记录里持久化的旧 "ijk"/"exo" 会一直压过设置页的新值,"设置里改成软解、这部剧却永远硬解"。
             if (playerCfg.optInt("ijkSet", 0) == 0) {
-                playerCfg.put("ijk", KV.get(HawkConfig.IJK_CODEC, "硬解码"));
+                playerCfg.put("ijk", KV.get(HawkConfig.IJK_CODEC, "硬解码")); // i18n: keep
             }
             if (playerCfg.optInt("exoSet", 0) == 0) {
-                playerCfg.put("exo", KV.get(HawkConfig.EXO_DECODE, "硬解码"));
+                playerCfg.put("exo", KV.get(HawkConfig.EXO_DECODE, "硬解码")); // i18n: keep
             }
             if (!playerCfg.has("sc")) {
                 playerCfg.put("sc", KV.get(HawkConfig.PLAY_SCALE, 0));
@@ -598,10 +606,10 @@ public class PlaybackController {
         boolean autoExo = st.autoSwitchedDecodeOld != null && "exo".equals(st.autoSwitchedDecodeKey);
         try {
             if (playerCfg.optInt("ijkSet", 0) == 0 && !autoIjk) {
-                playerCfg.put("ijk", KV.get(HawkConfig.IJK_CODEC, "硬解码"));
+                playerCfg.put("ijk", KV.get(HawkConfig.IJK_CODEC, "硬解码")); // i18n: keep
             }
             if (playerCfg.optInt("exoSet", 0) == 0 && !autoExo) {
-                playerCfg.put("exo", KV.get(HawkConfig.EXO_DECODE, "硬解码"));
+                playerCfg.put("exo", KV.get(HawkConfig.EXO_DECODE, "硬解码")); // i18n: keep
             }
         } catch (Throwable th) {
             // 与 initPlayerCfg 一致:刷新失败不阻断播放
@@ -775,11 +783,11 @@ public class PlaybackController {
         int kernel = liveKernel();
         if (kernel != 1 && kernel != 2) return false;                        // 只有 IJK / EXO 内核才有软解路径
         String decodeKey = (kernel == 1) ? "ijk" : "exo";
-        if (!"硬解码".equals(playerCfg.optString(decodeKey, ""))) return false; // 已经是软解,不再回退
+        if (!"硬解码".equals(playerCfg.optString(decodeKey, ""))) return false; // i18n: keep —— 已经是软解,不再回退
         if (TextUtils.isEmpty(webPlayUrl)) return false;                      // 没拿到可播地址(解析/嗅探失败)不适用
         String oldDecode = playerCfg.optString(decodeKey, "");
         try {
-            playerCfg.put(decodeKey, "软解码");
+            playerCfg.put(decodeKey, "软解码"); // i18n: keep
         } catch (Throwable th) {
             return false;
         }
@@ -793,7 +801,7 @@ public class PlaybackController {
         initParseLoadFound();
         if (view != null && view.isPageAlive()) {
             final PlaybackViewBridge aliveView = view;
-            view.runOnUi(() -> aliveView.toast("硬解失败，已切换软解重试"));
+            view.runOnUi(() -> aliveView.toast(str(R.string.player_decode_fallback_tip)));
         }
         if (view != null) view.releasePlayer();
         if (view != null) playUrl(webPlayUrl, webHeaderMap);
@@ -816,7 +824,7 @@ public class PlaybackController {
         LOG.i("echo-autoRetry retry after started error: " + webPlayUrl);
         if (view != null && view.isPageAlive()) {
             final PlaybackViewBridge aliveView = view;
-            view.runOnUi(() -> aliveView.toast("播放出错，自动重试"));
+            view.runOnUi(() -> aliveView.toast(str(R.string.player_play_error_retry)));
         }
         stopParse();
         initParseLoadFound();
@@ -917,7 +925,7 @@ public class PlaybackController {
         final long preProgress = Math.max(savedProgress, view == null ? 0 : view.currentPosition());
         LOG.i("echo-autoRetry switch line: " + vod().playFlag + " -> " + flagToSwitch);
         if (view != null && view.isPageAlive()) {
-            view.runOnUi(() -> view.toast("线路切换至" + flagToSwitch));
+            view.runOnUi(() -> view.toast(str(R.string.player_switch_line, flagToSwitch)));
         }
         vod().playFlag = flagToSwitch;
         vod().playIndex = nextIndex;
@@ -936,12 +944,12 @@ public class PlaybackController {
         if (st.userPickedLine) {
             st.userPickedLine = false;
             stopMusicSessionForFailedPlayback();
-            showErrorTip("获取播放地址超时");
+            showErrorTip(str(R.string.player_get_url_timeout));
             return;
         }
         if (!tryNextLineIfEnabled()) {
             stopMusicSessionForFailedPlayback();
-            showErrorTip("获取播放地址超时");
+            showErrorTip(str(R.string.player_get_url_timeout));
         }
     }
 
@@ -975,13 +983,13 @@ public class PlaybackController {
         if (st.hasAutoSwitchedPlayer) {
             if (!tryNextLineIfEnabled()) {
                 stopMusicSessionForFailedPlayback();
-                showErrorTip("播放超时");
+                showErrorTip(str(R.string.player_play_timeout));
             }
             return;
         }
         if (!autoRetry()) {
             stopMusicSessionForFailedPlayback();
-            showErrorTip("播放超时");
+            showErrorTip(str(R.string.player_play_timeout));
         }
     }
 
@@ -1138,11 +1146,11 @@ public class PlaybackController {
                             });
                         }
                     } catch (Throwable th) {
-                        handleResolvePlayUrlFailed("获取播放信息错误");
+                        handleResolvePlayUrlFailed(str(R.string.player_get_info_error));
                     }
                 } else {
                     // 获取播放信息错误后只需再重试一次
-                    handleResolvePlayUrlFailed("获取播放信息错误");
+                    handleResolvePlayUrlFailed(str(R.string.player_get_info_error));
                 }
             }
         };
@@ -1204,7 +1212,7 @@ public class PlaybackController {
     private String getSubtitleUrl(JSONObject object) {
         if (object == null) return "";
         String format = object.optString("format", "");
-        String name = object.optString("name", "字幕");
+        String name = object.optString("name", str(R.string.player_menu_subtitle));
         String ext = ".srt";
         if ("text/x-ssa".equals(format)) {
             ext = ".ass";
@@ -1229,7 +1237,7 @@ public class PlaybackController {
     private boolean isLyricSubtitle(String name) {
         if (TextUtils.isEmpty(name)) return false;
         String value = name.toLowerCase(Locale.ROOT);
-        return value.contains("lyric") || value.contains("lrc") || name.contains("歌词");
+        return value.contains("lyric") || value.contains("lrc") || name.contains("歌词"); // i18n: keep
     }
 
     /** 取流结果没带弹幕地址时联网搜一份(与进度键绑定:切集后旧结果作废) */
@@ -1345,7 +1353,7 @@ public class PlaybackController {
         // 走失败链路(自动换线兜底)而不是崩溃
         VodInfo.VodSeries vs = currentSeries(vod().playFlag, vod().playIndex);
         if (vs == null) {
-            handleResolvePlayUrlFailed("获取播放信息错误");
+            handleResolvePlayUrlFailed(str(R.string.player_get_info_error));
             return;
         }
         EventBus.getDefault().post(new RefreshEvent(RefreshEvent.TYPE_REFRESH, vod()));
@@ -1353,7 +1361,7 @@ public class PlaybackController {
             // 复用播放器时提示已由上一集留着,直接清空(与原实现一致:绕过 setTip 的页面存活判断)
             PlayerTipBridge.setTip("", true, false);
         } else if (view != null) {
-            view.showTip("正在获取播放信息", true, false);
+            view.showTip(str(R.string.player_getting_info), true, false);
         }
         publishTitle();
 
@@ -1494,7 +1502,7 @@ public class PlaybackController {
     public void goPlayUrl(String url, HashMap<String, String> headers) {
         LOG.i("echo-goPlayUrl:" + url);
         if (TextUtils.isEmpty(url)) {
-            handleResolvePlayUrlFailed("获取播放地址为空");
+            handleResolvePlayUrlFailed(str(R.string.player_play_url_empty));
             return;
         }
         if (view == null || !view.isPageAlive()) return;
@@ -1529,10 +1537,10 @@ public class PlaybackController {
                         List<VodInfo.VodSeries> series = (vod() == null || vod().seriesMap == null) ? null : vod().seriesMap.get(vod().playFlag);
                         VodInfo.VodSeries vs = (series == null || vod().playIndex < 0 || vod().playIndex >= series.size()) ? null : series.get(vod().playIndex);
                         String playTitle = vod().name + (vs == null ? "" : " " + vs.name);
-                        view.showTip("调用外部播放器" + PlayerHelper.getPlayerName(playerType) + "进行播放", true, false);
+                        view.showTip(str(R.string.player_call_external_play, PlayerHelper.getPlayerName(playerType)), true, false);
                         long progress = getSavedProgress(progressKey());
                         boolean callResult = view.playExternalPlayer(playerType, url, playTitle, playSubtitle(), headers, progress);
-                        view.showTip("调用外部播放器" + PlayerHelper.getPlayerName(playerType) + (callResult ? "成功" : "失败"), callResult, !callResult);
+                        view.showTip(str(R.string.player_call_external_result, PlayerHelper.getPlayerName(playerType), callResult ? str(R.string.common_success) : str(R.string.common_failed)), callResult, !callResult);
                         return;
                     }
                 } catch (JSONException e) {
