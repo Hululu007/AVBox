@@ -24,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +42,7 @@ import com.github.tvbox.osc.dlna.CastDevice
 import com.github.tvbox.osc.dlna.DLNACastManager
 import com.github.tvbox.osc.player.state.CastSheetState
 import com.github.tvbox.osc.player.thirdparty.RemoteTVBox
+import com.github.tvbox.osc.util.PermissionHelper
 import com.github.tvbox.osc.util.PlayerHelper
 
 /** 投屏面板:DLNA/TVBox 设备扫描与投送 */
@@ -52,19 +54,37 @@ import com.github.tvbox.osc.util.PlayerHelper
 @Composable
 fun CastSheet(sheet: CastSheetState, onDismiss: () -> Unit) {
     val context = LocalContext.current
+    val activity = remember(context) { context.findActivityOrNull() }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
     val devices = remember { LinkedHashMap<String, CastDevice>() }
     var deviceList by remember { mutableStateOf(emptyList<CastDevice>()) }
     var searchFinished by remember { mutableStateOf(false) }
     var scanToken by remember { mutableIntStateOf(1) }
+    var canScan by remember { mutableStateOf(PermissionHelper.isLocalNetworkGranted(context)) }
 
     val addDevice: (CastDevice) -> Unit = { device ->
         devices[device.type.toString() + ":" + device.id] = device
         deviceList = devices.values.toList()
     }
 
-    DisposableEffect(scanToken) {
+    val applyGranted: (Boolean) -> Unit = { granted ->
+        canScan = granted
+        if (granted) scanToken++
+    }
+
+    LaunchedEffect(Unit) {
+        val act = activity
+        if (!canScan && act != null) {
+            PermissionHelper.requestLocalNetworkAuto(act) { granted, _ ->
+                applyGranted(!granted.isNullOrEmpty())
+            }
+        }
+    }
+
+    DisposableEffect(scanToken, canScan) {
         searchFinished = false
+        val scanning = canScan
+        if (!scanning) return@DisposableEffect onDispose { }
         // TVBox 局域网扫描(旧 searchTvBoxDevices;回调线程切主线程)
         Thread {
             RemoteTVBox.searchAvalible(object : RemoteTVBox.Callback() {
@@ -193,7 +213,15 @@ fun CastSheet(sheet: CastSheetState, onDismiss: () -> Unit) {
                             )
                         }
                     }
-                    if (deviceList.isEmpty() && !searchFinished) {
+                    if (!canScan) {
+                        Text(
+                            text = "需要允许「附近的设备」权限才能搜索投屏设备\n开启后点「刷新」重试",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = playerTextSize(R.dimen.ts_20),
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.align(Alignment.Center),
+                        )
+                    } else if (deviceList.isEmpty() && !searchFinished) {
                         // 与首页(HomePage 整页加载态)同款的 M3 expressive 几何加载指示器 + 同尺寸 64dp:
                         // 取代原先的 CircularProgressIndicator(SheetLoading),口径见 UI spec「加载指示器」
                         Column(
@@ -208,8 +236,7 @@ fun CastSheet(sheet: CastSheetState, onDismiss: () -> Unit) {
                                 fontSize = playerTextSize(R.dimen.ts_20),
                             )
                         }
-                    }
-                    if (deviceList.isEmpty() && searchFinished) {
+                    } else if (deviceList.isEmpty() && searchFinished) {
                         Text(
                             text = "未找到可用设备",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -229,7 +256,16 @@ fun CastSheet(sheet: CastSheetState, onDismiss: () -> Unit) {
                     SheetButton(text = "刷新", onClick = {
                         devices.clear()
                         deviceList = emptyList()
-                        scanToken++
+                        if (PermissionHelper.isLocalNetworkGranted(context)) {
+                            applyGranted(true)
+                        } else {
+                            val act = activity
+                            if (act != null) {
+                                PermissionHelper.requestLocalNetwork(act) { granted, _ ->
+                                    applyGranted(!granted.isNullOrEmpty())
+                                }
+                            }
+                        }
                     }, modifier = Modifier.weight(1f))
                     SheetButton(text = "取消", onClick = { onDismiss() }, modifier = Modifier.weight(1f))
                 }

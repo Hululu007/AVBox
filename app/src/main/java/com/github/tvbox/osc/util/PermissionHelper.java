@@ -81,4 +81,35 @@ public final class PermissionHelper {
                     // 拒绝不影响任何功能:只是前台服务通知不展示,音乐照常播放
                 });
     }
+
+    /** Android 17 = API 37:本地网络权限从该版本开始强制(未授权时访问局域网是静默超时/UDP EPERM,不抛异常) */
+    private static final int SDK_ANDROID_17 = 37;
+
+    /** 本地网络权限的自动请求闸门(见 {@link #requestLocalNetworkAuto}) */
+    private static volatile boolean localNetworkAutoAsked;
+
+    /** 本地网络权限是否已授予;SDK&lt;37 无此权限,恒视为已授予 */
+    public static boolean isLocalNetworkGranted(Context context) {
+        if (Build.VERSION.SDK_INT < SDK_ANDROID_17) return true;
+        return XXPermissions.isGrantedPermission(context, PermissionLists.getAccessLocalNetworkPermission());
+    }
+
+    /** 申请本地网络权限(属 NEARBY_DEVICES 组,同组已有授权则不再弹窗);调用方先用 isLocalNetworkGranted 短路 */
+    public static void requestLocalNetwork(Activity activity, OnPermissionCallback callback) {
+        if (activity == null) return;
+        if (isLocalNetworkGranted(activity)) return;
+        XXPermissions.with(activity)
+                .permission(PermissionLists.getAccessLocalNetworkPermission())
+                .request(callback);
+    }
+
+    /** 自动申请:全进程只弹一次 —— 防"每次打开投屏面板都再拉一次权限页"(固定拒绝时是 150ms 一闪,
+     *  同 {@link #requestNotificationIfNeeded});需要用户主动重试的入口直接走 {@link #requestLocalNetwork} */
+    public static void requestLocalNetworkAuto(Activity activity, OnPermissionCallback callback) {
+        if (activity == null) return;
+        if (isLocalNetworkGranted(activity)) return;
+        if (localNetworkAutoAsked) return;
+        localNetworkAutoAsked = true;
+        requestLocalNetwork(activity, callback);
+    }
 }

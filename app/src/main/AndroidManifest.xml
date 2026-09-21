@@ -31,6 +31,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <!-- Android 13+ 通知为运行时权限:清单声明之外,还须 PermissionHelper.requestNotificationIfNeeded 显式申请 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Android 17(API 37)起,targetSdk 37+ 的应用访问局域网(投屏/DLNA、clan://<ip>)被默认屏蔽,
+         失败是静默超时(不抛异常);127.0.0.1 回环不受影响。运行时请求见 PermissionHelper -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
 
     <!--
         2026-09-13 权限梳理(第二部分):删掉**依赖库清单**塞进来的无关权限。

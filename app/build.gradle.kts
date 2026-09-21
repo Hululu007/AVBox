@@ -162,7 +162,13 @@ dependencies {
     // 宿主源码无静态引用,禁止按"零引用"删除;keep 规则见 proguard-rules.pro
     implementation(libs.zxing.core)
     // sardine:订阅源 jar 里的 WebDAV 爬虫(com.github.catvod.spider.WebDAV)用它做
-    implementation(libs.sardine)
+    implementation(libs.sardine) {
+        // 传递依赖 simple-xml → xpp3:xpp3 与平台自带的 org.xmlpull.v1 同名,
+        // R8 报 "Library class android.content.res.XmlResourceParser implements program class
+        // org.xmlpull.v1.XmlPullParser" 直接失败(release 挂、debug 不跑 R8 所以看不出来);
+        // XML 解析走平台自带实现即可,与上面 xstream 的 xmlpull/xpp3 排除同理
+        exclude(group = "xpp3", module = "xpp3")
+    }
 
     // Compose UI(avbox-mobile-ui-spec §2)
     implementation(platform(libs.androidx.compose.bom))

@@ -11,6 +11,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -29,7 +30,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -46,12 +46,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -163,15 +163,20 @@ fun FloatingNavBar(
     val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
     val animationScope = rememberCoroutineScope()
 
-    var tabStridePx by remember { mutableFloatStateOf(0f) }
-    var totalStridePx by remember { mutableFloatStateOf(0f) }
-
-    Box(
+    BoxWithConstraints(
         modifier = modifier,
         contentAlignment = if (isHorizontal) Alignment.CenterStart else Alignment.TopCenter
     ) {
+        // 主轴长度取组合期的约束值(主轴都是 fillMax* ⇒ 约束即实测尺寸),别退回 onGloballyPositioned:
+        // 那是布局回调,选中胶囊要等第二帧才拿到 stride ⇒ 冷启动首帧"首页位置闪一下"
+        val mainAxisConstraint = if (isHorizontal) constraints.maxWidth else constraints.maxHeight
+        val totalStridePx =
+            if (mainAxisConstraint == Constraints.Infinity) 0f else mainAxisConstraint.toFloat()
+        val tabStridePx =
+            if (totalStridePx > 0f) (totalStridePx - with(density) { 8f.dp.toPx() }) / tabsCount else 0f
+
         val offsetAnimation = remember { Animatable(0f) }
-        val panelOffset by remember(density) {
+        val panelOffset by remember(density, totalStridePx) {
             derivedStateOf {
                 if (totalStridePx == 0f) {
                     0f
@@ -189,7 +194,7 @@ fun FloatingNavBar(
         val currentOnTabSelected by rememberUpdatedState(onTabSelected)
         val currentInteractive by rememberUpdatedState(interactive)
 
-        val dampedDragAnimation = remember(animationScope, tabsCount, density) {
+        val dampedDragAnimation = remember(animationScope, tabsCount, density, tabStridePx) {
             DampedDragAnimation(
                 animationScope = animationScope,
                 initialValue = selectedTabIndex().toFloat(),
@@ -263,15 +268,6 @@ fun FloatingNavBar(
         NavContainer(
             axis = axis,
             modifier = Modifier
-                .onGloballyPositioned { coords ->
-                    totalStridePx = if (isHorizontal) {
-                        coords.size.width.toFloat()
-                    } else {
-                        coords.size.height.toFloat()
-                    }
-                    val contentStridePx = totalStridePx - with(density) { 8f.dp.toPx() }
-                    tabStridePx = contentStridePx / tabsCount
-                }
                 .graphicsLayer { setMainAxisTranslation(axis, panelOffset) }
                 .drawBackdrop(
                     backdrop = backdrop,

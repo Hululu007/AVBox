@@ -118,4 +118,5 @@ logs/
 # 真机排查期的原始日志落盘目录(logcat / 应用 preload_debug.log):含设备型号、包名与源地址,不入库
 .logs/
 源码/
+日志/
 .kotlin/
