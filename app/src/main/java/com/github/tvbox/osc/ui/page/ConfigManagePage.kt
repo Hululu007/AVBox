@@ -81,6 +81,8 @@ import com.github.tvbox.osc.util.BootGuard
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.HistoryHelper
 import com.github.tvbox.osc.util.KV
+import com.github.tvbox.osc.util.removeLocalCopy
+import java.util.concurrent.Executors
 
 private const val SubscribeSplit = "\t"
 
@@ -259,6 +261,25 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
                 (!liveFollow && HistoryHelper.isLiveApiLineSourceOf(url, liveActiveUrl))
         }
 
+    /** 该地址在点播/直播任一侧仍在生效(激活源或仓来源)—— 只用于挡副本清理,不放宽上面的删除保护 */
+    fun activeInEitherMode(url: String): Boolean {
+        val vodApi = KV.get(HawkConfig.API_URL, "")
+        val liveApi = KV.get(HawkConfig.LIVE_API_URL, "")
+        return url == vodApi || url == liveApi ||
+            HistoryHelper.isApiLineSourceOf(url, vodApi) ||
+            HistoryHelper.isLiveApiLineSourceOf(url, liveApi)
+    }
+
+    /** 任一模式的订阅列表里还留着该地址(同地址允许跨模式重复添加)—— 副本同样不能删 */
+    fun referencedBySubscribes(url: String): Boolean =
+        loadSubscribes(ConfigMode.Vod).any { parseSubscribe(it).url == url } ||
+            loadSubscribes(ConfigMode.Live).any { parseSubscribe(it).url == url }
+
+    /** 多仓的子源条目里还留着该地址 —— 仓的多个子源只有当前生效那个会被上面查到,其余必须在这里挡 */
+    fun referencedByRepo(url: String): Boolean =
+        (HistoryHelper.getApiLines().orEmpty() + HistoryHelper.getLiveApiLines().orEmpty())
+            .any { HistoryHelper.getApiLineUrl(it) == url }
+
     fun switchToVod(item: SubscribeSource) {
         if (activeUrl == item.url) return
         val followLive = applyVodSource(item)
@@ -336,6 +357,15 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
         val removedUrls = target.map { parseSubscribe(it).url }
         BootGuard.forgetSources(removedUrls)
         disabledUrls = disabledUrls - removedUrls
+        // 副本清理要跨模式判"仍在用":点播页删除时,同一地址可能正被直播侧当激活源/仓来源,或被另一模式的订阅/仓子源引用
+        val copyUrls = removedUrls.filterNot {
+            activeInEitherMode(it) || referencedBySubscribes(it) || referencedByRepo(it)
+        }
+        if (copyUrls.isNotEmpty()) {
+            val executor = Executors.newSingleThreadExecutor()
+            executor.execute { copyUrls.forEach { removeLocalCopy(it) } }
+            executor.shutdown()
+        }
         if (isVod) {
             vodItems = remaining
             if (remaining.isEmpty()) {

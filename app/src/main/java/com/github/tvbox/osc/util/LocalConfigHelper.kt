@@ -152,6 +152,11 @@ private class LocalConfigImport(
  * 复制路线只带 json 过去时这些引用会 404,得靠目录授权把兄弟文件一个个搬过来。
  */
 private fun importLocalConfig(context: Context, uri: Uri): LocalConfigImport? {
+    val displayName = safeFileName(getDisplayName(context, uri))
+    // 选中的是单个 py 爬虫:自动包成单站点配置,用户不必手写 json
+    if (displayName.endsWith(".py", ignoreCase = true)) {
+        return importLocalPySpider(context, uri, displayName)
+    }
     val storageRoot = Environment.getExternalStorageDirectory().absolutePath
     val path = getPathFromUri(context, uri)
     val source = readablePath(path)
@@ -179,6 +184,29 @@ private fun importLocalConfig(context: Context, uri: Uri): LocalConfigImport? {
     return LocalConfigImport(api, if (missing.isEmpty()) null else dir, missing, null)
 }
 
+/**
+ * 选中的是单个 py 爬虫:复制到 files/config/<md5(uri)>/ 并生成一份单站点配置(api 走 `./` 相对引用,
+ * 加载阶段会被改写成可访问的本机服务地址)。副本名用 ASCII —— 中文文件名进 URL 有编码风险。
+ */
+private fun importLocalPySpider(context: Context, uri: Uri, pyName: String): LocalConfigImport? {
+    val storageRoot = Environment.getExternalStorageDirectory().absolutePath
+    val data = readBytes(context, uri, MAX_CONFIG_SIZE) ?: return null
+    val digest = MD5.encode(uri.toString())
+    val dir = File(File(FileUtils.getExternalFilesPath(), "config"), digest)
+    val pyFile = File(dir, "spider_${digest.take(8)}.py")
+    if (!writeBytes(pyFile, data)) return null
+    val config = PySourcePack.packLocal(
+        pyFileName = pyFile.name,
+        siteName = pyName.substringBeforeLast('.'),
+        key = "py_${digest.take(8)}",
+    )
+    val configFile = File(dir, "spider_${digest.take(8)}.json")
+    if (!writeBytes(configFile, config.toByteArray(Charsets.UTF_8))) return null
+    val api = toClanApi(configFile.absolutePath, storageRoot) ?: return null
+    LOG.i("echo-local-src py-pack name=" + pyName + " py=" + pyFile.absolutePath + " api=" + api)
+    return LocalConfigImport(api, null, emptyList(), null)
+}
+
 /** 直引前校验存在且可读:MediaStore 的 DATA 列可能指向已删除/已移动的文件,直引会让整个源拉取失败 */
 private fun readablePath(path: String?): String? {
     if (path.isNullOrEmpty()) return null
@@ -191,6 +219,42 @@ internal fun toClanApi(path: String?, storageRoot: String): String? {
     if (path.isNullOrEmpty() || !path.startsWith(storageRoot)) return null
     return "clan://localhost/" + path.substring(storageRoot.length).replaceFirst("^/+".toRegex(), "")
 }
+
+/**
+ * 订阅地址指向的"应用自己生成的本地副本"(整目录或单文件);不是副本返回 null。
+ * 只认 clan://localhost/ 且真实路径必须落在 files/config/ 内 —— 用户原文件、原目录一律不碰。
+ */
+internal fun localCopyUnit(apiUrl: String?, storageRoot: String, copyRoot: String): File? {
+    val url = apiUrl?.substringBefore(";md5;")?.trim().orEmpty()
+    if (!url.startsWith("clan://localhost/")) return null
+    val rel = url.removePrefix("clan://localhost/").trimStart('/')
+    if (rel.isEmpty()) return null
+    val root = File(copyRoot).absoluteFile
+    val target = File(File(storageRoot), rel.replace('/', File.separatorChar)).absoluteFile
+    if (target == root || !target.startsWith(root)) return null
+    val parent = target.parentFile ?: return null
+    return when {
+        parent == root && isMd5Name(target.name.substringBefore('_')) -> target
+        parent.parentFile == root && isMd5Name(parent.name) -> parent
+        else -> null
+    }
+}
+
+/** 删除订阅时清掉它的本地副本;返回是否真删了东西 */
+fun removeLocalCopy(apiUrl: String?): Boolean {
+    val unit = localCopyUnit(
+        apiUrl,
+        Environment.getExternalStorageDirectory().absolutePath,
+        File(FileUtils.getExternalFilesPath(), "config").absolutePath,
+    ) ?: return false
+    val removed = if (unit.isDirectory) unit.deleteRecursively() else unit.delete()
+    LOG.i("echo-local-src remove copy=" + unit.absolutePath + " ok=" + removed)
+    return removed
+}
+
+/** 副本目录名 / 单文件前缀 = md5(导入时的 uri),32 位小写十六进制;不符合该约定的一律不删 */
+private fun isMd5Name(name: String): Boolean =
+    name.length == 32 && name.all { it in "0123456789abcdef" }
 
 /**
  * SAF Uri → 真实文件路径;解析不出返回 null(= 应复制)。

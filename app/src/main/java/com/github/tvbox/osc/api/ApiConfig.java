@@ -36,6 +36,7 @@ import com.github.tvbox.osc.util.MD5;
 import com.github.tvbox.osc.util.OkGoHelper;
 import com.github.tvbox.osc.util.PermissionHelper;
 import com.github.tvbox.osc.util.Proxy;
+import com.github.tvbox.osc.util.PySourcePack;
 import com.github.tvbox.osc.util.VideoParseRuler;
 import com.github.tvbox.osc.util.live.TxtSubscribe;
 import com.google.gson.Gson;
@@ -463,6 +464,9 @@ public class ApiConfig {
                         error = "empty body";
                     } else {
                         result = FindResult(response.body().string(), configKey);
+                        // 包装必须早于下面的 clanContentFix:否则包装出的 clan:// api 不会被换成本机服务地址
+                        String packedPy = PySourcePack.packUrl(apiUrl, result);
+                        if (packedPy != null) result = packedPy;
                         if (apiUrl.startsWith("clan")) {
                             result = ConfigParser.clanContentFix(ConfigParser.clanToAddress(apiUrl, ApiConfig::localFileBase), result);
                         }

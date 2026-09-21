@@ -1712,3 +1712,47 @@ P1 最后两组。至此**调度层(会话/取流/解析/嗅探/重试/换线/�
   - 手机档(可用 360dp)算出来仍是 230×154dp,**与原样逐像素一致**。
 - **验证**:`:app:compileDebugKotlin` / `:app:compileDebugJavaWithJavac` 通过;`:app:testDebugUnitTest` **22 类 / 221 用例 / 0 失败**;`:app:assembleDebug` 通过。
 - **方法论(本轮第五次,已固化进 §6.10)**:凡是"尺寸由宽高比推导"的组件,在宽屏上都要显式封顶,且**宽高都要封** —— 只封高会把宽度留给相邻页,反而制造出新的视觉噪声。
+
+## 本地导入 py 爬虫:自动包装成单站点配置(2026-09-21,用户"有办法做到直接导入 py 就能使用吗")
+
+- **背景**:用户把 `一起看影院.py` 直接当订阅导入 → 「配置解析失败」(py 不是配置 JSON,`parseJson` 的 gson 直接抛)。手工方案是"自己写一份 sites JSON 与 py 同目录",用户问能否省掉这一步。
+- **实现**(`util/LocalConfigHelper.kt`,纯 Kotlin):`importLocalConfig` 开头按 DISPLAY_NAME 判 `.py` → 新增 `importLocalPySpider`:复制 py 到 `files/config/<md5(uri)>/spider_<md5前8>.py`,同目录生成 `spider_<md5前8>.json`(单站点:key=`py_<md5前8>`、name=原文件名去后缀、type=3、api=`./<副本名>`、searchable/quickSearch/filterable=1),返回 clan:// 地址;站点名经 `jsonEscape`(来自文件名,可能含引号/反斜杠)。
+- **关键取舍**:① 走复制路线而非直引 ⇒ 选完即用,不需要"所有文件访问"或第二次目录授权(missingRefs/directPath 均为空);② 副本文件名用 ASCII(`spider_xxxxxxxx.py`)—— 中文名进 URL 有编码风险,站点名仍保留原文件名;③ api 必须 `./` 相对引用 —— 加载阶段 `ConfigParser.fixContentPath` 只认 `"./`/`"../` 才把它改写成可访问的本机服务 http 地址,裸文件名 / `clan://` 都会在 Python 侧 `requests.get()` 阶段失败(后者 MissingSchema ⇒ "下载插件失败")。
+- **验证**:`:app:compileDebugKotlin` exit0、lint 0、`:app:testDebugUnitTest --tests *LocalConfigPathTest*` 通过;未装机。
+- **局限(当日解除)**:网络地址形式的 py 一开始不支持(会走配置加载 → "配置解析失败"),用户拍板"改" → 见下条。
+
+## py 地址直接当订阅:输入框直填即用(2026-09-21,用户"改")
+
+- **改动(3 个文件)**:新增 `util/PySourcePack.kt`(Kotlin `object` + `@JvmStatic`,单站点 JSON 形状的唯一来源,输入框直填 / 本地导入共用);`ApiConfig.fetchConfigAsync` 在读到正文后插一行 `PySourcePack.packUrl(apiUrl, result)`(Java 只做接线,判定与拼接全在 Kotlin);`LocalConfigHelper.importLocalPySpider` 改调 `packLocal`,删掉内联 JSON 拼接与 `jsonEscape`。
+- **触发条件**:地址含 `.py` **且**正文不是 JSON(trim 后不以 `{` 开头)—— 名叫 `.py` 但内容是 JSON 的地址仍按普通配置解析,不误包。
+- **关键顺序**:pack 必须早于 `clanContentFix` —— 包装出的 api 若是 `clan://localhost/…`,`clanContentFix` 会把它替换成本机服务 http 地址;放后面就替换不到,Python 侧 `requests.get("clan://…")` 必失败(MissingSchema)。
+- **缓存说明**:包装结果是"改写后"存进配置快照的(useCache 命中直接 parseJson),与既有 `./` 引用改写后落缓存的行为一致。
+- **单测**:新增 `PySourcePackTest`(6 例:JSON 形状、JSON 正文不误包、百分号编码名 + query 保留、clan 地址保留、相对 api、引号转义)。
+- **验证**:`compileDebugJavaWithJavac` 通过、全量 `testDebugUnitTest` 0 失败、lint 0、`assembleDebug` + `install -r` Success。**未 commit**。
+
+## 审查:py 包装的边界修复(2026-09-21,用户"审查一下是否有错误遗漏和引入新回归")
+
+- **真遗漏(🔴)**:`clan://<ip>/…/y.py`(局域网 TVBox 服务地址)包装后 api 原样保留 —— 配置加载的 `clanContentFix` 只改写 `clan://localhost/`,于是 Python 侧 `requests.get("clan://192.168.x.x/…")` 抛 InvalidSchema ⇒ 源不可用。修:`packUrl` 里按 `ConfigParser.clanToAddress` 同口径先转 `http://<host>/file/<path>`(localhost 形式刻意保留 —— 交给 clanContentFix 用**运行时**本机地址替换,写死反而更差)。
+- **边界(🟡)**:① 正文带 BOM 时 `startsWith("{")` 失真 ⇒ 地址含 .py + BOM 的 JSON 配置会被误包;判定前 strip BOM。② `nameFromUrl` 用 URLDecoder 处理 path 段会把字面 `+` 解成空格;改 `+ → %2B` 预处理。③ `key` 未转义、空名(文件名恰是 `.py`)会产出无名站点;统一 `jsonEscape` + 空名兜底 "Python源"。
+- **防错(🟢)**:`packLocal` 三个同类型 String 参数顺序易错 ⇒ 调用处改具名参数。
+- **回归核查**:普通配置(地址不含 .py)恒返回 null、行为逐字不变;`.py` 地址但正文是 JSON 不包;本地导入产出 `spider_<md5>.json`(不含 `.py`)不会被二次包装;`loadLiveConfig` 刻意不包(直播 py 是 liveContent 语义,包成点播站点是错的)。
+- **测试**:单测补 4 例(局域网 clan 转 http / BOM 正文 / 名字兜底 / 加号保留),共 8 例;其中一条断言最初按错误预期写(URL 以 `/` 结尾时末段退化成 host 而非空)导致 1 失败,已按真实行为改写并明确记录该行为。
+- **已知边界(未做)**:直播源输入框填 py 仍不支持;本地选中的 `.py` 内容其实是 JSON 时会按站点包装(极小概率)。两条都留作后续。
+- **验证**:`compileDebugJavaWithJavac` ✓、全量 `testDebugUnitTest` **229 例 0 失败** ✓、lint 0 ✓、`assembleRelease`(R8)✓、`assembleDebug` + `install -r` ✓。**未 commit**。
+
+## 删除订阅时清理它的本地副本(2026-09-21,用户问"删订阅后应用数据目录也会删除吗"→"做吧")
+
+- **背景**:此前 `deleteSelected()` 只改 KV / 看门狗黑名单,副本(`files/config/<md5>/{py,json}` 或 `config/<md5>_原名`)留在盘上变孤儿文件。
+- **实现**(`util/LocalConfigHelper.kt`,纯 Kotlin):新增 `localCopyUnit(apiUrl, storageRoot, copyRoot)`(根路径可注入 ⇒ 纯 JVM 可测)与 `removeLocalCopy(apiUrl)`;`ConfigManagePage.deleteSelected()` 在**后台单线程**(`Executors.newSingleThreadExecutor`,与 LiveProxyLoader 同风格)对 `removedUrls` 逐个调用,主线程不做 IO。
+- **安全边界(核心)**:必须 `clan://localhost/` 前缀 **且**真实路径落在 `files/config/` 内;删除单位只认两种 —— ① `config/<32 位 md5>/…` 整棵目录;② `config/<md5>_原名` 单文件(名字前缀必须是 32 位小写 hex)。其余情况(config 之外的用户原文件、非 md5 约定的子项、`clan://<ip>`、普通 http/null)一律返回 null 不碰;`;md5;` 尾巴先剥离。
+- **单测**:`localCopyUnitOnlyRemovesGeneratedCopies`(真临时目录,7 条断言:整目录 / 单文件+尾巴 / config 外 / 非 md5 子目录 / 非 md5 单文件 / 局域网 clan / null)。
+- **未做**:不清配置快照(`filesDir/<md5(apiUrl)>`)—— 重新添加该源会重新拉取覆盖,留着无害。
+- **验证**:全量单测 0 失败、lint 0、`assembleDebug` + `install -r` Success(第一次安装被手机端"User rejected permissions"拒绝,重试成功)。**未 commit**。
+
+## 审查:副本清理的两处加固(2026-09-21,用户"审查一下是否有错遗漏和引入新回归")
+
+- **🔴 跨模式误删**:`isInUse` 只看**当前模式**(点播页不查直播激活源),而副本地址允许跨模式重复添加 ⇒ 在点播页删掉一个"正被直播侧当激活源"的地址会连带删副本,直播源直接坏。修:`deleteSelected` 清理前加两道跨模式闸门 —— `activeInEitherMode`(读 `API_URL`/`LIVE_API_URL` + 两侧仓来源判定,覆盖"激活地址不在订阅列表"的多仓子源情形)与 `referencedBySubscribes`(任一模式列表里仍有该地址则不清)。**只挡清理、不放宽删除保护** —— 删除订阅的既有行为逐字未变。
+- **🟡 新引入的线程泄漏**:`Executors.newSingleThreadExecutor()` 核心线程默认不超时 ⇒ 每次删除留下一个永久空闲线程;改为 `execute` 后立即 `shutdown()`(LiveProxyLoader 的同款既有用法未动,不在本次范围)。
+- **行为确认(非缺陷,留档)**:① 编辑订阅改地址后旧副本成孤儿(刻意不清 —— 改错了还能改回来);② 配置快照 `filesDir/<md5(apiUrl)>` 不清(重新添加会重新拉取覆盖);③ 删除入口全仓唯一(`deleteSelected`),无"清空全部订阅"入口 ⇒ 不存在绕过闸门的批量路径。
+- **`localCopyUnit` 边界复核**:`..` 注入会因"parent 必须正好等于 copyRoot"的判定失败而自然拒删(fail-safe);`File.startsWith` 按路径组件比较,`/a/bc` 不会命中 `/a/b`;`target == root` 明确拒绝(防删整个 config)。
+- **验证**:全量单测 0 失败、lint 0、`assembleDebug` + `install -r` Success。**未 commit**。

@@ -1,5 +1,7 @@
 package com.github.tvbox.osc.util
 
+import java.io.File
+import java.nio.file.Files
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -184,5 +186,36 @@ class LocalConfigPathTest {
         assertEquals("local_config.json", safeFileName("."))
         assertEquals("local_config.json", safeFileName(".."))
         assertEquals("local_config.json", safeFileName("../../config.json/.."))
+    }
+
+    // ---- 删订阅时的副本清理:只删应用自己生成的 config/ 下产物 ----
+
+    @Test
+    fun localCopyUnitOnlyRemovesGeneratedCopies() {
+        val tmp = Files.createTempDirectory("copy-unit").toFile()
+        try {
+            val storage = File(tmp, "storage").apply { mkdirs() }.absolutePath
+            val copyRoot = File(File(storage, "Android/data/pkg/files"), "config").apply { mkdirs() }
+            val graph = "0123456789abcdef0123456789abcdef"
+            val dir = File(copyRoot, graph).apply { mkdirs() }
+            File(dir, "spider_01234567.py").writeText("x")
+            File(dir, "spider_01234567.json").writeText("{}")
+            val base = "clan://localhost/Android/data/pkg/files/config"
+
+            // 生成目录(config/<md5>/…)整棵删
+            assertEquals(dir, localCopyUnit("$base/$graph/spider_01234567.json", storage, copyRoot.absolutePath))
+            // 直接落在 config/ 下的单文件副本(md5_原名)删文件本身;`;md5;` 尾巴不影响反解
+            val single = File(copyRoot, "${graph}_local.json").apply { writeText("{}") }
+            assertEquals(single, localCopyUnit("$base/${graph}_local.json;md5;deadbeef", storage, copyRoot.absolutePath))
+
+            // 用户原文件(config 之外)、非 md5 约定的 config 子项、局域网 clan / 普通地址:一律不碰
+            assertNull(localCopyUnit("clan://localhost/Download/tvbox.json", storage, copyRoot.absolutePath))
+            assertNull(localCopyUnit("$base/manual/x.json", storage, copyRoot.absolutePath))
+            assertNull(localCopyUnit("$base/notmd5_local.json", storage, copyRoot.absolutePath))
+            assertNull(localCopyUnit("clan://192.168.1.5/x/y.py", storage, copyRoot.absolutePath))
+            assertNull(localCopyUnit(null, storage, copyRoot.absolutePath))
+        } finally {
+            tmp.deleteRecursively()
+        }
     }
 }
