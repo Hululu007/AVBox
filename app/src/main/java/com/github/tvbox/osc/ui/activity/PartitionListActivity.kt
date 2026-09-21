@@ -11,6 +11,7 @@ import com.github.tvbox.osc.ui.theme.enableTransparentEdgeToEdge
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -55,6 +57,7 @@ import com.github.tvbox.osc.ui.components.VodCard
 import com.github.tvbox.osc.ui.components.VodCardMenu
 import com.github.tvbox.osc.ui.components.glassTopBarSurface
 import com.github.tvbox.osc.ui.components.rememberVodCardMenuState
+import com.github.tvbox.osc.ui.WindowSize
 import com.github.tvbox.osc.ui.page.PartitionListVM
 import com.github.tvbox.osc.ui.page.dispatchVodCardClick
 import com.github.tvbox.osc.ui.page.openVodCardOrDetail
@@ -266,8 +269,13 @@ private fun VideoGrid(
     enableLoadMore: Boolean = false,
     topPadding: Dp = 0.dp,
 ) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+    val gridColumns = WindowSize.gridColumns(
+        availableWidthDp = (maxWidth - 32.dp).value.toInt(),
+        minColumns = 3,
+    )
     LazyVerticalGrid(
-        columns = GridCells.Fixed(3),
+        columns = GridCells.Fixed(gridColumns),
         state = rememberLazyGridState(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = topPadding + 28.dp, bottom = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -282,9 +290,10 @@ private fun VideoGrid(
             )
         }
         if (enableLoadMore) {
-            item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(3) }) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
                 LaunchedEffect(videos.size) { onLoadMore() }
             }
         }
+    }
     }
 }

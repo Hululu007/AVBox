@@ -56,6 +56,7 @@ fun AppTopBarScaffold(
     navigationIcon: (@Composable () -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
     collapseEnabled: Boolean = true,
+    topBarStartInset: Dp = 0.dp,
     content: @Composable androidx.compose.foundation.layout.BoxScope.(topPadding: androidx.compose.ui.unit.Dp, bottomPadding: androidx.compose.ui.unit.Dp) -> Unit,
 ) {
     val scrollBehavior = if (collapseEnabled) {
@@ -79,7 +80,9 @@ fun AppTopBarScaffold(
                 LocalTopBarGlassBackdrop provides glassBackdrop.takeIf { glassEnabled }
             ) {
                 TopAppBar(
-                    modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars),
+                    modifier = Modifier
+                        .windowInsetsPadding(WindowInsets.statusBars)
+                        .padding(start = topBarStartInset),
                     windowInsets = WindowInsets(0, 0, 0, 0),
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = Color.Transparent,

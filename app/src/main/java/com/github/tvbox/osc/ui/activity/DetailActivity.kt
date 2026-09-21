@@ -211,7 +211,8 @@ class DetailActivity : BaseActivity(), PageHost {
         requestedOrientation = if (full) {
             ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         } else {
-            ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+            // 恢复窗口档策略值:大屏上硬写竖屏会把平板压回信箱模式
+            orientationPolicyValue()
         }
         if (full) {
             hideSysBar()

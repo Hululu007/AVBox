@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -57,6 +58,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -196,7 +198,13 @@ class HistoryViewModel : ViewModel() {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun HistoryPage(vm: HistoryViewModel = viewModel(), bottomPadding: Dp = 0.dp) {
+fun HistoryPage(
+    vm: HistoryViewModel = viewModel(),
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+) {
+    // 页面保持全出血(背景延伸到导航栏之下,玻璃才有内容可取),只把内容让开
+    val navStart = contentPadding.calculateStartPadding(LocalLayoutDirection.current)
+    val navBottom = contentPadding.calculateBottomPadding()
     val context = LocalContext.current
     val items by vm.items.collectAsState()
     val loading by vm.loading.collectAsState()
@@ -221,6 +229,7 @@ fun HistoryPage(vm: HistoryViewModel = viewModel(), bottomPadding: Dp = 0.dp) {
     }
 
     AppTopBarScaffold(
+        topBarStartInset = navStart,
         titleContent = {
             Text(
                 text = "历史",
@@ -262,10 +271,10 @@ fun HistoryPage(vm: HistoryViewModel = viewModel(), bottomPadding: Dp = 0.dp) {
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(
-                    start = 16.dp,
+                    start = 16.dp + navStart,
                     end = 16.dp,
                     top = topPad + 8.dp,
-                    bottom = 8.dp + bottomPadding,
+                    bottom = 8.dp + navBottom,
                 ),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {

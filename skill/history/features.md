@@ -1626,3 +1626,89 @@ P1 最后两组。至此**调度层(会话/取流/解析/嗅探/重试/换线/�
 - **刻意不改名字**:`crashedDuringStartup` 方法与日志字段 `startupCrash=` 保留("startup" 已是历史叫法)—— 既有真机日志与 `history/` 归档里都是这个字段名,改了对不上号。已在 KDoc 写明"别按字面理解成应用启动",并把 `QUICK_CRASH_MS`、`HawkConfig.BOOT_LOAD_START_ELAPSED` 的注释由"启动加载阶段"改为"装载阶段"。
 - **验证**:单测 **205 用例 / 0 失败**(上一轮 204 + 1);`:app:compileDebugKotlin` / `:app:compileDebugJavaWithJavac` / `:app:assembleDebug` 全通过。**未装机**。
 - **仍覆盖不到的(说明,非缺陷)**:`onJarLoadStart` 依赖 KV,而单测无 Robolectric、`KV.init` 需要 Context ⇒ "起点是否每次都被覆盖"这一层进不了单测,靠的是纯函数那层的回归锁 + 代码审查。另外"装载后 10 秒内的非装载期崩溃会被误算"这条残留窗口没变(实测装载本身只要 28 毫秒,窗口远大于真实装载耗时)。
+
+## 大屏自适应阶段一:窗口分档、按档解锁方向、栅格分列与限宽(2026-09-21)
+
+- **起因**:用户在云真机上发现平板切横屏被强制压回竖屏(信箱模式)。读码 + 查官方文档定位到根因:manifest 里 11 个 Activity 全部写死 `screenOrientation="portrait"`,而项目 targetSdk=37 —— Android 16(API 36)起对 targetSdk≥36 的应用在 **sw≥600dp** 的显示屏上会忽略方向/尺寸限制,Android 17(API 37)连临时选择停用都取消了。所以锁竖屏在手机(sw<600dp,不在忽略范围内)上照旧生效,在平板上两头不讨好:老系统上被信箱化,新系统上被迫横屏但布局是竖屏假设。
+- **决策(用户 2026-09-21 拍板)**:① 手机(sw<600dp)**继续锁竖屏**;② 大屏做「栅格自适应 + 内容限宽 + 侧边 Rail(含液态玻璃轴向改造)」;③ **不做**列表-详情双栏。规范写入 spec §4.11 / §5 / §6.10 / §7。
+- **改动(阶段一)**:
+  - 新增 `ui/WindowSize.kt`:`WindowWidthClass`(Compact/Medium/Expanded)+ 纯函数 `classify` / `shouldLockPortrait` / `scaleColumns` + `currentWindowWidthClass()`。**两个判据分开用**是这次的核心约定 —— 方向策略看 `smallestScreenWidthDp`(与设备方向无关,精确对应平台规则);布局分档看**当前窗口宽度**(分屏下窗口可能远窄于屏幕)。
+  - `AndroidManifest.xml`:移除 11 个 Activity 的 `screenOrientation="portrait"`,并在首个 Activity 上方留注释说明方向策略已移到代码里(防止后人"修回去")。
+  - `BaseActivity`:`applyOrientationPolicy()`(sw<600→`SENSOR_PORTRAIT`,否则 `UNSPECIFIED`)+ `orientationPolicyValue()` + `onConfigurationChanged` 钩子,在 `onCreate` / `onResume` 调用。**只在策略值本身变化时下发**(实例字段缓存)—— 否则每次配置变化都会覆盖播放器「旋转」按钮刚设过的方向;`smallestScreenWidthDp` 与方向无关,故手机旋转不会触发重复下发。
+  - `DetailActivity` / `LivePlayActivity` 的 `applyFullscreen(false)`:由硬写 `SENSOR_PORTRAIT` 改为 `orientationPolicyValue()`。**这是最关键的一处** —— 不改的话用户退出一次全屏就被重新锁回竖屏(与信箱化同一症状)。
+  - 栅格按档分列 + 限宽:`HomeGridLayout`(基 3)/ `CollectPage`(基 2)/ `PartitionListActivity`(基 3)统一改为 `GridCells.Fixed(WindowSize.scaleColumns(基, currentWindowWidthClass()))`,外层加 `Box(contentAlignment = TopCenter)` + `widthIn(max = 1000.dp)` 限宽居中。增量取 +1/+3,使 Medium/Expanded 的卡片宽度落在 120–160dp(单测用"卡片宽度算式"把这个区间锁住)。
+  - `PartitionListActivity` 的「加载更多」由硬编码 `GridItemSpan(3)` 改为 `GridItemSpan(maxLineSpan)`(全项目其它 5 处本来就是 `maxLineSpan`)。
+  - 宽屏观感两处上限:`HomeGridLayout` 的筛选 chip 等宽铺满加 `maxWidth <= 600dp` 前提(宽屏改走自然宽度左对齐);`HeroCarousel` 的 `sidePad` 加 `coerceAtMost(96.dp)`(18% 是手机档比例,宽屏下会大到看不见内容)。
+- **验证**:`:app:compileDebugKotlin` / `:app:compileDebugJavaWithJavac` 通过(仅既有弃用提示);`:app:testDebugUnitTest` **213 用例 / 0 失败**(基线 205 + 新增 `WindowSizeTest` 8 例)。**未装机** —— 平板侧真机行为待验。
+- **刻意没做(非遗漏)**:
+  - `ComposeVideoController.onRotateClicked()` / `onBackClicked()` 设 `SENSOR_PORTRAIT`/`SENSOR_LANDSCAPE` 保留原样:那是播放器「旋转」按钮的**显式用户意图**,锁住正是用户要的结果,且退出全屏会被策略值复位。上游 dkplayer 遗留(`player/.../BaseVideoController.java`、`ControlWrapper.java`)不在当前 Compose 路径上,未动。
+  - `bottomPadding: Dp` → `contentPadding: PaddingValues` 的签名重构**顺延到阶段二**:阶段一仍只有底部留白,现在改只是空转,等 Rail 引入 start padding 时一并做。
+  - `DetailScreens` 选集网格的列数仍按剧集名长度算 —— 其容器是限宽 sheet,不受宽屏影响。
+  - `hideSysBar()` 的强制沉浸式在多窗口/平板上偏敌对,属独立决策,未动。
+- **文档同步**:spec §3「横竖屏」改写、§4.11 新增并标注实施状态、§5 补 Rail 玻璃标定、§6.10 新增、§7 未决清单更新、§2 补版本漂移与单测基线订正。
+
+## 大屏自适应阶段二:导航栏轴向参数化 + 侧边 Rail(2026-09-21)
+
+- **范围**:把导航栏从"只会横着放"改成"按窗口档选横条或竖条",并让 `MainScreen` 与液态玻璃跟着走。Compact 档渲染必须与改造前一致。
+- **改动**:
+  - **`ui/navbar/FloatingBottomBar.kt` → `ui/navbar/FloatingNavBar.kt`**(旧文件已删除,不保留双份)。新增 `NavAxis { Horizontal, Vertical }`;轴向差异全部收进 5 个 helper:`crossAxisSize` / `mainAxisLength` / `mainAxisFill` / `mainAxisPadding` / `setMainAxisTranslation`。容器抽象成 `NavContainer`(横向走 `Row`、竖向走 `Column`,内容由 `horizontalContent: RowScope.() -> Unit` 与 `verticalContent: ColumnScope.() -> Unit` 两个 lambda 分别提供)—— 之所以不能合成一个,是因为等宽分发要用的 `weight` 在 `RowScope` 与 `ColumnScope` 里不是同一个函数。两个作用域各自的 `NavTabsRow` / `NavTabsColumn` 再委托给共用的 `NavTabItem`,避免重复 tab 样式。**横向路径的 modifier 链逐字未变**(helper 在 `Horizontal` 分支返回的就是原来那个 modifier),故手机档渲染与改造前一致。
+  - **液态玻璃三处按轴向重标定**:① `lens()` 按短边限幅(`min(distortionDp, size.minDimension / 2f)`,与 `GlassTopBar.glassSurface` 同款)—— 原实现没有这个保护,`DEFAULT_DISTORTION_DP = 30f` 直接用在 64dp 宽的竖条上会崩;② 按压鼓出改按主轴长度(原按 `size.width`,竖条上会横向胖出约 25%);③ 第三层的甩动拉伸轴向对调(横条拉 x 压 y,竖条拉 y 压 x)。`pressedScale = 78f/56f` 不用改 —— 它是交叉轴上的无量纲比(56→78),横竖语义相同。
+  - **`MainScreen`**:按 `currentWindowWidthClass()` 选轴向(Compact→横条,其余→竖条);`band` 矩形、渐变遮罩(竖向/横向 + `BottomCenter`/`CenterStart`)、导航容器对齐与 insets 全部按轴向分支。竖条档**即使玻璃关闭也渲染悬浮导航**(此时容器色不透明),横条档保持原有的"玻璃关闭则用 Scaffold `NavigationBar`"。
+  - **页面留白改为 `contentPadding: PaddingValues`**(`bottomPadding` 从 `HomePage`/`HistoryPage`/`CollectPage`/`SettingsPage`/`HomeGridLayout` 五个签名里删除)。留白统一由 `MainScreen` 算,各页把它作为**内容内边距**施加:滚动容器的 `contentPadding`、覆盖层的 `Modifier.padding`(如首页直播 FAB)、顶栏的 `topBarStartInset`。页面内不出现 `if (isRail)`。
+    - ⚠️ **这一处返工过一次(真机截图确认的回归)**:中间版本是"在 `MainScreen` 的 pager 外层给**页面容器**加 `Modifier.padding(pageContentPadding)`"。用户截图显示**导航栏下方变成一块不透明的灰板、内容不再延伸到导航栏下面**。根因:容器 padding 会把页面背景一起缩掉,导航栏下方只剩外层 `Scaffold` 的 `containerColor`,玻璃取不到内容 ⇒ 退化成纯色板。**注意这两种写法数值完全等价**(`88 + (insets+76)` ≡ `(insets+76) + 88`),只有视觉不同 ⇒ **数值对账不能替代真机确认**。已改回"内容内边距"写法。
+    - 顺带给 `AppTopBarScaffold` 新增 `topBarStartInset: Dp = 0.dp`:竖条档要让开 Rail 只能缩顶栏;给它传 `modifier = Modifier.padding(start = …)` 会把整个 Scaffold 连内容一起缩掉(就是上面那个回归的同一形态)。
+- **刻意否掉的一处原定方案**:spec §5 原写"Rail 的 band 必须避开顶栏"。实施时发现把 band 顶部下移到顶栏之下,会让 Rail 上段落在源层之外 ⇒ 那一段玻璃取不到底、退化成纯容器色,比"左上角一小块重叠"更难解释。实测重叠只发生在 band 的 margin 区(x∈[76,140]dp),Rail 自身(x∈[0,76]dp)不会采到顶栏的玻璃面。故改为全高 band,并把结论回写 §5(标注"实施时否掉")。
+- **踩到的坑(已记录进 §6.10)**:轴向 helper 第一次写反了 —— 把"主轴"当成了高度,而横条的**主轴是宽度**。这类错误不会报编译错,横条路径因为映射恰好是自己也被真机验证过,只有竖条会错位。
+- **验证**:`:app:compileDebugKotlin` / `:app:compileDebugJavaWithJavac` 通过;`:app:testDebugUnitTest` **213 用例 / 0 失败**(阶段二未新增单测 —— Rail 与导航壳全是 Compose 布局代码,本项目单测是纯 JVM、无 Robolectric,这部分进不了单测);`:app:assembleDebug` 通过,产出 `app/build/outputs/apk/debug/AVBox_debug.apk`,并核对**合并后清单里 `screenOrientation` 出现 0 次**(11 个 Activity 全部不再声明方向)。**未装机** —— 但用户随后提供了真机截图,据此定位并修掉了上面那条留白回归(修完重新编译 + 单测 213/0 通过)。平板侧真机行为仍待验。
+- **文档同步**:spec §4.11(实施状态补阶段二 + 留白方案含返工记录、页面留白段落改写并加 ⚠️ 红线)、§5(Rail band 结论订正)、§6.10(补轴向命名坑、留白只能加在内容上的红线、band 取舍、测试空白)、§7。
+
+## 侧边 Rail 真机复核:三处修正(2026-09-21)
+
+- **背景**:用户在平板(DPD2437 / Android 15)上验阶段二,报了两个问题,截图里还暴露出第三个。
+- **① 关掉玻璃不回退 surface 模式(真 bug,我引入)**:原实现里"玻璃关 → 用 M3 标准 `NavigationBar`"是 **`MainScreen` 的行为**,不是导航栏组件自己的。阶段二我把竖条档写成"不管玻璃开不开都渲染悬浮导航,靠 `containerColor` 不透明兜底",等于砍掉了回退路径 ⇒ 关玻璃后仍是**胶囊形状 + 无 M3 指示器**的假 surface。
+  - **修法**:把 `liquidGlassEnabled`(皮肤)与 `navAxis`(形态)彻底解耦 —— `railMode = navAxis == Vertical`、`surfaceNavVisible = !liquidGlassEnabled`;竖条档 + 关玻璃改渲染 `M3 NavigationRail`(宽 80dp、`surfaceContainerHigh`),页面 reserve 用新增常量 `SURFACE_RAIL_WIDTH_DP = 80` 而非 76。
+- **② Rail 区域一块半透明白(真 bug,我引入)**:左侧渐变遮罩**方向写反**。底部那条是 `verticalGradient(0f 透明 → 1f 不透明)` = "贴屏幕下边缘不透明、往上渐隐";我照抄成 `horizontalGradient(0f 透明 → 1f 不透明)`,而在横向里 `0f` 是**屏幕左边缘** ⇒ 变成"贴左边缘透明、往内容方向越来越白",在内容侧(海报左侧)糊出一块半透明白。
+  - **修法**:横向换成 `horizontalGradient(0f 不透明 → 1f 透明)`,并抽出 `scrimColor` 局部变量避免两处颜色不一致。
+- **③ 分类 tab 行被 Rail 压住(截图发现,我漏掉的)**:`contentPadding` 只作用于**滚动内容**;`HomeGridLayout` 的分类 tab 行(`HomeSortTabRow`)、顶栏、FAB 都不在滚动容器里,拿不到它 ⇒ tab 行从 x=0 起、左边被 Rail 盖住("热播电影"只剩半个字)。
+  - **修法**:给 `HomeSortTabRow` 加 `startInset: Dp` 参数并在 `HomeGridLayout` 传入 `navStart`(顺带把 `navStart` 从栅格 contentPadding 里的内联调用提成局部变量复用)。顶栏与 FAB 在上一轮已分别用 `topBarStartInset` / `Modifier.padding` 处理。
+- **顺带清理**:`MainScreen` 里 tab 点击的三份重复实现(Scaffold 的 `NavigationBar` / `FloatingNavBar` / 新增的 `NavigationRail`)抽成一个 `selectTab: (Int) -> Unit`。
+- **验证**:`:app:compileDebugKotlin` / `:app:compileDebugJavaWithJavac` 通过;`:app:testDebugUnitTest` **213 用例 / 0 失败**;`:app:assembleDebug` 通过并重新出包。**待用户再截图确认**。
+- **教训(三次同类错误)**:这一轮我连错三次(容器 padding、遮罩方向、漏掉非滚动元素),共同点是**"看起来等价"的写法实际不等价,而我用推理代替了真机确认**。结论:凡是"位置/方向/谁让开谁"这类几何改动,只能靠真机截图收口;能推理的只有纯函数那一层。
+- **文档同步**:spec §4.11 补"形态与玻璃正交"规则、§6.10 补三条红线(遮罩方向 / 非滚动元素要单独让开 / 形态与玻璃正交)。
+
+## 平板第二次复核:竖条 insets 修正 + 两处"看着像 bug 其实不是"(2026-09-21)
+
+- **背景**:用户装上一轮的包后在平板(DPD2437 / Android 15)复测并给了两张截图(首页 rail 态 + 搜索页),问"还有什么 bug"。
+- **截图 1(首页)确认三处修复全部生效**:Rail 在左侧、遮罩不再发白、分类 tab 行让开了 Rail、栅格 6 列且卡宽落在目标区间。**未发现新问题。**
+- **截图 2(搜索页)两处"看着像 bug 其实不是"**:
+  - 结果列表上方那条**波浪形蓝线** = `SearchScreens.kt:331` 的 `LinearWavyProgressIndicator`(M3 expressive 波浪形线性进度条,`if (running)` 时显示)。截图时搜索仍在进行,属预期。
+  - 源列表里"光影 | … **C**"那个 C = `SearchRailItem` 的 `pending` 指示器(`CircularProgressIndicator` 12dp、未定态为弧),在截图缩放下像字母 C。也属预期。
+- **修了一处真问题(代码扫描发现,非截图)**:竖条容器的 insets 原来只用 `WindowInsets.navigationBars`。竖条是**满高**的、上下都要让,而 `navigationBars` 只覆盖底边与横屏侧边 ⇒ 在状态栏较厚或竖屏平板上会顶进状态栏。已把 `MainScreen` 两处(悬浮竖条容器 + 回退的 M3 `NavigationRail`)改为 `WindowInsets.systemBars`。横条档不变(它只贴底边,`navigationBars` 正确)。
+- **刻意没修(记进 §6.10)**:竖条档下 `HomeGridLayout`/`HomePage` 的 `bottom` 里那个 `88.dp` 是给底部悬浮条留的,竖条档没有底部条 ⇒ 列表底部多 88dp 滚动余量。收口要把它从页面移到 `MainScreen`,会再动一次手机档留白路径;本轮已连出三次几何回归,**故留到平板验证通过后再做**。
+- **验证**:`:app:compileDebugKotlin` 通过;`:app:testDebugUnitTest` **213 用例 / 0 失败**。
+- **方法论沉淀(本轮第三次记)**:几何类改动"推理不可靠、截图才可靠"。这轮我又靠**代码扫描**(而不是截图)找出 insets 问题,说明两条路都要走:截图抓"看得见的错",扫描抓"还没显形的错"。
+
+## 海报与分类 tab 行错位 41dp:栅格限宽是元凶(2026-09-21)
+
+- **用户反馈**:平板截图上"影视海报没有对齐热播电影这一栏",问是不是 bug。
+- **量化(直接从截图取像素)**:比例尺由"列间距 21.4px = 12dp"解出 = 1.783 px/dp,窗口 ≈ 1077dp。实测「热播电影」文字左缘 109.4dp、海报左缘 **150.3dp**,**差 41dp**。
+- **根因(我引入的)**:阶段一给栅格加了 `widthIn(max = 1000.dp)` + `Box(contentAlignment = TopCenter)` 限宽居中,**但只加在栅格上、没加在整页内容上**。窗口 1077dp 时栅格被压到 1000dp 居中 ⇒ 整块右移约 58dp,而分类 tab 行仍贴左边缘。
+- **修法(比"直接撤掉限宽"更彻底)**:撤掉限宽会让卡宽超标(1116dp 窗口下 6 列 → 170dp,超出 120–160dp 目标)。改为**用「可用宽度 ÷ 目标卡宽」算列数**:
+  - `WindowSize.scaleColumns(档位)` → **删除**,换成 `gridColumns(availableWidthDp, minColumns)`;新增 `TARGET_CARD_WIDTH_DP = 130` / `GRID_COLUMN_SPACING_DP = 12`;删除 `GRID_MAX_CONTENT_WIDTH_DP`。
+  - 三处栅格(`HomeGridLayout`/`CollectPage`/`PartitionListActivity`)改用 `BoxWithConstraints` 取 `maxWidth`,算出列数;不再限宽、不再居中。**限宽一撤,容器对齐自动恢复**(海报/tab 盒/chip 盒同在 `navStart + 16dp`)。
+  - 实测卡宽:360→3列/101dp(手机档,下限兜底,与原布局一致)、600→4/133、840→5/152、1116→6→**7**/144、1280→8/145、1600→11/131 —— 全部落在 120–160dp。
+- **刻意不动的一处**:tab 文字比海报左缘仍右移约 17dp —— 那是 M3 `Tab` 自带横向内边距 + 文字居中造成的,**chip 文字同理(14dp)**。容器是对齐的,别用 padding 去"凑"文字,那会把容器搞歪。已写进 §6.10。
+- **验证**:`:app:compileDebugKotlin` / `:app:compileDebugJavaWithJavac` 通过;`:app:testDebugUnitTest` **22 类 / 221 用例 / 0 失败**(`WindowSizeTest` 8 例已按新公式重写,含"卡宽落在 120–160dp"的逐档校验)。
+- **方法论(本轮第四次)**:这次靠**从截图取像素反推比例尺**定位,而不是靠读代码猜 —— 值得固化:几何类 bug 先把"比例尺"解出来(用已知的 dp 常量除以实测像素),之后所有偏移量都能算成 dp,不再靠目测。
+
+## Hero 轮播在宽屏上无上限:巨大卡片 + 一条 6.8dp "黑条"(2026-09-21)
+
+- **用户反馈**(对齐修复已确认):平板横屏的「横向展示」下,首页顶部轮播海报非常大、不协调;左边还有一条"不知道是什么"的大黑条,会跟着滚动。
+- **量化(截图取像素,比例尺 1.783 px/dp)**:Hero 卡片 x 168.8→984.9dp ⇒ 宽 **816dp**,按 1.5 宽高比 ⇒ 高 **544dp**(占 757dp 屏高的 72%)。"黑条" x **76.8–83.6dp**(宽 6.8dp)、高 429dp —— 起点正好是 `FLOATING_NAV_OVERLAY_DP = 76dp`。
+- **根因(同一个)**:`HeroCarousel` 是 `fillMaxWidth().aspectRatio(1.5f)`,尺寸完全由屏宽驱动、**没有任何上限**。卡片越宽,相邻页 `scaleX = 1 - 0.18d` 造成的边缘内移量越大(0.09×816 ≈ 73dp),而 peek 只有 84dp ⇒ 相邻页只在左侧缝里露出 6.8dp。**那条"黑条"就是轮播上一页的边缘**。
+- **修法**:给 Hero 同时封宽与封高 —— `fillMaxWidth().wrapContentWidth(Alignment.CenterHorizontally).widthIn(max = HeroMaxWidth = 640.dp).aspectRatio(1.5f).heightIn(max = HeroMaxHeight = 340.dp)`。
+  - `wrapContentWidth` 是必需的:`HorizontalPager` 用**固定宽度**约束每个 page,只写 `widthIn(max)` 压不下去(最小宽度也被顶住了),得靠它放开最小宽度再居中。
+  - 封宽后相邻页的 Hero 在它自己的槽内居中 ⇒ 右缘被推到视口外(推算 −0.5dp)⇒ **黑条消失**。
+  - 手机档(可用 360dp)算出来仍是 230×154dp,**与原样逐像素一致**。
+- **验证**:`:app:compileDebugKotlin` / `:app:compileDebugJavaWithJavac` 通过;`:app:testDebugUnitTest` **22 类 / 221 用例 / 0 失败**;`:app:assembleDebug` 通过。
+- **方法论(本轮第五次,已固化进 §6.10)**:凡是"尺寸由宽高比推导"的组件,在宽屏上都要显式封顶,且**宽高都要封** —— 只封高会把宽度留给相邻页,反而制造出新的视觉噪声。

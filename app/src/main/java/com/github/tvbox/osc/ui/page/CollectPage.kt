@@ -12,14 +12,17 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -44,6 +47,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -55,6 +59,7 @@ import com.github.tvbox.osc.R
 import com.github.tvbox.osc.cache.RoomDataManger
 import com.github.tvbox.osc.cache.VodCollect
 import com.github.tvbox.osc.event.RefreshEvent
+import com.github.tvbox.osc.ui.WindowSize
 import com.github.tvbox.osc.ui.components.AppTopBarScaffold
 import com.github.tvbox.osc.ui.components.LoadStateBox
 import kotlinx.coroutines.Dispatchers
@@ -115,7 +120,13 @@ class CollectViewModel : ViewModel() {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun CollectPage(vm: CollectViewModel = viewModel(), bottomPadding: Dp = 0.dp) {
+fun CollectPage(
+    vm: CollectViewModel = viewModel(),
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+) {
+    // 页面保持全出血(背景延伸到导航栏之下,玻璃才有内容可取),只把内容让开
+    val navStart = contentPadding.calculateStartPadding(LocalLayoutDirection.current)
+    val navBottom = contentPadding.calculateBottomPadding()
     val context = LocalContext.current
     val items by vm.items.collectAsState()
     val loading by vm.loading.collectAsState()
@@ -132,6 +143,7 @@ fun CollectPage(vm: CollectViewModel = viewModel(), bottomPadding: Dp = 0.dp) {
     }
 
     AppTopBarScaffold(
+        topBarStartInset = navStart,
         titleContent = {
             Text(
                 text = "收藏",
@@ -169,17 +181,22 @@ fun CollectPage(vm: CollectViewModel = viewModel(), bottomPadding: Dp = 0.dp) {
                     .padding(top = topPad),
             )
 
-            else -> LazyVerticalGrid(
+            else -> BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val gridColumns = WindowSize.gridColumns(
+                availableWidthDp = (maxWidth - 32.dp - navStart).value.toInt(),
+                minColumns = 2,
+            )
+            LazyVerticalGrid(
                 state = listState,
-                columns = GridCells.Fixed(2),
+                columns = GridCells.Fixed(gridColumns),
                 modifier = Modifier.fillMaxSize(),
                 
                 contentPadding = PaddingValues(
-                    start = 16.dp,
+                    start = 16.dp + navStart,
                     end = 16.dp,
                     top = topPad + 8.dp,
                     
-                    bottom = 8.dp + bottomPadding,
+                    bottom = 8.dp + navBottom,
                 ),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -203,6 +220,7 @@ fun CollectPage(vm: CollectViewModel = viewModel(), bottomPadding: Dp = 0.dp) {
                         onLongClick = { deleteTarget = item },
                     )
                 }
+            }
             }
         }
     }

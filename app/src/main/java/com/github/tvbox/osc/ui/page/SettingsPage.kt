@@ -10,8 +10,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -41,6 +43,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -195,7 +198,13 @@ class SettingsViewModel : ViewModel() {
 }
 
 @Composable
-fun SettingsPage(vm: SettingsViewModel = viewModel(), bottomPadding: Dp = 0.dp) {
+fun SettingsPage(
+    vm: SettingsViewModel = viewModel(),
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+) {
+    // 页面保持全出血(背景延伸到导航栏之下,玻璃才有内容可取),只把内容让开
+    val navStart = contentPadding.calculateStartPadding(LocalLayoutDirection.current)
+    val navBottom = contentPadding.calculateBottomPadding()
     val state by vm.state
     // 各行的值都来自 KV,而 loadState() 只在 ViewModel 构造时读一次;播放设置/偏好设置/预载设置等
     // 二级页也能改同一批 KV,退回本页时若不重读就会显示旧值 —— 故回本页(宿主 Activity 的 ON_RESUME)
@@ -218,6 +227,7 @@ fun SettingsPage(vm: SettingsViewModel = viewModel(), bottomPadding: Dp = 0.dp) 
     val listState = rememberScrollState()
 
     AppTopBarScaffold(
+        topBarStartInset = navStart,
         titleContent = {
             Text(
                 text = "设置",
@@ -231,7 +241,7 @@ fun SettingsPage(vm: SettingsViewModel = viewModel(), bottomPadding: Dp = 0.dp) 
                 .fillMaxSize()
                 .verticalScroll(listState)
                 .padding(horizontal = 16.dp)
-                .padding(bottom = 8.dp + bottomPadding),
+                .padding(start = navStart, bottom = 8.dp + navBottom),
             verticalArrangement = Arrangement.spacedBy(28.dp),
         ) {
             Spacer(Modifier.height(topPad - 20.dp))

@@ -8,7 +8,10 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,6 +34,15 @@ import kotlin.math.abs
 
 private const val HERO_PAGES_PER_SET = 100_000
 
+/** 18% 是手机档的视觉比例;宽屏下不设上限会让左右留白大到看不见内容 */
+private val HeroMaxSidePad = 96.dp
+
+/** Hero 宽度上限:不封顶时它会按 1.5 宽高比撑满整屏,并把相邻页挤成一条"黑边"(真机实测仅 6.8dp 宽) */
+private val HeroMaxWidth = 640.dp
+
+/** Hero 高度上限:与宽度上限共同约束,宽屏下高度约 340dp(未封顶时实测 544dp,占屏高 72%) */
+private val HeroMaxHeight = 340.dp
+
 @Composable
 fun HeroCarousel(
     videos: List<Movie.Video>,
@@ -39,7 +51,7 @@ fun HeroCarousel(
 ) {
     if (videos.isEmpty()) return
     val n = videos.size
-    val sidePad = LocalConfiguration.current.screenWidthDp.dp * 0.18f
+    val sidePad = (LocalConfiguration.current.screenWidthDp.dp * 0.18f).coerceAtMost(HeroMaxSidePad)
     val pagerState = rememberPagerState(
         initialPage = n * (HERO_PAGES_PER_SET / 2),
         pageCount = { n * HERO_PAGES_PER_SET },
@@ -55,7 +67,12 @@ fun HeroCarousel(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                // 宽屏下封顶并居中。不封顶有两宗罪:①按 1.5 宽高比撑满整屏;
+                // ②相邻页缩放后边缘内移量随宽度变大,只从左侧缝里露出几 dp,看着像一条随机黑条
+                .wrapContentWidth(Alignment.CenterHorizontally)
+                .widthIn(max = HeroMaxWidth)
                 .aspectRatio(1.5f)
+                .heightIn(max = HeroMaxHeight)
                 .graphicsLayer {
                     val pageOffset =
                         (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction

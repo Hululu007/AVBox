@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -50,6 +52,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
@@ -59,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.bean.Movie
 import com.github.tvbox.osc.bean.MovieSort
+import com.github.tvbox.osc.ui.WindowSize
 import com.github.tvbox.osc.ui.components.FilterSheet
 import com.github.tvbox.osc.ui.components.SkeletonBox
 import com.github.tvbox.osc.ui.components.VodCard
@@ -77,6 +81,9 @@ private val HomeFilterChipFitSlack = 2.dp
 
 private val HomeFilterChipPadding = 14.dp
 
+/** 超过此宽度不再等宽铺满:宽屏下会把每个 chip 拉成一大条,不如保持自然宽度左对齐 */
+private val HomeFilterChipEqualWidthMaxWidth = 600.dp
+
 private val HomeGridItemSpacing = 16.dp
 
 private val HomeGridContentTopPadding = 4.dp
@@ -85,7 +92,7 @@ private val HomeGridContentTopPadding = 4.dp
 fun HomeGridLayout(
     vm: HomeViewModel,
     topPadding: Dp,
-    bottomPadding: Dp,
+    contentPadding: PaddingValues,
     pullState: PullToRefreshState,
     onCardClick: (Movie.Video) -> Unit,
     onCardLongClick: (Movie.Video) -> Unit,
@@ -112,6 +119,8 @@ fun HomeGridLayout(
 
     val partition = partitions.firstOrNull { it.sort.id == selectedSortId }
     val sort = partition?.sort ?: sorts.firstOrNull { it.id == selectedSortId }
+    // 分类 tab 行不在滚动容器里,拿不到栅格的内容内边距,得单独让开侧边导航
+    val navStart = contentPadding.calculateStartPadding(LocalLayoutDirection.current)
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -126,6 +135,7 @@ fun HomeGridLayout(
                 onSelect = { selectedSortId = it },
                 showFilter = sort?.filters?.isNotEmpty() == true,
                 onFilter = { filterOpen = true },
+                startInset = navStart,
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
             Crossfade(
@@ -139,8 +149,13 @@ fun HomeGridLayout(
             val tabPartition = partitions.firstOrNull { it.sort.id == tabId }
             val tabSort = tabPartition?.sort ?: sorts.firstOrNull { it.id == tabId }
             val tabGridState = gridStates.getOrPut(tabId) { LazyGridState() }
+            BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            val gridColumns = WindowSize.gridColumns(
+                availableWidthDp = (maxWidth - 32.dp - navStart).value.toInt(),
+                minColumns = 3,
+            )
             LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
+                columns = GridCells.Fixed(gridColumns),
                 state = tabGridState,
                 modifier = Modifier
                     .fillMaxSize()
@@ -150,10 +165,10 @@ fun HomeGridLayout(
                         onRefresh = { vm.reload() },
                     ),
                 contentPadding = PaddingValues(
-                    start = 16.dp,
+                    start = 16.dp + navStart,
                     end = 16.dp,
                     top = HomeGridContentTopPadding,
-                    bottom = 88.dp + bottomPadding,
+                    bottom = 88.dp + contentPadding.calculateBottomPadding(),
                 ),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(HomeGridItemSpacing),
@@ -247,6 +262,7 @@ fun HomeGridLayout(
                 }
             }
             }
+            }
         }
         HomePullRefreshIndicator(
             state = pullState,
@@ -293,6 +309,7 @@ private fun HomeSortTabRow(
     onSelect: (String) -> Unit,
     showFilter: Boolean,
     onFilter: () -> Unit,
+    startInset: Dp,
 ) {
     if (sorts.isEmpty()) {
         Spacer(modifier = Modifier.fillMaxWidth().height(HomeGridTabRowHeight))
@@ -302,7 +319,8 @@ private fun HomeSortTabRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(HomeGridTabRowHeight),
+            .height(HomeGridTabRowHeight)
+            .padding(start = startInset),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         SecondaryScrollableTabRow(
@@ -388,7 +406,9 @@ private fun HomeFilterChipsRow(sort: MovieSort.SortData, onPick: (Map<String, St
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        if (neededWidth - HomeFilterChipSpacing + HomeFilterChipFitSlack <= maxWidth) {
+        if (maxWidth <= HomeFilterChipEqualWidthMaxWidth &&
+            neededWidth - HomeFilterChipSpacing + HomeFilterChipFitSlack <= maxWidth
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(HomeFilterChipSpacing),

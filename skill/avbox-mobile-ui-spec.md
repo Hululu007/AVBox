@@ -34,6 +34,8 @@
 | 数据层(不动) | Room / KV(MMKV,2026-09-13 取代 Hawk)/ EventBus / OkGo / OkHttp / 爬虫源体系(Java,Kotlin UI 直接调用) |
 | 播放器 | dkplayer 控制器保留 View 实现,Compose 里 `AndroidView` 包壳;手势层已具备:单击显隐/双击暂停/左半屏亮度/右半屏音量/横滑进度 |
 
+> ⚠️ **版本漂移修正(2026-09-21 核查)**:上表 kotlin / ksp / composeBom / material3 四项与 `gradle/libs.versions.toml` 实际值已不一致 —— 实际为 **kotlin 2.4.20 / ksp 2.3.12 / composeBom 2026.09.00 / material3 1.5.0-alpha28**(以 `libs.versions.toml` 为准;按项目规则版本一律走版本目录)。上表原值保留作历史记录,未改动。
+
 **Step 0 接入验证结论(2026-09-07)**:
 - 版本目录已写入 §2 全部版本并核对真实存在(composeBom 2026.08.00 / material3 1.5.0-alpha23 / kotlin 2.4.10 / ksp 2.3.11 / activity-compose 1.13.0 / lifecycle 2.11.0 / splashscreen 1.2.0 / coil 3.6.2);material-icons-extended 由 BOM 管理(1.7.8,官方最终版)。
 - coil-network-okhttp 把 okhttp 由 3.12.11 抬升至 4.12.0(3→4 二进制兼容,行为不变),两处编译期适配:`OkGoHelper` UA 改用 `OkHttp.VERSION`;vendored 的 `app/src/main/java/okhttp3/dnsoverhttps/DnsOverHttps.java` 移植 3 处内部 API(Util.addSuppressedIfPossible → addSuppressed、Platform.log 参数序、PublicSuffixDatabase.Companion.get)。
@@ -45,7 +47,7 @@
 **文件布局与可测性基线(2026-09-15 文件级拆分后)**:
 
 - **UI 层文件布局**(四轮 A 档拆分只挪文件、不改行为;**新增代码按归属落位,别再往页面 Activity 里堆**):详情/播放页 = `ui/activity/DetailActivity.kt`(Activity)+ `DetailViewModel.kt`(VM)+ `DetailScreens.kt`(Compose 顶层函数);播放器面板 = `player/ui/PlayerSheets.kt`(公共骨架,`SheetLoading`/`findActivityOrNull` 等在此)+ `DanmuSheets.kt` / `SubtitleSheets.kt` / `CastSheet.kt` / `EpisodeSheet.kt`;直播页 = `ui/activity/LivePlayActivity.kt`(播放器与频道列表编排)+ `LivePlayViewModel.kt`(界面状态 + 设置项分发;Activity 以同名属性转发,故 `LiveScreens` 直接读 `activity.xxx` 仍成立)+ `LiveScreens.kt`(Compose UI,13 个 Composable)+ `LiveEpgController.kt`(EPG 取数/缓存/三级降级)+ `LiveProxyLoader.kt`(代理源加载)+ `LiveChannelNavigator.kt`(切台下标推算,纯函数)+ `LiveSettingsRules.kt`(设置面板可见性/下标判定,纯函数)+ **`LiveEpgParser.kt`(EPG 与回看的纯解析,无状态 object)**;音乐播放页 = `ui/music/MusicPlayerScreen.kt`(UI)+ `MusicPlayerState.kt`(状态)+ `MusicPalette.kt`(取色)+ `MusicLrc.kt`(歌词解析,宿主 `MusicPlayerActivity.kt` 只做编排,见 §4.10)。跨文件暴露的成员一律 `internal` —— 其 JVM 名会带模块后缀(`parseXmlEpg$AVBox_app_debug`)且可见性是 public,**Java 侧调用不到、反射名字也带后缀**;本项目无 Java 调用者与反射需求,故可放心放宽。过程与等价性证据见 `history/features.md`。
-- **单测基线**:`app/src/test` = 17 个测试类 / 174 用例,**纯 JVM** —— 只有 `testImplementation(libs.junit)`,**无 Robolectric / Mockito**;但有 `unitTests.isReturnDefaultValues = true`(`app/build.gradle.kts` 的 testOptions,为让 `LOG` 在 catch 分支打日志时不炸而加)⇒ 未 mock 的 `android.*` **返回默认值而不是抛 `not mocked`**,⚠️ **真正的坑是静默假值**(`TextUtils.isEmpty` 恒 false、`Log` 无输出):纯逻辑里一旦用 `android.text.TextUtils` 判空,单测会走错分支却仍然"通过"(判据见 `ConfigParser.isEmpty` 与 `LiveProxyLoader.isValidProxyUrl` 的注释);可测面只限**无 android 依赖的纯逻辑**,VM、Activity、用 `JSONObject` 的函数都测不了。**要测纯逻辑就得先把它抽成无状态 object 或顶层函数**(样板 = `ui/activity/LiveEpgParser.kt` / `LiveChannelNavigator.kt` / `LiveSettingsRules.kt`、`api/ConfigParser.java`、`LiveProxyLoader` 的伴生函数,各配同名 Test);是否引入 Robolectric 属独立决策(会改变验证模型),当前口径倾向不引入 —— 本项目的验证瓶颈在真机行为(挂摘时序 / 合成 / 坏流),不在 JVM 逻辑。R8 后用单测复验的姿势见 §6.3。
+- **单测基线**:`app/src/test` = 21 个测试类 / 213 用例(2026-09-21 实测;原记录 17 类 / 174 例已过时),**纯 JVM** —— 只有 `testImplementation(libs.junit)`,**无 Robolectric / Mockito**;但有 `unitTests.isReturnDefaultValues = true`(`app/build.gradle.kts` 的 testOptions,为让 `LOG` 在 catch 分支打日志时不炸而加)⇒ 未 mock 的 `android.*` **返回默认值而不是抛 `not mocked`**,⚠️ **真正的坑是静默假值**(`TextUtils.isEmpty` 恒 false、`Log` 无输出):纯逻辑里一旦用 `android.text.TextUtils` 判空,单测会走错分支却仍然"通过"(判据见 `ConfigParser.isEmpty` 与 `LiveProxyLoader.isValidProxyUrl` 的注释);可测面只限**无 android 依赖的纯逻辑**,VM、Activity、用 `JSONObject` 的函数都测不了。**要测纯逻辑就得先把它抽成无状态 object 或顶层函数**(样板 = `ui/activity/LiveEpgParser.kt` / `LiveChannelNavigator.kt` / `LiveSettingsRules.kt`、`api/ConfigParser.java`、`LiveProxyLoader` 的伴生函数,各配同名 Test);是否引入 Robolectric 属独立决策(会改变验证模型),当前口径倾向不引入 —— 本项目的验证瓶颈在真机行为(挂摘时序 / 合成 / 坏流),不在 JVM 逻辑。R8 后用单测复验的姿势见 §6.3。
 
 ## 3. 信息架构与主题(已定)
 
@@ -55,7 +57,7 @@
 - **主题**:默认跟随系统深浅色;Android 12+ 叠加 Material You 动态取色(`dynamicColorScheme`),低于 12 用自定义品牌色板。**2026-09-11 起可在「设置 → 主题设置」页改**:取色来源(系统取色 / 自定义种子色)、深浅模式(跟随系统 / 浅色 / 深色)、预设色卡与自定义种子色(HSV 取色器)、配色风格(MaterialKolor `PaletteStyle` 9 种);配置走 KV(MMKV)+ 全局可观察单例 `AppThemeState`,改动即时全局生效(页面规范见 §4.8)。
 - **色彩角色**:页面背景 `surfaceContainer`;卡片容器**不论深浅一律 `surfaceBright`**(2026-09-09 用户定稿,废弃原"深色 surfaceBright/浅色 surfaceContainerHigh"分支);底部导航栏 `surfaceContainerHigh`、高度 56dp(2026-09-09 用户定稿,原 surfaceContainer/M3 默认 80dp),图标 = `.tubiao/*.svg` 转换的 VectorDrawable(`ic_tab_home/history/collect/settings.xml`,单套图标,选中态 primary 由 NavigationBarItem 自动着色)。页面背景已审计(2026-09-09):全项目唯一 Scaffold(MainScreen) 显式 containerColor=surfaceContainer,无默认 background/Surface 覆盖;Scaffold 默认 background(#FEF7FF/#141218)未在任何页面生效;ModalBottomSheet 未显式指定色,走 M3 默认 surfaceContainerLow。
 - **返回行为**:MainActivity 双击返回退出(带提示);LocalFileActivity 的"返回上级目录"改写为 OnBackPressedDispatcher 保留。
-- **横竖屏**:仅播放器全屏时横屏沉浸(隐藏系统栏,configChanges 防播放器重建);其余页面竖屏。
+- **横竖屏(2026-09-21 改)**:方向策略按窗口档分岔 —— **`Configuration.smallestScreenWidthDp < 600`(手机)运行期锁 `SENSOR_PORTRAIT`,行为与改造前一致;`≥ 600`(大屏)不锁方向**,由用户旋转/折叠自由切换。判据用 `smallestScreenWidthDp`(与方向无关)而非 `screenWidthDp`(横过来会变)。播放器全屏仍横屏沉浸(隐藏系统栏,configChanges 防播放器重建)。详见 §4.11 / §6.10。
 
 ## 4. 页面规范
 
@@ -211,6 +213,46 @@
   3. **禁止静默吞错**:`runCatching` 必须打日志(`echo-music lyric parsed: N lines` / `lyric parse failed` / `lyric raw empty`)。"格式不认"与"类初始化失败"在界面上完全一样(都没歌词),不打日志无从区分。
   4. 歌词源只给部分歌配词是常态(日志 `echo-lyric pick: none`),界面不显示歌词不一定是 bug —— 先看 `echo-lyric pick:` 与 `echo-music lyric` 两组日志再判定。
 
+### 4.11 导航壳与窗口分档(2026-09-21 定稿;分叉点已与用户确认。阶段一/二均已实施)
+
+**两个判据必须分开用,不要混**:
+
+| 用途 | 判据 | 为什么 |
+|---|---|---|
+| 要不要锁屏幕方向 | `Configuration.smallestScreenWidthDp >= 600` | 精确对应平台规则(Android 16/17 对 targetSdk≥36 在 sw≥600dp 忽略 `screenOrientation`/`setRequestedOrientation`);该值与设备方向无关 |
+| 布局用哪一档 | **当前窗口**宽度 | 布局看的是窗口;分屏/自由窗口下窗口可能远窄于屏幕 |
+
+**布局分档**(按窗口宽度 dp):`Compact < 600` / `Medium 600–839` / `Expanded ≥ 840`。
+
+**导航形态**:
+- `Compact` → 底部 `FloatingBottomBar`(现状不变)。
+- `Medium` / `Expanded` → **侧边 Rail**,采用**悬浮覆盖层模型**(沿用现底栏模型,不用 `Scaffold` 的 navigationRail 槽):左对齐、宽 64dp(与现底栏 64dp 高同视觉重量)、`align(CenterStart)`。代价 = 页面内容仍从 x=0 铺、被 rail 压住,留白由 `MainScreen` 统一补。
+
+**形态与玻璃正交(2026-09-21 真机确认的规则)**:导航**形态**由窗口档决定,液态玻璃只是**皮肤**,由用户配置决定 —— 关掉玻璃是**回退到 M3 surface 导航,不是取消 Rail**:
+- 横条档 + 关玻璃 → `Scaffold(bottomBar = M3 NavigationBar)`(原有行为)。
+- 竖条档 + 关玻璃 → `M3 NavigationRail`(宽 80dp、`surfaceContainerHigh`),页面留白 reserve 用 80dp 而非 76dp。
+⚠️ 别把"竖条档永远渲染悬浮导航、靠 `containerColor` 不透明兜底"当成回退 —— 那是**胶囊形状 + 无 M3 指示器**的假 surface,真机一看就不对。
+
+**页面留白**:`MainScreen` 算出 `contentPadding: PaddingValues` 下发,**各页把它作为"内容内边距"施加** —— 加在滚动容器的 `contentPadding`、覆盖层(FAB 等)的 `Modifier.padding`、以及顶栏的 `topBarStartInset` 上。横条档 = `bottom: 导航栏 insets + FLOATING_NAV_OVERLAY_DP`;竖条档 = `start: FLOATING_NAV_OVERLAY_DP + 导航栏左侧 insets`、`bottom: 导航栏底部 insets`。**禁止在各页内写 `if (isRail)`**。
+
+⚠️ **绝不能把它当成"页面容器内边距"**(把 `Modifier.padding(contentPadding)` 加在页面根节点上)。那样页面背景会跟着一起被缩到导航栏之上,导航栏下方露出外层 `Scaffold` 的 `containerColor`,玻璃因为取不到内容而退化成一块纯色板 —— 手机档数值上完全等价(`88 + (insets+76)` ≡ `(insets+76) + 88`),视觉上却是"透明玻璃"与"灰板子"的区别。顶栏同理:要让开 Rail 必须用 `AppTopBarScaffold(topBarStartInset = …)` 单独缩顶栏,不能给它的 `modifier` 传 padding(那会把整个 Scaffold 连内容一起缩掉)。
+
+**栅格**:列数按**可用宽度 ÷ 目标卡宽**算(`WindowSize.gridColumns(可用宽度dp, 手机档列数下限)`,目标卡宽 `TARGET_CARD_WIDTH_DP = 130`、列间距 `GRID_COLUMN_SPACING_DP = 12`),卡宽在 360/600/840/1116/1280/1600dp 各档下实测为 101(手机,下限兜底)/133/152/144/145/131dp —— 即 120–160dp。
+
+⚠️ **两条都不要碰**:
+- **不要给栅格加 `widthIn(max = …)` 限宽居中**:栅格一旦被压窄居中,就会与**不在栅格里的兄弟元素**(分类 tab 行、顶栏)错开 —— 真机实测差 **41dp**,是用户先发现的。要对齐就对齐容器,别对齐文字(见 §6.10)。
+- **不要用 `GridCells.Adaptive`**:它会"尽量多塞",卡宽不可控。
+
+**与用户开关正交,不覆盖**:`util/HomeSettings.kt` 的 `home_layout`(`Vertical` 栅格 / `Horizontal` 列表 + HeroCarousel)仍是**用户选择**;窗口分档只决定列数与导航形态,不覆盖用户选择,也不因窗口变化回写 KV。
+
+**本次范围(用户 2026-09-21 定)**:① 手机(sw<600dp)**继续锁竖屏**,不放开手机横屏;② 大屏做「栅格自适应 + 内容限宽 + 侧边 Rail(含液态玻璃轴向改造)」;③ **不做**列表-详情双栏(留待后续,届时优先 `ActivityEmbedding`,而非引入 §2 已排除的 navigation-compose)。
+
+**实施状态(2026-09-21)**:
+- **阶段一 已完成**:新增 `ui/WindowSize.kt`(判据纯函数 + `WindowSizeTest` 8 例)/ 清单移除 11 个 Activity 的 `screenOrientation` / `BaseActivity.applyOrientationPolicy()` + `orientationPolicyValue()` / 三处栅格(`HomeGridLayout`·`CollectPage`·`PartitionListActivity`)按档分列并 `widthIn(max = 1000.dp)` 限宽居中 / `PartitionListActivity` 硬编码 `GridItemSpan(3)` 修正 / `HomeFilterChipsRow` 与 `HeroCarousel` 的宽屏上限。
+- **阶段二 已完成**:`ui/navbar/FloatingBottomBar.kt` → **`ui/navbar/FloatingNavBar.kt`**(轴向参数化,新增 `NavAxis` 枚举;旧文件已删除)/ `MainScreen` 按窗口档选底部横条或侧边竖条,band·渐变遮罩·insets·对齐全部按轴向分支 / 液态玻璃三处按轴向重标定(见 §5)。
+- **验证**:编译通过,单测 213 用例 0 失败。**未装机**,平板侧真机行为待验。
+- **阶段二的留白方案(含一次返工)**:留白统一由 `MainScreen` 算出 `contentPadding: PaddingValues` 下发,页面签名里**没有**任何导航留白参数,页面内不出现 `if (isRail)`。中间一度改成"在 pager 外层给页面容器加 `Modifier.padding`",**真机截图确认是回归**:页面背景被一起缩掉,导航栏下方露出外层 `Scaffold` 底色、玻璃退化成灰板,已改回"作为内容内边距施加"(详见本节"页面留白"的 ⚠️ 段)。顺带给 `AppTopBarScaffold` 加了 `topBarStartInset` 参数 —— 竖条档要单独缩顶栏,不能缩整个 Scaffold。
+
 ## 5. 视觉与组件约定
 
 - 卡片触摸反馈:ripple + 按压缩放(0.96~0.98)。**涟漪透明度全局 = M3 默认 2 倍**(2026-09-13,照搬 `示例文件/android` 的 `Theme.kt`):`AVBoxTheme` 用 `LocalRippleConfiguration` 下发 `RippleConfiguration(rippleAlpha = …)`,pressed 0.20 / hovered 0.16 / focused 0.20 / dragged 0.32 —— M3 默认 pressed 仅 10%,首页海报卡是深色图片 + 黑色渐变 scrim,几乎看不出"点到了"。走全局配置而不是逐卡传 `indication`:`clickable`/`combinedClickable`/`Surface(onClick)`/`ToggleButton` 一次覆盖。⚠️ `RippleConfiguration` 已 deprecated 但官方无替代入口,必须 `@Suppress("DEPRECATION")`。圆角卡必须 **先 `.clip(shape)` 再挂 `clickable`**,否则涟漪与长按激活区会溢出圆角变成矩形(`PressableCard` 已是此顺序)。参考项目的按压缩放目标是 **0.94**(经 `Modifier.scale` + `spring(dampingRatio=0.6f, stiffness=800f)`),本项目沿用自定的 0.96~0.98 不改。
@@ -225,6 +267,9 @@
 - **主题设置页(2026-09-11,照搬 `示例文件/android`)**:分组卡片沿用全局 `SettingsCard`(卡位圆角 + `cardContainer` 底色),行内规格 minHeight 64dp / 水平 16dp / 垂直 12dp 且内容垂直居中;不可用行(非自定义模式下的色卡/自定义色/风格)整卡 alpha 0.45。图标 4 枚直接取自示例项目 drawable:`ic_color_palette`(分组标题,primaryContainer 圆底)/ `ic_brightness_auto` / `ic_light_mode` / `ic_dark_mode`(模式分段选择器)。预设色卡 = 4 列 × 2 行、1:1 正方形、**圆角 16dp**(2026-09-11 用户定稿;12dp → 28dp → 16dp 两轮调整),选中态 primary 2dp 描边 + 右上角勾选圈,卡内为主色条 + 次色/第三色块 + 名称的动态配色预览。取色器 = 自绘 HSV 色轮(240dp,`Canvas` sweepGradient + 径向白渐变)+ 亮度滑块 + 初始/当前色对比,装在 `AVBoxBottomSheet` 内(标题「自定义颜色」,取消/确定)。顶栏与设置页一致(无边框 + 随滚动滚走 + 顶部渐变遮罩),左侧 40dp 圆形返回钮。
 - edge-to-edge:enableEdgeToEdge + Scaffold insets;深浅色状态栏图标切换;双击返回退出提示。
 - **顶部应用栏无边框化(2026-09-11 晚重做,逐字照 `示例文件/android` 官方方案)**:全站(4 tab + 搜索/栏目二级页)顶栏统一 —— 共享组件 = `ui/components/EdgeToEdgeTopBar.kt` 的 **`AppTopBarScaffold`**:`Scaffold(nestedScroll(exitUntilCollapsed), contentWindowInsets=0) + M3 TopAppBar(透明底、windowInsets=0、外层 statusBars padding) + TopScrim`(状态栏高×1.2 渐变遮罩,置于内容之上)。**滚动记账完全归 M3 官方 behavior**(含 fling 吸附,示例同款;⚠️ 不要再回到自研记账,理由见 §6.6)。顶栏高度 = M3 标准 64dp + statusBars(原自研 56dp,整体 +8dp);页面内容留白 = content 回调 `padding.calculateTopPadding()` + 各页相对差值(设置 -12、历史/收藏/配置/主题 -8+28、首页 +8、搜索/栏目 -8)。标题区/返回钮(40dp 圆钮)/右侧控件走 TopAppBar 的 title/navigationIcon/actions 槽。
+
+- **侧边 Rail 的液态玻璃(2026-09-21 定,机制见 §6.10)**:`band` 由底部带换成左侧带 `Rect(0f, 0f, navBandExtent, size.height)` —— 与横条对称,主轴外沿统一为 `FLOATING_NAV_OVERLAY_DP(76) + GLASS_BACKDROP_BAND_MARGIN_DP(64)` = 140dp。⚠️ **实施时否掉了原定的"避开顶栏"**:把 band 顶部下移到顶栏之下,会让 Rail 的上段落在源层之外 ⇒ 那一段玻璃取不到底、退化成纯容器色,比"左上角一小块重叠"更难解释。实测重叠只发生在 band 的 **margin 区**(x∈[76,140]dp),Rail 自身(x∈[0,76]dp)不会采到顶栏的玻璃面,故可接受。**复用同一个 `LayerBackdrop`** —— Rail 档下底栏不显示,不需要第三块层(⚠️ 同一 `LayerBackdrop` 不能挂两个 `layerBackdrop` 节点,会往同一 `GraphicsLayer` 抢写)。`ContinuousCapsule` 竖向自动成竖胶囊,不用换 shape;`DampedDragAnimation`(只处理标量 `value`、`dragAmount: Offset` 原样交给调用方)与 `InteractiveHighlight`(`position: (size, ?) -> Offset` 由调用方提供)本就与轴向无关。**必须按轴向重标定的三处**:① `lens()` 要按短边限幅(参照 `GlassTopBar.glassSurface` 的 `min(distortionPx, size.minDimension / 2f)`;`DEFAULT_DISTORTION_DP = 30f` 直接用在 64dp 宽的 rail 上会崩);② 按压放大改按 `size.height`(现按 `size.width`,rail 上会横向胖出约 25%);③ 第三层的甩动拉伸(`scaleX /= 1f - velocity * 0.75` / `scaleY *= 1f - velocity * 0.25`)轴向对调。Rail 宽取 64dp;若要对齐 M3 NavigationRail 的 80dp,`FLOATING_NAV_OVERLAY_DP` 需从 76 调到约 92。`LiquidGlassConfig` **不需要加字段** —— 形态由窗口档决定,玻璃效果继续由用户配置决定,两者正交。
+- **Hero 轮播在宽屏上必须封顶(2026-09-21 真机确认)**:`HeroCarousel` 原为 `fillMaxWidth().aspectRatio(1.5f)`,宽屏下高度由整屏宽度推出 ⇒ 1077dp 窗口实测卡片 **816×544dp**(占屏高 72%),并且相邻页缩放后边缘内移量随宽度变大、只从左侧缝里露出 **6.8dp**,看起来像"一条随机黑条"。现为 `fillMaxWidth().wrapContentWidth(CenterHorizontally).widthIn(max = HeroMaxWidth = 640.dp).aspectRatio(1.5f).heightIn(max = HeroMaxHeight = 340.dp)` —— 宽屏下 Hero 为 640×340dp,相邻页被推到视口外(推算右缘 −0.5dp)⇒ 黑条消失;手机档(可用 360dp)算出来仍是 230×154dp,与原样一致。`wrapContentWidth` 是必需的:分页器用**固定宽度**约束每个 page,只写 `widthIn` 压不下去,得靠它放开最小宽度并居中。
 
 ## 6. 关键技术约束与已知坑(违反会复发 bug)
 
@@ -306,6 +351,33 @@
 - ⚠️ **抽离出的类若自带 `Handler`(或线程),宿主销毁时必须显式取消**。宿主 `onDestroy` 里清自己的队列(`removeCallbacksAndMessages`)带不走它们的延迟任务 ⇒ 销毁后仍会回调到已销毁的界面(直播页:延迟 1.2s 的 EPG 取数 / 代理源加载)。样板:两个类各留 `cancelAll()` 并在 `onDestroy` 调用。
 - ⚠️ **"Composable 只在首次组合读一次 KV" + "写 KV 发生在异步加载里" = 页面不刷新**。凡是**可见性/选中态/摘要文案**依赖异步改写后的 KV(多仓的仓地址 → 仓内首条子源改写、配置拉取后才成立的标记)的页面,都必须显式补刷新通道,否则只能靠"退出重进"(重建 Activity/ComposeView,`remember` 重跑)才正确。**刷新信号必须由"改写点"直接发**(本项目 = `util/ApiLineSignal`),不要反推"加载什么时候完成" —— `AppBootstrap` 的 `Ready` 是**配置加载 + jar 装载**两段都跑完才发的,而改写只发生在第一段里,拿它当触发器会晚到用户以为没生效(`Boot.Error` 时更是永远不触发;这条是实际踩过的返工)。**同一页内只保留一条刷新路径**:能精确到"改写那一刻"的用信号;若该页的跨页改写都能靠"回本页"覆盖,则用 `LifecycleEventEffect(ON_RESUME)` 这一条即可 —— 两条都挂属于重复。刷新**只重读"当前态"快照,不要重读用户可编辑的列表** —— 列表的增删改都同步写 KV,重读不会带来新信息,反而会与本地管理态(如 `manageMode` 的勾选集)错位。已落地:配置管理页「换仓」入口(§4.7)。
 
+### 6.10 自适应与窗口分档(2026-09-21 补,均由实坑/实测得出)
+
+- **方向策略与布局分档必须用不同判据**(见 §4.11):方向用 `smallestScreenWidthDp`,布局用当前窗口宽度。
+- ⚠️ **运行期有硬写竖屏的点,只改 manifest 无效**。**已处理**:`DetailActivity.applyFullscreen(false)` 与 `LivePlayActivity` 的同名分支改为 `orientationPolicyValue()`(大屏上恢复为 `UNSPECIFIED`,否则退出一次全屏就把平板压回信箱模式)。**有意保留**:`ComposeVideoController.onRotateClicked()` / `onBackClicked()` 设 `SENSOR_PORTRAIT`/`SENSOR_LANDSCAPE` 属**显式用户意图**(播放器「旋转」按钮),锁住正是用户要的结果,且退出全屏会被策略值复位;上游 dkplayer 遗留(`player/.../BaseVideoController.java`、`ControlWrapper.java`)不在当前 Compose 路径上,未动。
+- **`applyOrientationPolicy()` 只在策略值本身变化时下发**(实例字段 `orientationPolicy` 缓存),否则每次配置变化都会覆盖「旋转」按钮刚设过的方向;`smallestScreenWidthDp` 与设备方向无关,故手机旋转不会触发重复下发,也就不会形成"设置方向 → 配置变化 → 再设置"的回环。
+- **`configChanges="orientation|screenSize|keyboardHidden"` 已全量声明** ⇒ 旋转不重建 Activity、无状态丢失。**不要**按"重建即正确"的思路写代码;也不要依赖 AutoSize 的 `postDelayed(300ms)` 刷新(`BaseActivity.refreshAutoSize`)—— 旋转后约 300ms 内 mm 档尺寸仍是旧值。
+- ⚠️ **`PartitionListActivity` 的"加载更多"用了硬编码 `GridItemSpan(3)`**(全项目其它 5 处都是 `GridItemSpan(maxLineSpan)`)⇒ **改列数前必须先统一**,否则 span 失去语义。
+- **`LazyGridState` 会跨尺寸保留**(`HomeGridLayout` 按 `sourceKey` 缓存、`PartitionListActivity` 用 `rememberLazyGridState()`、`CollectPage` 用外部 `listState`)⇒ 列数变化时 `firstVisibleItemIndex` 保留但视觉位置跳变。属可接受行为,但旋转/分屏改尺寸时会有一次跳位。
+- ⚠️ **insets 在横屏会露馅**:横屏三键导航时导航栏在**侧边**,`WindowInsets.navigationBars.getBottom()` 变成 0 ⇒ `MainScreen` 的 `liquidBackdropBandHeight` 与底部渐变遮罩(都只算 `getBottom()`)会偏小。`FloatingBottomBar` 用 `windowInsetsPadding(navigationBars)` 本身会吃到水平 insets,这点是对的。横屏刘海在**左侧**,而 Compose 侧只用了 `statusBar`、未用 `displayCutout`。
+- **宽屏下会立刻变难看的两处**:`HomeGridLayout` 的 `HomeFilterChipsRow` 在 `neededWidth <= maxWidth` 时走"一行 `Modifier.weight(1f)` 等分"分支 ⇒ 宽屏必然走这条、每个 chip 被拉宽,需加宽度上限;`HeroCarousel.sidePad = screenWidthDp * 0.18f` 同理需设上限。
+- **AutoSize 与 mm 档**:`App.java` 设了 `setSupportDP(false)/setSupportSP(false)`,实测 Compose 的 dp/sp 走系统密度、**未被 AutoSize 缩放**;只有播放器覆盖层走 mm 档(`playerDim`/`playerTextSize`)并靠 `portraitCompensation()` 按 `屏高/屏宽` 补偿方向差异(实测两种方向下物理像素尺寸一致)。改自适应时**不要动这套**,新代码一律用 dp。
+- **验证手段**:分档判据抽纯函数 → 进现有纯 JVM 单测(样板 `LiveChannelNavigator`/`LiveSettingsRules`),无需 Robolectric;`@Preview` 铺 Compact/Medium/Expanded × 竖/横矩阵;云真机上用 `adb shell am compat enable UNIVERSAL_RESIZABLE_BY_DEFAULT com.github.avbox.osc` 强制复现"系统忽略限制"的场景(`disable` 关闭)。
+- **背景事实(2026-09-21 核对官方文档)**:Android 16(API 36)起,对 targetSdk≥36 的应用在 sw≥600dp 上忽略 `screenOrientation`/`resizeableActivity`/宽高比限制/`setRequestedOrientation()`,可用 `PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` 临时停用;**Android 17(API 37)取消该停用,一律忽略**。例外仅三种:sw<600dp 的屏幕、`appCategory` 为游戏、用户在宽高比设置里选"应用默认"。**自 2026 年 8 月起 Google Play 要求应用 targetSdk≥36**;本项目 targetSdk 37,已在最严一档。
+- ⚠️ **轴向命名的坑**:把"主轴/交叉轴"写进 helper 时极易搞反 —— 横条的**主轴是宽度**(交叉轴才是高度),竖条的主轴是高度。写反的后果是"横条照旧、竖条错位",而横条路径因为一直被真机验证过反而不报错。`FloatingNavBar` 统一用 `crossAxisSize`(横→`height`)/ `mainAxisLength`(横→`width`)/ `mainAxisFill`(横→`fillMaxWidth`)/ `mainAxisPadding`(横→`horizontal`)/ `setMainAxisTranslation`(横→`translationX`);动这几个 helper 时**必须逐个核对映射方向**。
+- ⚠️ **"宽高比驱动尺寸"的组件在宽屏上一定要有上限**:`fillMaxWidth().aspectRatio(k)` 在手机上看没问题,宽屏下高度会被宽度推爆(`HeroCarousel` 实测 816×544dp)。封顶时必须**同时封宽和高**:只封高会让宽度继续铺满,进而把"缩放型轮播"的相邻页挤成一条几 dp 宽的缝(看着像随机黑条)。封宽用 `wrapContentWidth(CenterHorizontally)` + `widthIn(max = …)` —— 分页器给每个 page 的是**固定宽度**约束,单写 `widthIn` 无效。
+- ⚠️ **"对齐"要对齐容器,别对齐文字** —— 但**限宽会打破容器对齐**:给栅格单独加限宽居中后,栅格与"不在栅格里的兄弟元素"(分类 tab 行、顶栏)就错开了(真机实测 **41dp**,用户先发现)。若真要限宽,必须把**整页内容**(含顶栏、tab 行)一起限宽居中,不能只限栅格。**当前结论:不限宽,靠列数控制卡宽。**
+- **同类元素的内在留白不同,眼睛会对到"文字"上**:分类 tab 的文字有 M3 `Tab` 自带的横向内边距、筛选 chip 的文字有 `HomeFilterChipPadding = 14.dp`,而海报没有内边距。所以即便容器对齐,三者的**文字**也不在一条竖线上 —— 这是设计使然,不要试图用 padding 去"凑",那会把容器搞歪。
+- ⚠️ **横向渐变遮罩不能照抄竖向的 0f/1f 顺序**:底部那条是"贴屏幕下边缘不透明、往上渐隐"(`0f 透明 → 1f 不透明`);搬到左侧必须换成"贴屏幕左边缘不透明、往右渐隐"(`0f 不透明 → 1f 透明`)。照抄会在内容侧(海报左侧)糊出一块半透明白 —— 真机截图确认过的回归。改遮罩前先问一句"不透明端贴的是哪条屏幕边"。
+- ⚠️ **竖条的 insets 要用 `systemBars` 而不是 `navigationBars`**:竖条是**满高**的,上下都要让 —— 横条只贴底边,用 `navigationBars` 就够;竖条只用它会在状态栏较厚或竖屏平板上顶进状态栏。`MainScreen` 里两处(悬浮竖条容器、回退的 M3 `NavigationRail`)都已改用 `WindowInsets.systemBars`。
+- **已知小瑕疵(未修,等真机确认后再定)**:`HomeGridLayout` 与 `HomePage` 横向布局的 `bottom` 里那个 `88.dp`(= `FLOATING_NAV_OVERLAY_DP` 76 + 12)是给**底部悬浮条**留的余量,竖条档没有底部条 ⇒ 列表底部多出 88dp 滚动余量。要收口得把这个基准值从页面移到 `MainScreen`(按档给 `88+insets+76` / `insets+8`),但那会再动一次手机档的留白路径 —— 已连出三次几何回归,故**刻意留到平板验证通过之后再做**。
+- ⚠️ **不在滚动容器里的页面元素要单独让开侧边导航**:`contentPadding` 只作用于滚动内容,分类 tab 行(`HomeGridLayout.HomeSortTabRow`)、顶栏(`AppTopBarScaffold.topBarStartInset`)、覆盖层(FAB)都拿不到它,必须各自补 start inset,否则会被 Rail 压住(真机截图确认过)。
+- **导航形态与玻璃正交**:关玻璃是回退 M3 surface 导航(横条→`NavigationBar`、竖条→`NavigationRail` 80dp),不是取消 Rail。别用"悬浮导航 + 不透明容器色"冒充 surface —— 胶囊形状与缺 M3 指示器一眼能看出不对。
+- ⚠️ **留白只能加在"内容"上,不能加在"页面容器"上**:容器 padding 会把页面背景一起缩掉 ⇒ 导航栏下方露出外层 `Scaffold` 的 `containerColor`,玻璃取不到内容、退化成一块纯色板。这是本项目**真机截图确认过的回归**(数值上完全等价、视觉上完全不同)。判断方法:改完之后问一句"页面背景还延伸到导航栏下面吗"。顶栏要让开 Rail 同理 —— 用 `AppTopBarScaffold(topBarStartInset = …)`,别给它的 `modifier` 传 padding。
+- **页面留白的下发方式**:`MainScreen` 算 `contentPadding: PaddingValues` → 各页加在滚动容器的 `contentPadding` / 覆盖层的 `Modifier.padding` / 顶栏的 `topBarStartInset` 上。页面签名里**没有**导航留白参数,页面内**不出现** `if (isRail)`。各页保留自己的基准值(`8.dp` / `88.dp`)。
+- **band 与顶栏的重叠是刻意接受的取舍**(完整理由见 §5):band 顶部若下移到顶栏之下,Rail 上段会落在源层之外、玻璃退化成纯容器色。改 band 矩形前先读 §5 那条。
+- **阶段二的测试空白(说明,非遗漏)**:Rail 与导航壳全是 Compose 布局代码,而本项目单测是纯 JVM、无 Robolectric ⇒ 这部分进不了单测,只能靠 `@Preview` 矩阵与真机。若将来再扩轴向逻辑,建议先把"窗口档 → 轴向"抽成纯函数再补测。
+
 ## 7. 未决 / 待细化清单
 
 - ~~详情/播放页视觉细化(选集行样式、换源交互)~~(Step 4 已确认并实施,记录见 `history/steps.md`;遗留:预览态加载期无海报占位,旧 ivThumb 缩略图未迁移)
@@ -317,6 +389,10 @@
 - **音乐页手动入口在取流完成前点击会误判(2026-09-19)**:`isAudioContent()` 依赖 `webPlayUrl`/轨道信息,刚 `playCurrent()` 就交接时两者可能都还没有 ⇒ 判为"影视"、详情页被保留。后果只是音频内容也保留了详情页(返回看到一个没有画面的详情页),不崩。要收口需补一层片名/源名关键词兜底(webX 系项目的 `isMusicLikeText` 做法),属独立决策。
 - **桥的 `setArtwork("")` 会短暂清空封面(2026-09-19)**:控制器对影视源(取流结果无 cover)会调 `view.setArtwork("")` → 音乐页桥直接把 `ui.artwork` 置空,把 `refreshMeta()` 刚填的 `vod.pic` 盖掉,下一次状态变化再补回来(最终态正确,只有一帧空白)。要收口 = 桥的 `setArtwork` 忽略空值(清空本就有独立的 `clearArtwork()`)。
 - **音乐页返回详情页后视频是暂停态(2026-09-19)**:引擎「退页面即停」的既有语义,需手动按播放续播。若要自动续播,得在 `handOffToMusicPlayer` 置标记、`onResume` 按标记补一次 `playCurrent()` —— **不能无脑在 `onResume` 里播**,`setData` 的同片接管分支会无条件 `start()`,连"用户主动暂停后切后台再回来"都会被强制续播。
+
+- **列表-详情双栏(大屏 Expanded 档)**:2026-09-21 决定本次不做。届时的前置决策 = `DetailActivity` 与主壳的关系(倾向 `ActivityEmbedding`,而非引入 §2 已明确排除的 navigation-compose);另需重审 `PlayContainer` 的挂摘协议(§6.1)在分屏/双栏下的生命周期。
+- **AutoSize 去留**:目前仅播放器覆盖层依赖 mm 档。若将来播放器覆盖层也改用 dp,则 AutoSize 可从 `BaseActivity.getResources()` 摘除。属独立决策,不在 §4.11 范围内。
+- ~~大屏自适应 / 侧边 Rail~~(2026-09-21 定稿:**阶段一/二均已实施**,平板侧真机行为待验;范围与判据见 §4.11、玻璃标定见 §5、坑见 §6.10)
 
 ## 8. 历史归档索引(`history/`,按需检索)
 

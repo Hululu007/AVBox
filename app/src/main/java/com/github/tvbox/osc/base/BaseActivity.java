@@ -2,7 +2,9 @@ package com.github.tvbox.osc.base;
 
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ActivityInfo;
 import android.content.res.AssetManager;
+import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.graphics.BitmapFactory;
 import android.graphics.drawable.BitmapDrawable;
@@ -17,6 +19,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.PermissionChecker;
 
 import com.github.tvbox.osc.R;
+import com.github.tvbox.osc.ui.WindowSize;
 import com.github.tvbox.osc.util.AppManager;
 
 import java.io.BufferedReader;
@@ -38,6 +41,7 @@ public abstract class BaseActivity extends AppCompatActivity implements CustomAd
     protected Context mContext;
 
     private static float screenRatio = -100.0f;
+    private int orientationPolicy = Integer.MIN_VALUE;
     private final Runnable refreshAutoSizeRunnable = new Runnable() {
         @Override
         public void run() {
@@ -74,12 +78,14 @@ public abstract class BaseActivity extends AppCompatActivity implements CustomAd
         initSystemUiListener();
         CutoutUtil.adaptCutoutAboveAndroidP(mContext, true);//设置刘海
         AppManager.getInstance().addActivity(this);
+        applyOrientationPolicy();
         init();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        applyOrientationPolicy();
         hideSysBar();
         if (shouldRefreshAutoSize()) {
             refreshAutoSize();
@@ -136,6 +142,43 @@ public abstract class BaseActivity extends AppCompatActivity implements CustomAd
 
     protected boolean shouldRefreshAutoSize() {
         return false;
+    }
+
+    /**
+     * 方向策略:sw<600dp 锁竖屏,>=600dp 放开 —— 与平台在 API 36+ 的忽略范围一致,
+     * 故手机档行为不变,大屏交由用户旋转/折叠。
+     */
+    public void applyOrientationPolicy() {
+        try {
+            int desired = orientationPolicyValue();
+            // 只在策略值本身变化时下发,否则会覆盖播放器「旋转」按钮刚设过的方向
+            if (orientationPolicy == desired) {
+                return;
+            }
+            orientationPolicy = desired;
+            setRequestedOrientation(desired);
+        } catch (Throwable th) {
+            th.printStackTrace();
+        }
+    }
+
+    /** 当前窗口档下的策略值;播放器退出全屏时恢复到此值,而不是硬写竖屏 */
+    public int orientationPolicyValue() {
+        try {
+            Configuration configuration = super.getResources().getConfiguration();
+            return WindowSize.shouldLockPortrait(configuration.smallestScreenWidthDp)
+                    ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                    : ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
+        } catch (Throwable th) {
+            th.printStackTrace();
+            return ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
+        }
+    }
+
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        applyOrientationPolicy();
     }
 
     private void scheduleRefreshAutoSize() {

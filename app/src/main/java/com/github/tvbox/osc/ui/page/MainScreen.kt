@@ -12,14 +12,19 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -29,6 +34,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -50,6 +57,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -58,12 +66,14 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.server.ControlManager
 import com.github.tvbox.osc.ui.activity.LivePlayActivity
-import com.github.tvbox.osc.ui.components.GLASS_BACKDROP_BAND_MARGIN_DP
 import com.github.tvbox.osc.ui.components.LocalSheetHost
 import com.github.tvbox.osc.ui.components.SheetHost
 import com.github.tvbox.osc.ui.components.SheetHostState
-import com.github.tvbox.osc.ui.navbar.FloatingBottomBar
+import com.github.tvbox.osc.ui.currentWindowWidthClass
+import com.github.tvbox.osc.ui.navbar.FloatingNavBar
 import com.github.tvbox.osc.ui.navbar.GlassTabItem
+import com.github.tvbox.osc.ui.navbar.NavAxis
+import com.github.tvbox.osc.ui.navbar.NavMetrics
 import com.github.tvbox.osc.ui.theme.LiquidGlassState
 import com.github.tvbox.osc.util.AppManager
 import com.github.tvbox.osc.util.BootGuard
@@ -79,9 +89,6 @@ private enum class AppTab(val label: String, @DrawableRes val icon: Int) {
     COLLECT("收藏", R.drawable.ic_tab_collect),
     SETTINGS("设置", R.drawable.ic_tab_settings),
 }
-
-private const val FLOATING_NAV_BOTTOM_MARGIN_DP = 12
-private const val FLOATING_NAV_OVERLAY_DP = 64 + FLOATING_NAV_BOTTOM_MARGIN_DP
 
 @Composable
 fun MainScreen() {
@@ -153,6 +160,16 @@ private fun MainContent() {
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         navAnimationEnabled = !KV.get(HawkConfig.NAV_ANIMATION_DISABLED, false)
     }
+
+    val selectTab: (Int) -> Unit = { index ->
+        scope.launch {
+            if (navAnimationEnabled) {
+                pagerState.animateScrollToPage(index)
+            } else {
+                pagerState.scrollToPage(index)
+            }
+        }
+    }
     val liquidGlassConfig = LiquidGlassState.config
     val liquidGlassEnabled = liquidGlassConfig.navbarEnabled &&
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
@@ -163,19 +180,39 @@ private fun MainContent() {
         }
     val liquidBackdrop = rememberLayerBackdrop(onDraw = liquidBackdropOnDraw)
     val density = LocalDensity.current
-    val liquidBackdropBandHeight = with(density) {
-        WindowInsets.navigationBars.getBottom(density).toDp() +
-            (FLOATING_NAV_OVERLAY_DP + GLASS_BACKDROP_BAND_MARGIN_DP).dp
-    }
-    val liquidBackdropBounds: (Size) -> Rect? = remember(density, liquidBackdropBandHeight) {
+    val layoutDirection = LocalLayoutDirection.current
+
+    // 导航形态:Compact 用底部横条,Medium/Expanded 用侧边竖条(判据集中在 NavMetrics,见 spec §4.11)
+    val navAxis = NavMetrics.axisFor(currentWindowWidthClass())
+    // 形态由窗口档决定、玻璃由用户配置决定,两者正交:关掉玻璃是回退到 M3 surface 导航,不是取消竖条
+    val railMode = navAxis == NavAxis.Vertical
+    val surfaceNavVisible = !liquidGlassEnabled
+    val navBarsPadding = WindowInsets.navigationBars.asPaddingValues()
+    val navBandExtent = NavMetrics.BAND_EXTENT_DP.dp
+    val liquidBackdropBounds: (Size) -> Rect? = remember(density, navBandExtent, navAxis) {
         { size ->
-            Rect(
-                0f,
-                size.height - with(density) { liquidBackdropBandHeight.toPx() },
-                size.width,
-                size.height
-            )
+            val extentPx = with(density) { navBandExtent.toPx() }
+            if (navAxis == NavAxis.Horizontal) {
+                Rect(0f, size.height - extentPx, size.width, size.height)
+            } else {
+                Rect(0f, 0f, extentPx, size.height)
+            }
         }
+    }
+    // 作为"内容内边距"下发,不用容器 padding:页面必须保持全出血,
+    // 否则背景被缩到导航栏之上,玻璃就取不到内容、退化成一块纯色
+    val navReserve = NavMetrics.reserveDp(liquidGlassEnabled, navAxis).dp
+    val pageContentPadding: PaddingValues = when {
+        railMode -> PaddingValues(
+            start = navReserve + navBarsPadding.calculateStartPadding(layoutDirection),
+            bottom = navBarsPadding.calculateBottomPadding(),
+        )
+
+        liquidGlassEnabled -> PaddingValues(
+            bottom = navBarsPadding.calculateBottomPadding() + navReserve,
+        )
+
+        else -> PaddingValues(0.dp)
     }
     val glassTabs = remember { AppTab.entries.map { GlassTabItem(it.icon, it.label) } }
     CompositionLocalProvider(LocalSheetHost provides sheetHost) {
@@ -184,23 +221,14 @@ private fun MainContent() {
                 containerColor = MaterialTheme.colorScheme.surfaceContainer,
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
                 bottomBar = {
-                    if (!liquidGlassEnabled) {
+                    if (surfaceNavVisible && !railMode) {
                         NavigationBar(
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         ) {
                             AppTab.entries.forEachIndexed { index, tab ->
-                                val selected = pagerState.currentPage == index
                                 NavigationBarItem(
-                                    selected = selected,
-                                    onClick = {
-                                        scope.launch {
-                                            if (navAnimationEnabled) {
-                                                pagerState.animateScrollToPage(index)
-                                            } else {
-                                                pagerState.scrollToPage(index)
-                                            }
-                                        }
-                                    },
+                                    selected = pagerState.currentPage == index,
+                                    onClick = { selectTab(index) },
                                     icon = { Icon(painterResource(tab.icon), contentDescription = tab.label) },
                                     label = { Text(tab.label) },
                                 )
@@ -228,62 +256,98 @@ private fun MainContent() {
                             .fillMaxSize()
                             .then(if (liquidGlassEnabled) Modifier else Modifier.padding(innerPadding)),
                     ) { page ->
-                        val pageBottomPadding = if (liquidGlassEnabled) {
-                            WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
-                                FLOATING_NAV_OVERLAY_DP.dp
-                        } else {
-                            0.dp
-                        }
+                        // 作为"内容内边距"下发,不用容器 padding:页面必须保持全出血,
+                        // 否则背景被缩到导航栏之上,玻璃就取不到内容、退化成一块纯色
                         when (AppTab.entries[page]) {
-                            AppTab.HOME -> HomePage(homeViewModel, pageBottomPadding)
-                            AppTab.HISTORY -> HistoryPage(bottomPadding = pageBottomPadding)
-                            AppTab.COLLECT -> CollectPage(bottomPadding = pageBottomPadding)
-                            AppTab.SETTINGS -> SettingsPage(bottomPadding = pageBottomPadding)
+                            AppTab.HOME -> HomePage(homeViewModel, pageContentPadding)
+                            AppTab.HISTORY -> HistoryPage(contentPadding = pageContentPadding)
+                            AppTab.COLLECT -> CollectPage(contentPadding = pageContentPadding)
+                            AppTab.SETTINGS -> SettingsPage(contentPadding = pageContentPadding)
                         }
                     }
                 }
             }
             if (liquidGlassEnabled) {
-                val gradientHeight = with(density) {
-                    WindowInsets.navigationBars.getBottom(density).toDp() + FLOATING_NAV_OVERLAY_DP.dp
+                // 遮罩要"贴屏幕边缘那侧不透明、往内容侧渐隐"。横向别照抄竖向的 0f/1f 顺序,
+                // 反了会在内容侧糊出一块半透明白(真机确认过的回归)
+                val scrimColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.9f)
+                // 不透明端必须贴屏幕边缘:横条贴底(终点)、竖条贴左(起点)。方向由 NavMetrics 决定,
+                // 别再手写 0f/1f —— 抄错会在内容侧糊出一块半透明白(真机确认过的回归)
+                val (scrimStart, scrimEnd) = if (NavMetrics.scrimOpaqueAtStart(navAxis)) {
+                    scrimColor to Color.Transparent
+                } else {
+                    Color.Transparent to scrimColor
                 }
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(gradientHeight)
-                        .align(Alignment.BottomCenter)
+                        .then(
+                            if (navAxis == NavAxis.Horizontal) {
+                                Modifier
+                                    .fillMaxWidth()
+                                    .height(navBandExtent)
+                                    .align(Alignment.BottomCenter)
+                            } else {
+                                Modifier
+                                    .fillMaxHeight()
+                                    .width(navBandExtent)
+                                    .align(Alignment.CenterStart)
+                            }
+                        )
                         .background(
-                            Brush.verticalGradient(
-                                0f to Color.Transparent,
-                                1f to MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.9f),
-                            )
+                            if (navAxis == NavAxis.Horizontal) {
+                                Brush.verticalGradient(0f to scrimStart, 1f to scrimEnd)
+                            } else {
+                                Brush.horizontalGradient(0f to scrimStart, 1f to scrimEnd)
+                            }
                         ),
                 )
                 Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .windowInsetsPadding(WindowInsets.navigationBars)
-                        .padding(horizontal = 16.dp)
-                        .padding(bottom = FLOATING_NAV_BOTTOM_MARGIN_DP.dp),
+                    modifier = if (navAxis == NavAxis.Horizontal) {
+                        Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .windowInsetsPadding(WindowInsets.navigationBars)
+                            .padding(horizontal = 16.dp)
+                            .padding(bottom = NavMetrics.MARGIN_DP.dp)
+                    } else {
+                        Modifier
+                            .align(Alignment.CenterStart)
+                            .fillMaxHeight()
+                            // 竖条是满高的,上下都要让:只用 navigationBars 会顶到状态栏里
+                            .windowInsetsPadding(WindowInsets.systemBars)
+                            .padding(vertical = 16.dp)
+                            .padding(start = NavMetrics.MARGIN_DP.dp)
+                    },
                 ) {
-                    FloatingBottomBar(
+                    FloatingNavBar(
                         backdrop = liquidBackdrop,
+                        axis = navAxis,
                         selectedTabIndex = { pagerState.targetPage },
-                        onTabSelected = { index ->
-                            scope.launch {
-                                if (navAnimationEnabled) {
-                                    pagerState.animateScrollToPage(index)
-                                } else {
-                                    pagerState.scrollToPage(index)
-                                }
-                            }
-                        },
+                        onTabSelected = selectTab,
                         tabs = glassTabs,
                         config = liquidGlassConfig,
                         interactive = { true },
                         isTabSwitching = { pagerState.currentPage != pagerState.targetPage },
                     )
+                }
+            }
+            if (surfaceNavVisible && railMode) {
+                // 关掉玻璃是回退到 M3 标准竖条(surface 模式),不是继续用悬浮胶囊
+                NavigationRail(
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .fillMaxHeight()
+                        .windowInsetsPadding(WindowInsets.systemBars),
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                ) {
+                    AppTab.entries.forEachIndexed { index, tab ->
+                        NavigationRailItem(
+                            selected = pagerState.currentPage == index,
+                            onClick = { selectTab(index) },
+                            icon = { Icon(painterResource(tab.icon), contentDescription = tab.label) },
+                            label = { Text(tab.label) },
+                        )
+                    }
                 }
             }
             SheetHost(sheetHost)

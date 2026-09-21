@@ -12,6 +12,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -43,6 +44,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
@@ -50,6 +52,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastCoerceIn
@@ -72,19 +75,71 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import kotlin.math.min
 import kotlin.math.sign
+
+/** 悬浮导航栏的轴向:Compact 用底部横条,Medium/Expanded 用侧边竖条(见 spec §4.11) */
+enum class NavAxis { Horizontal, Vertical }
 
 data class GlassTabItem(
     val iconRes: Int,
     val label: String
 )
 
-private val LocalFloatingBottomBarTabScale = staticCompositionLocalOf { { 1f } }
+private val LocalNavTabScale = staticCompositionLocalOf { { 1f } }
+
+/** 交叉轴长度:横条的交叉轴是高度,竖条是宽度 */
+private fun Modifier.crossAxisSize(axis: NavAxis, length: Dp): Modifier =
+    if (axis == NavAxis.Horizontal) height(length) else width(length)
+
+/** 主轴长度:横条的主轴是宽度,竖条是高度 */
+private fun Modifier.mainAxisLength(axis: NavAxis, length: Dp): Modifier =
+    if (axis == NavAxis.Horizontal) width(length) else height(length)
+
+/** 主轴铺满:横条铺宽,竖条铺高 */
+private fun Modifier.mainAxisFill(axis: NavAxis): Modifier =
+    if (axis == NavAxis.Horizontal) fillMaxWidth() else fillMaxHeight()
+
+/** 主轴方向的内边距:横条用 horizontal,竖条用 vertical */
+private fun Modifier.mainAxisPadding(axis: NavAxis, value: Dp): Modifier =
+    if (axis == NavAxis.Horizontal) padding(horizontal = value) else padding(vertical = value)
+
+/** 沿主轴平移:横条用 translationX,竖条用 translationY */
+private fun GraphicsLayerScope.setMainAxisTranslation(axis: NavAxis, value: Float) {
+    if (axis == NavAxis.Horizontal) translationX = value else translationY = value
+}
+
+/**
+ * 轴向无关的容器:横向走 Row、竖向走 Column,内容由两个作用域各自的 lambda 提供
+ * (等宽分发要用 `weight`,而 `RowScope.weight` 与 `ColumnScope.weight` 不是同一个函数)
+ */
+@Composable
+private fun NavContainer(
+    axis: NavAxis,
+    modifier: Modifier,
+    horizontalContent: @Composable RowScope.() -> Unit,
+    verticalContent: @Composable ColumnScope.() -> Unit,
+) {
+    if (axis == NavAxis.Horizontal) {
+        Row(
+            modifier = modifier,
+            verticalAlignment = Alignment.CenterVertically,
+            content = horizontalContent,
+        )
+    } else {
+        Column(
+            modifier = modifier,
+            horizontalAlignment = Alignment.CenterHorizontally,
+            content = verticalContent,
+        )
+    }
+}
 
 @Composable
-fun FloatingBottomBar(
+fun FloatingNavBar(
     modifier: Modifier = Modifier,
     backdrop: Backdrop,
+    axis: NavAxis,
     selectedTabIndex: () -> Int,
     onTabSelected: (Int) -> Unit,
     tabs: List<GlassTabItem>,
@@ -96,6 +151,7 @@ fun FloatingBottomBar(
     val isLightTheme = !isSystemInDarkTheme()
     val isBlurEnabled = config.navbarEnabled
     val supportsLens = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+    val isHorizontal = axis == NavAxis.Horizontal
 
     val accentColor = MaterialTheme.colorScheme.primary
     val containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(
@@ -107,20 +163,20 @@ fun FloatingBottomBar(
     val isLtr = LocalLayoutDirection.current == LayoutDirection.Ltr
     val animationScope = rememberCoroutineScope()
 
-    var tabWidthPx by remember { mutableFloatStateOf(0f) }
-    var totalWidthPx by remember { mutableFloatStateOf(0f) }
+    var tabStridePx by remember { mutableFloatStateOf(0f) }
+    var totalStridePx by remember { mutableFloatStateOf(0f) }
 
     Box(
         modifier = modifier,
-        contentAlignment = Alignment.CenterStart
+        contentAlignment = if (isHorizontal) Alignment.CenterStart else Alignment.TopCenter
     ) {
         val offsetAnimation = remember { Animatable(0f) }
         val panelOffset by remember(density) {
             derivedStateOf {
-                if (totalWidthPx == 0f) {
+                if (totalStridePx == 0f) {
                     0f
                 } else {
-                    val fraction = (offsetAnimation.value / totalWidthPx).fastCoerceIn(-1f, 1f)
+                    val fraction = (offsetAnimation.value / totalStridePx).fastCoerceIn(-1f, 1f)
                     with(density) {
                         4f.dp.toPx() * fraction.sign * EaseOut.transform(abs(fraction))
                     }
@@ -152,13 +208,15 @@ fun FloatingBottomBar(
                     }
                 },
                 onDrag = { _, dragAmount ->
-                    if (tabWidthPx > 0f) {
+                    if (tabStridePx > 0f) {
+                        val dragAlongAxis = if (isHorizontal) dragAmount.x else dragAmount.y
+                        val direction = if (isHorizontal && !isLtr) -1f else 1f
                         updateValue(
-                            (targetValue + dragAmount.x / tabWidthPx * if (isLtr) 1f else -1f)
+                            (targetValue + dragAlongAxis / tabStridePx * direction)
                                 .fastCoerceIn(0f, (tabsCount - 1).toFloat())
                         )
                         animationScope.launch {
-                            offsetAnimation.snapTo(offsetAnimation.value + dragAmount.x)
+                            offsetAnimation.snapTo(offsetAnimation.value + dragAlongAxis)
                         }
                     }
                 },
@@ -180,20 +238,21 @@ fun FloatingBottomBar(
         }
 
         val interactiveHighlight =
-            if (isBlurEnabled && supportsLens && tabWidthPx > 0f) {
-                remember(animationScope, tabWidthPx) {
+            if (isBlurEnabled && supportsLens && tabStridePx > 0f) {
+                remember(animationScope, tabStridePx) {
                     InteractiveHighlight(
                         animationScope = animationScope,
                         enabled = { currentInteractive() },
                         position = { size, _ ->
-                            Offset(
-                                if (isLtr) {
-                                    (dampedDragAnimation.value + 0.5f) * tabWidthPx + panelOffset
-                                } else {
-                                    size.width - (dampedDragAnimation.value + 0.5f) * tabWidthPx + panelOffset
-                                },
-                                size.height / 2f
-                            )
+                            val stride = (dampedDragAnimation.value + 0.5f) * tabStridePx + panelOffset
+                            if (isHorizontal) {
+                                Offset(
+                                    if (isLtr) stride else size.width - stride,
+                                    size.height / 2f
+                                )
+                            } else {
+                                Offset(size.width / 2f, stride)
+                            }
                         }
                     )
                 }
@@ -201,14 +260,19 @@ fun FloatingBottomBar(
                 null
             }
 
-        Row(
-            Modifier
+        NavContainer(
+            axis = axis,
+            modifier = Modifier
                 .onGloballyPositioned { coords ->
-                    totalWidthPx = coords.size.width.toFloat()
-                    val contentWidthPx = totalWidthPx - with(density) { 8f.dp.toPx() }
-                    tabWidthPx = contentWidthPx / tabsCount
+                    totalStridePx = if (isHorizontal) {
+                        coords.size.width.toFloat()
+                    } else {
+                        coords.size.height.toFloat()
+                    }
+                    val contentStridePx = totalStridePx - with(density) { 8f.dp.toPx() }
+                    tabStridePx = contentStridePx / tabsCount
                 }
-                .graphicsLayer { translationX = panelOffset }
+                .graphicsLayer { setMainAxisTranslation(axis, panelOffset) }
                 .drawBackdrop(
                     backdrop = backdrop,
                     shape = { ContinuousCapsule },
@@ -219,7 +283,11 @@ fun FloatingBottomBar(
                                 vibrancy()
                                 blur(config.blurDp.dp.toPx())
                                 if (supportsLens) {
-                                    lens(config.distortionDp.dp.toPx(), config.distortionDp.dp.toPx())
+                                    val refraction = min(
+                                        config.distortionDp.dp.toPx(),
+                                        size.minDimension / 2f
+                                    )
+                                    lens(refraction, refraction)
                                 }
                             } else {
                                 blur(config.blurDp.dp.toPx())
@@ -240,7 +308,9 @@ fun FloatingBottomBar(
                     layerBlock = {
                         if (isBlurEnabled) {
                             val progress = dampedDragAnimation.pressProgress
-                            val scale = lerp(1f, 1f + 16f.dp.toPx() / size.width, progress)
+                            // 按压时沿主轴鼓出:横条按宽度算,竖条按高度算
+                            val mainAxisExtent = if (isHorizontal) size.width else size.height
+                            val scale = lerp(1f, 1f + 16f.dp.toPx() / mainAxisExtent, progress)
                             scaleX = scale
                             scaleY = scale
                         }
@@ -248,24 +318,29 @@ fun FloatingBottomBar(
                     onDrawSurface = { drawRect(containerColor) }
                 )
                 .then(interactiveHighlight?.modifier ?: Modifier)
-                .height(64.dp)
-                .fillMaxWidth()
+                .crossAxisSize(axis, 64.dp)
+                .mainAxisFill(axis)
                 .padding(4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            content = { TabsContent(tabs, selectedTabIndex, onTabSelected, interactive) }
+            horizontalContent = {
+                NavTabsRow(tabs, selectedTabIndex, onTabSelected, interactive)
+            },
+            verticalContent = {
+                NavTabsColumn(tabs, selectedTabIndex, onTabSelected, interactive)
+            },
         )
 
         CompositionLocalProvider(
-            LocalFloatingBottomBarTabScale provides {
+            LocalNavTabScale provides {
                 if (isBlurEnabled) lerp(1f, 1.2f, dampedDragAnimation.pressProgress) else 1f
             }
         ) {
-            Row(
-                Modifier
+            NavContainer(
+                axis = axis,
+                modifier = Modifier
                     .clearAndSetSemantics {}
                     .alpha(0f)
                     .layerBackdrop(tabsBackdrop)
-                    .graphicsLayer { translationX = panelOffset }
+                    .graphicsLayer { setMainAxisTranslation(axis, panelOffset) }
                     .drawBackdrop(
                         backdrop = backdrop,
                         shape = { ContinuousCapsule },
@@ -275,43 +350,52 @@ fun FloatingBottomBar(
                                 vibrancy()
                                 blur(config.blurDp.dp.toPx())
                                 if (supportsLens) {
+                                    val refraction = min(
+                                        config.distortionDp.dp.toPx(),
+                                        size.minDimension / 2f
+                                    )
                                     lens(
-                                        config.distortionDp.dp.toPx() * progress,
-                                        config.distortionDp.dp.toPx() * progress
+                                        refraction * progress,
+                                        refraction * progress
                                     )
                                 }
                             }
                         },
                         highlight = {
                             val progress = dampedDragAnimation.pressProgress
-                            Highlight.Default.copy(alpha = if (isBlurEnabled && !isTabSwitching()) progress else 0f)
+                            Highlight.Default.copy(
+                                alpha = if (isBlurEnabled && !isTabSwitching()) progress else 0f
+                            )
                         },
                         onDrawSurface = { drawRect(containerColor) }
                     )
                     .then(interactiveHighlight?.modifier ?: Modifier)
-                    .height(56.dp)
-                    .fillMaxWidth()
-                    .padding(horizontal = 4.dp)
+                    .crossAxisSize(axis, 56.dp)
+                    .mainAxisFill(axis)
+                    .mainAxisPadding(axis, 4.dp)
                     .graphicsLayer(colorFilter = ColorFilter.tint(accentColor)),
-                verticalAlignment = Alignment.CenterVertically,
-                content = { TabsContent(tabs, selectedTabIndex, onTabSelected, interactive) }
+                horizontalContent = {
+                    NavTabsRow(tabs, selectedTabIndex, onTabSelected, interactive)
+                },
+                verticalContent = {
+                    NavTabsColumn(tabs, selectedTabIndex, onTabSelected, interactive)
+                },
             )
         }
 
-        if (tabWidthPx > 0f) {
+        if (tabStridePx > 0f) {
         Box(
             Modifier
-                .padding(horizontal = 4.dp)
+                .mainAxisPadding(axis, 4.dp)
                 .graphicsLayer {
-                    val contentWidth = totalWidthPx - with(density) { 8f.dp.toPx() }
-                    val singleTabWidth = contentWidth / tabsCount
-                    val progressOffset = dampedDragAnimation.value * singleTabWidth
-
-                    translationX = if (isLtr) {
-                        progressOffset + panelOffset
-                    } else {
-                        -progressOffset + panelOffset
-                    }
+                    val contentStride = totalStridePx - with(density) { 8f.dp.toPx() }
+                    val singleTabStride = contentStride / tabsCount
+                    val progressOffset = dampedDragAnimation.value * singleTabStride
+                    val rtlFlipped = isHorizontal && !isLtr
+                    setMainAxisTranslation(
+                        axis,
+                        if (rtlFlipped) -progressOffset + panelOffset else progressOffset + panelOffset
+                    )
                 }
                 .then(interactiveHighlight?.gestureModifier ?: Modifier)
                 .then(dampedDragAnimation.modifier)
@@ -347,8 +431,16 @@ fun FloatingBottomBar(
                         scaleX = dampedDragAnimation.scaleX
                         scaleY = dampedDragAnimation.scaleY
                         val velocity = dampedDragAnimation.velocity / 10f
-                        scaleX /= 1f - (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
-                        scaleY *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
+                        // 甩动拉伸沿拖动方向:横条拉 x 压 y,竖条拉 y 压 x
+                        val stretch = 1f - (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
+                        val squash = 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
+                        if (isHorizontal) {
+                            scaleX /= stretch
+                            scaleY *= squash
+                        } else {
+                            scaleY /= stretch
+                            scaleX *= squash
+                        }
                     },
                     onDrawSurface = {
                         val progress = dampedDragAnimation.pressProgress
@@ -360,69 +452,106 @@ fun FloatingBottomBar(
                         drawRect(Color.Black.copy(alpha = 0.03f * progress))
                     }
                 )
-                .height(56.dp)
-                .width(with(density) { ((totalWidthPx - 8f.dp.toPx()) / tabsCount).toDp() })
+                .crossAxisSize(axis, 56.dp)
+                .mainAxisLength(
+                    axis,
+                    with(density) { ((totalStridePx - 8f.dp.toPx()) / tabsCount).toDp() }
+                )
         )
         }
     }
 }
 
 @Composable
-private fun RowScope.TabsContent(
+private fun RowScope.NavTabsRow(
     tabs: List<GlassTabItem>,
     selectedTabIndex: () -> Int,
     onTabSelected: (Int) -> Unit,
-    interactive: () -> Boolean
+    interactive: () -> Boolean,
 ) {
-    val scale = LocalFloatingBottomBarTabScale.current
     val currentIndex = selectedTabIndex()
     val enabled = interactive()
     tabs.forEachIndexed { index, tab ->
-        val selected = index == currentIndex
-        val iconColor by animateColorAsState(
-            targetValue = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
-            else MaterialTheme.colorScheme.onSurfaceVariant,
-            animationSpec = tween(200),
-            label = "tabIconColor"
+        NavTabItem(
+            tab = tab,
+            selected = index == currentIndex,
+            enabled = enabled,
+            onClick = { onTabSelected(index) },
+            modifier = Modifier.fillMaxHeight().weight(1f),
         )
-        val textColor by animateColorAsState(
-            targetValue = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
-            else MaterialTheme.colorScheme.onSurfaceVariant,
-            animationSpec = tween(200),
-            label = "tabTextColor"
+    }
+}
+
+@Composable
+private fun ColumnScope.NavTabsColumn(
+    tabs: List<GlassTabItem>,
+    selectedTabIndex: () -> Int,
+    onTabSelected: (Int) -> Unit,
+    interactive: () -> Boolean,
+) {
+    val currentIndex = selectedTabIndex()
+    val enabled = interactive()
+    tabs.forEachIndexed { index, tab ->
+        NavTabItem(
+            tab = tab,
+            selected = index == currentIndex,
+            enabled = enabled,
+            onClick = { onTabSelected(index) },
+            modifier = Modifier.fillMaxWidth().weight(1f),
         )
-        Column(
-            modifier = Modifier
-                .clip(ContinuousCapsule)
-                .clickable(
-                    enabled = enabled,
-                    interactionSource = null,
-                    indication = null,
-                    role = Role.Tab,
-                    onClick = { onTabSelected(index) }
-                )
-                .fillMaxHeight()
-                .weight(1f)
-                .graphicsLayer {
-                    val currentScale = scale()
-                    scaleX = currentScale
-                    scaleY = currentScale
-                },
-            verticalArrangement = Arrangement.spacedBy(1.dp, Alignment.CenterVertically),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Icon(
-                painter = painterResource(tab.iconRes),
-                contentDescription = null,
-                tint = iconColor,
-                modifier = Modifier.size(24.dp)
+    }
+}
+
+@Composable
+private fun NavTabItem(
+    tab: GlassTabItem,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier,
+) {
+    val scale = LocalNavTabScale.current
+    val iconColor by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
+        else MaterialTheme.colorScheme.onSurfaceVariant,
+        animationSpec = tween(200),
+        label = "tabIconColor"
+    )
+    val textColor by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
+        else MaterialTheme.colorScheme.onSurfaceVariant,
+        animationSpec = tween(200),
+        label = "tabTextColor"
+    )
+    Column(
+        modifier = modifier
+            .clip(ContinuousCapsule)
+            .clickable(
+                enabled = enabled,
+                interactionSource = null,
+                indication = null,
+                role = Role.Tab,
+                onClick = onClick
             )
-            Text(
-                text = tab.label,
-                style = MaterialTheme.typography.labelSmall,
-                color = textColor,
-                maxLines = 1
-            )
-        }
+            .graphicsLayer {
+                val currentScale = scale()
+                scaleX = currentScale
+                scaleY = currentScale
+            },
+        verticalArrangement = Arrangement.spacedBy(1.dp, Alignment.CenterVertically),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(
+            painter = painterResource(tab.iconRes),
+            contentDescription = null,
+            tint = iconColor,
+            modifier = Modifier.size(24.dp)
+        )
+        Text(
+            text = tab.label,
+            style = MaterialTheme.typography.labelSmall,
+            color = textColor,
+            maxLines = 1
+        )
     }
 }

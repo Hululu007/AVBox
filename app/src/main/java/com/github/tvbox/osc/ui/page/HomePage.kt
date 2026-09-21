@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -66,6 +67,7 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -106,7 +108,10 @@ private val HomeSourceCapsuleMaxWidth = 240.dp
 private val HomeTopBarControlSpacing = 8.dp
 
 @Composable
-fun HomePage(vm: HomeViewModel, bottomPadding: Dp = 0.dp) {
+fun HomePage(vm: HomeViewModel, contentPadding: PaddingValues = PaddingValues(0.dp)) {
+    // 页面保持全出血(背景延伸到导航栏之下,玻璃才有内容可取),只把内容让开
+    val navStart = contentPadding.calculateStartPadding(LocalLayoutDirection.current)
+    val navBottom = contentPadding.calculateBottomPadding()
     val context = LocalContext.current
     val currentSource by vm.currentSource.collectAsState()
     val sources by vm.sources.collectAsState()
@@ -139,6 +144,7 @@ fun HomePage(vm: HomeViewModel, bottomPadding: Dp = 0.dp) {
 
     AppTopBarScaffold(
         collapseEnabled = false,
+        topBarStartInset = navStart,
         titleContent = {
             BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                 Row(
@@ -262,7 +268,7 @@ fun HomePage(vm: HomeViewModel, bottomPadding: Dp = 0.dp) {
                 HomeGridLayout(
                     vm = vm,
                     topPadding = topPad,
-                    bottomPadding = bottomPadding,
+                    contentPadding = contentPadding,
                     pullState = pullState,
                     onCardClick = { video -> handleCardClick(vm, video, context) },
                     onCardLongClick = { video -> vodMenu.show(video) },
@@ -276,7 +282,11 @@ fun HomePage(vm: HomeViewModel, bottomPadding: Dp = 0.dp) {
                         state = pullState,
                         onRefresh = { vm.reload() },
                     ),
-                contentPadding = PaddingValues(top = topPad + 8.dp, bottom = 88.dp + bottomPadding),
+                contentPadding = PaddingValues(
+                    start = navStart,
+                    top = topPad + 8.dp,
+                    bottom = 88.dp + navBottom,
+                ),
             ) {
                 item(key = "hero") {
                     if (rec.state == HomeViewModel.PartitionState.Ready && rec.videos.isNotEmpty()) {
@@ -358,7 +368,7 @@ fun HomePage(vm: HomeViewModel, bottomPadding: Dp = 0.dp) {
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(16.dp)
-                .padding(bottom = bottomPadding),
+                .padding(start = navStart, bottom = navBottom),
         ) {
             Icon(painter = painterResource(R.drawable.ic_live_fab), contentDescription = "直播")
         }
