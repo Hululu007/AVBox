@@ -77,6 +77,7 @@ import com.github.tvbox.osc.ui.components.TopBarActionBox
 import com.github.tvbox.osc.ui.components.glassSurface
 import com.github.tvbox.osc.ui.theme.cardContainer
 import com.github.tvbox.osc.util.ApiLineSignal
+import com.github.tvbox.osc.util.BootGuard
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.HistoryHelper
 import com.github.tvbox.osc.util.KV
@@ -84,6 +85,12 @@ import com.github.tvbox.osc.util.KV
 private const val SubscribeSplit = "\t"
 
 private data class SubscribeSource(val name: String, val url: String)
+
+/**
+ * 待二次确认的切源请求。带 `vod` 是必需的:列表在 AnimatedContent 里渲染,过渡期内外两份内容
+ * 同时在组合中,读外层 `isVod` 会把正在退场的那份按错的模式切源。
+ */
+private data class PendingSwitch(val item: SubscribeSource, val vod: Boolean)
 
 private enum class ConfigMode { Vod, Live }
 
@@ -186,6 +193,13 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
     var manageMode by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf(emptySet<String>()) }
     var repoSheetOpen by remember { mutableStateOf(false) }
+    /**
+     * 被看门狗自动停用过的源地址(黑名单)。只在首次组合读一次 —— 本页是独立 Activity、
+     * 每次进入都是新实例;页内的增删(二次确认启用 / 删除订阅)都由本页自己改这份状态。
+     */
+    var disabledUrls by remember { mutableStateOf(BootGuard.disabledSources().toSet()) }
+    /** 点到黑名单里的源时先挂起,由二次确认对话框决定是否放行 */
+    var pendingSwitch by remember { mutableStateOf<PendingSwitch?>(null) }
 
     /**
      * 多仓的地址改写由异步 loadConfig 完成(仓地址 → 仓内首条子源),它不产生任何 Compose 状态
@@ -264,6 +278,29 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
         Toast.makeText(context, "已切换到:" + item.name, Toast.LENGTH_SHORT).show()
     }
 
+    /**
+     * 切源统一入口:黑名单里的源**不当场切** —— 它上次就是在这个源上把应用崩掉的,
+     * 直接切等于再崩一次,所以先弹二次确认(用户可能知道远端已经修好了)。
+     */
+    fun requestSwitch(item: SubscribeSource, vod: Boolean) {
+        if (item.url in disabledUrls) {
+            pendingSwitch = PendingSwitch(item, vod)
+        } else if (vod) {
+            switchToVod(item)
+        } else {
+            switchToLive(item)
+        }
+    }
+
+    /** 二次确认"仍要启用":移出黑名单再切;真坏的话下次启动会重新记入 */
+    fun enableAndSwitch() {
+        val pending = pendingSwitch ?: return
+        pendingSwitch = null
+        BootGuard.enableSource(pending.item.url)
+        disabledUrls = disabledUrls - pending.item.url
+        if (pending.vod) switchToVod(pending.item) else switchToLive(pending.item)
+    }
+
     // ---------- 换仓(2026-09-21) ----------
     // 多仓生效后启动地址被改写成仓里某个子源,订阅卡与"使用中"都不再指向用户填的仓地址,
     // 故需要独立入口:右上角图标 → bottom sheet。列表取与「配置切换」同一份数据,不另建状态。
@@ -295,6 +332,10 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
         }
         val remaining = currentItems.filterNot { it in target }
         KV.put(subscribeKeyOf(mode), ArrayList(remaining))
+        // 源都删了,就别再留着它的"崩过"记录 —— 否则名单里堆的是用户已经不要的地址
+        val removedUrls = target.map { parseSubscribe(it).url }
+        BootGuard.forgetSources(removedUrls)
+        disabledUrls = disabledUrls - removedUrls
         if (isVod) {
             vodItems = remaining
             if (remaining.isEmpty()) {
@@ -504,15 +545,14 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
                                 modifier = Modifier.animateItem(),
                                 item = item,
                                 active = inUse,
+                                disabled = item.url in disabledUrls,
                                 manageMode = manageMode,
                                 selected = value in selected,
                                 onClick = {
                                     if (manageMode) {
                                         selected = if (value in selected) selected - value else selected + value
-                                    } else if (mIsVod) {
-                                        switchToVod(item)
                                     } else {
-                                        switchToLive(item)
+                                        requestSwitch(item, mIsVod)
                                     }
                                 },
                                 onLongClick = {
@@ -521,7 +561,7 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
                                 },
                                 onCheckedChange = { checked ->
                                     if (checked) {
-                                        if (mIsVod) switchToVod(item) else switchToLive(item)
+                                        requestSwitch(item, mIsVod)
                                     } else if (!mIsVod) {
                                         followLiveNow()
                                     }
@@ -572,22 +612,39 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
         )
     }
 
+    val pending = pendingSwitch
+    if (pending != null) {
+        AlertDialog(
+            onDismissRequest = { pendingSwitch = null },
+            title = { Text("该源已被自动停用") },
+            text = {
+                Text(
+                    "「" + pending.item.name + "」此前导致应用崩溃，已被自动停用。\n\n" +
+                        "若该源已经修好，可以重新启用；否则切换后很可能再次闪退。",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { enableAndSwitch() }) { Text("仍要启用") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingSwitch = null }) { Text("取消") }
+            },
+        )
+    }
+
     if (repoSheetOpen) {
         RepoSwitchSheet(
             entries = repoEntries,
             activeUrl = repoActiveUrl,
+            disabledUrls = disabledUrls,
             onDismiss = { repoSheetOpen = false },
             onSelect = { url ->
                 val name = HistoryHelper.getApiLineName(
                     repoEntries.firstOrNull { HistoryHelper.getApiLineUrl(it) == url }.orEmpty(),
                 )
-                if (isVod) {
-                    // 点播:与在订阅列表里点同一条源等价 —— switchToVod 里已经处理了
-                    // "是否落在仓里"的仓列表保留判定,所以换完仓后入口仍在
-                    switchToVod(SubscribeSource(name, url))
-                } else {
-                    switchToLive(SubscribeSource(name, url))
-                }
+                // 与在订阅列表里点同一条源等价 —— switchToVod 里已经处理了"是否落在仓里"的仓列表保留判定,
+                // 所以换完仓后入口仍在。统一走 requestSwitch:仓里藏着的坏子源同样要过二次确认
+                requestSwitch(SubscribeSource(name, url), isVod)
             },
         )
     }
@@ -597,11 +654,13 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
  * 「换仓」bottom sheet:列出当前仓里的全部子源,点一条即切换。
  *
  * <p>样式同 `AVBoxOptionSheet`,但每条多带一行地址 —— 仓里常有同名子源,只给名字分不清。
+ * 被看门狗停用过的子源额外打「已禁用」标记(坏子源通常就藏在仓里,不标出来用户只会觉得"点了没反应")。
  */
 @Composable
 private fun RepoSwitchSheet(
     entries: List<String>,
     activeUrl: String,
+    disabledUrls: Set<String>,
     onDismiss: () -> Unit,
     onSelect: (String) -> Unit,
 ) {
@@ -641,14 +700,20 @@ private fun RepoSwitchSheet(
                             dismissAnimated()
                         },
                         trailing = {
-                            Text(
-                                text = url,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.widthIn(max = 180.dp),
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (url in disabledUrls) {
+                                    DisabledSourceTag()
+                                    Spacer(Modifier.width(8.dp))
+                                }
+                                Text(
+                                    text = url,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.widthIn(max = 180.dp),
+                                )
+                            }
                         },
                     )
                 }
@@ -678,6 +743,7 @@ private fun FollowVodCard(
 private fun SubscribeCard(
     item: SubscribeSource,
     active: Boolean,
+    disabled: Boolean,
     manageMode: Boolean,
     selected: Boolean,
     modifier: Modifier = Modifier,
@@ -702,13 +768,20 @@ private fun SubscribeCard(
             SettingsIconBadge(iconRes = R.drawable.ic_subscribe_source)
             Spacer(Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = item.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = item.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (disabled) {
+                        Spacer(Modifier.width(8.dp))
+                        DisabledSourceTag()
+                    }
+                }
                 Spacer(Modifier.height(4.dp))
                 Text(
                     text = item.url,
@@ -735,6 +808,22 @@ private fun SubscribeCard(
                 }
             }
         }
+    }
+}
+
+/** 被看门狗停用过的源标记:红底小圆角,贴在源名(或换仓条目的地址)旁边 */
+@Composable
+private fun DisabledSourceTag() {
+    Surface(
+        shape = RoundedCornerShape(6.dp),
+        color = MaterialTheme.colorScheme.errorContainer,
+    ) {
+        Text(
+            text = "已禁用",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onErrorContainer,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+        )
     }
 }
 

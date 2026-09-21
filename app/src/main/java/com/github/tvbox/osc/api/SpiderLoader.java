@@ -115,7 +115,7 @@ final class SpiderLoader {
                 }
                 // 装载成功**不**清计数(2026-09-21):爬虫的 <clinit> 跑在自己的线程上,
                 // 这里报成功之后 28ms 它才崩 —— 早清等于擦掉唯一证据。改由 BootGuard
-                // 在"连续存活满 60 秒"后清(那时才真的算稳定源)。
+                // 在"连续存活满 STABLE_RUN_MS(10 分钟)"后清(那时才真的算稳定源)。
                 if (success) BootGuard.scheduleStableRunReset();
                 final boolean result = success;
                 mainHandler.post(new Runnable() {

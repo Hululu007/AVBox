@@ -8,6 +8,8 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collection;
 
 /**
  * 启动看门狗:坏源把应用锁进"一启动就崩"的死循环时,下次启动自动停用它(2026-09-21)。
@@ -16,11 +18,14 @@ import java.nio.charset.StandardCharsets;
  * 而源地址是持久化的,用户连"换源"都进不去,只能清数据。崩在爬虫自己的线程上,接不住异常。
  *
  * <p>判据:①崩溃发生在"开始加载 jar 后 10 秒内"⇒ 一次即停用;②同一源累计装载 3 次 ⇒ 停用。
- * 停用只清启动指针与仓列表,**不动订阅列表**。
+ * 判据①比的是**最近一次**开始装载的时刻,不是"本进程第一次装载" —— 会话中途换仓/换源切到坏源
+ * 也是装载阶段崩,拿进程第一次装载当起点会把差值算成几分钟,于是要崩两次才停用。
+ * 停用只清启动指针与仓列表,**不动订阅列表**;同时把源地址记进黑名单
+ * ({@link HawkConfig#BOOT_DISABLED_SOURCES}),让界面能标出来、仓改写能绕开它。
  */
 public final class BootGuard {
 
-    /** 开始加载 jar 后这么久之内崩溃,算"在启动加载阶段崩"(实测是 28 毫秒) */
+    /** 开始加载 jar 后这么久之内崩溃,算"崩在装载阶段"(实测是 28 毫秒) */
     private static final long QUICK_CRASH_MS = 10_000L;
 
     /** 距上次同源装载超过这么久视为另一批问题,重新计数 */
@@ -101,17 +106,20 @@ public final class BootGuard {
         }
     }
 
-    /** 开始加载某个 jar:同源累计计数,换源则从 1 重新计 */
+    /**
+     * 开始加载某个 jar:记下"最近一次装载起点",同源累计计数,换源则从 1 重新计。
+     *
+     * <p>起点**每次装载都覆盖**(与 {@code BOOT_LOADING_JAR} 保持同一批数据):只记本进程第一次的话,
+     * 会话中途换仓切到坏源崩掉时,崩溃时刻减装载起点是几分钟 ⇒ 判不出装载阶段崩溃,要崩两次才停用。
+     * 代价是"非装载期的崩溃若正好落在某次装载后 10 秒内"会被误算 —— 但误算的后果已被压到
+     * "源被标记已禁用、二次确认即可恢复"(见黑名单),不再是静默清掉启动指针。
+     */
     public static void onJarLoadStart(String jarUrl) {
         try {
             if (isEmpty(jarUrl)) return;
             recordCurrentSource();
             long now = System.currentTimeMillis();
-            // 只在本次进程第一次装载时记起点,这样"启动 5 秒后播放崩了、用户马上重开"不会被算成启动崩溃
-            if (sProcessStartWallMs <= 0) {
-                sProcessStartWallMs = now;
-                KV.put(HawkConfig.BOOT_LOAD_START_ELAPSED, SystemClock.elapsedRealtime());
-            }
+            KV.put(HawkConfig.BOOT_LOAD_START_ELAPSED, SystemClock.elapsedRealtime());
             String previous = KV.get(HawkConfig.BOOT_LOADING_JAR, "");
             long lastAttemptAt = KV.get(HawkConfig.BOOT_LAST_ATTEMPT_AT, 0L);
             boolean stale = lastAttemptAt > 0 && now - lastAttemptAt > ATTEMPT_WINDOW_MS;
@@ -124,8 +132,6 @@ public final class BootGuard {
         }
     }
 
-    /** 本次进程首次装载 jar 的墙钟;0 = 本次进程还没装载过 */
-    private static volatile long sProcessStartWallMs = 0L;
     /**
      * 存活满 {@link #STABLE_RUN_MS} 未崩 ⇒ 清计数。
      *
@@ -186,7 +192,7 @@ public final class BootGuard {
     }
 
     /**
-     * 停用判定(纯函数,便于单测):启动阶段崩过 **或** 累计装载达 {@link #MAX_LOAD_ATTEMPTS} 次。
+     * 停用判定(纯函数,便于单测):崩在装载阶段 **或** 累计装载达 {@link #MAX_LOAD_ATTEMPTS} 次。
      *
      * <p>{@code startupCrash} 由调用方传入:算它要读并删除崩溃标记,只能读一次。
      */
@@ -195,7 +201,13 @@ public final class BootGuard {
         return startupCrash || count >= MAX_LOAD_ATTEMPTS;
     }
 
-    /** 崩溃是否落在"开始加载 jar 后 {@link #QUICK_CRASH_MS} 内"(两个值同为本次进程的开机计时) */
+    /**
+     * 崩溃是否落在"开始加载 jar 后 {@link #QUICK_CRASH_MS} 内"(两个值同为开机计时,可跨进程比较)。
+     *
+     * <p>名字与日志字段里的 "startup" 是沿用的历史叫法,别按字面理解成"应用启动":判据现在比的是
+     * **最近一次**装载(见 {@link #onJarLoadStart}),会话中途换仓/换源同样是装载阶段崩。
+     * 名字与日志字段刻意不改 —— 既有真机日志与 `history/` 归档里都是这个字段名,改了对不上号。
+     */
     static boolean crashedDuringStartup(long crashElapsed, long loadStartElapsed) {
         return loadStartElapsed > 0 && crashElapsed >= loadStartElapsed
                 && crashElapsed - loadStartElapsed <= QUICK_CRASH_MS;
@@ -219,10 +231,12 @@ public final class BootGuard {
             KV.put(HawkConfig.LIVE_API_URL, "");
             HistoryHelper.clearLiveApiLineList();
             KV.put(HawkConfig.BOOT_SAFE_DISABLED, liveSource);
+            rememberDisabled(liveSource);
         } else if (!vodSource.isEmpty()) {
             KV.put(HawkConfig.API_URL, "");
             HistoryHelper.clearApiLineList();
             KV.put(HawkConfig.BOOT_SAFE_DISABLED, vodSource);
+            rememberDisabled(vodSource);
         }
         KV.put(HawkConfig.BOOT_VOD_SOURCE, "");
         KV.put(HawkConfig.BOOT_LIVE_SOURCE, "");
@@ -237,5 +251,73 @@ public final class BootGuard {
         } catch (Throwable ignored) {
             return "";
         }
+    }
+
+    // ---- 风险源黑名单 ----
+    // 停用只是"这次别用它",源地址还在订阅列表里、还能被用户点中 —— 名单让界面能标出"这个源崩过",
+    // 并让仓改写绕开它,否则重新启用那个仓又会被改写到坏子源、再崩一次。
+
+    /** 这个源地址是否在黑名单里 */
+    public static boolean isDisabledSource(String url) {
+        if (isEmpty(url)) return false;
+        try {
+            return disabledSources().contains(url.trim());
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    /** 黑名单快照(源地址);返回副本,调用方改它不会写回存储 */
+    public static ArrayList<String> disabledSources() {
+        try {
+            return new ArrayList<>(KV.get(HawkConfig.BOOT_DISABLED_SOURCES, new ArrayList<String>()));
+        } catch (Throwable ignored) {
+            return new ArrayList<>();
+        }
+    }
+
+    /** 用户二次确认后把源移出名单(允许再试;真修好了就不会再进来,仍坏则下次启动重新记入) */
+    public static void enableSource(String url) {
+        if (isEmpty(url)) return;
+        try {
+            KV.put(HawkConfig.BOOT_DISABLED_SOURCES, removeDisabledSource(disabledSources(), url));
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** 订阅被删除时一起清掉名单记录,免得名单里堆着用户已经不要的地址 */
+    public static void forgetSources(Collection<String> urls) {
+        if (urls == null || urls.isEmpty()) return;
+        try {
+            ArrayList<String> list = disabledSources();
+            for (String url : urls) list = removeDisabledSource(list, url);
+            KV.put(HawkConfig.BOOT_DISABLED_SOURCES, list);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void rememberDisabled(String url) {
+        if (isEmpty(url)) return;
+        try {
+            KV.put(HawkConfig.BOOT_DISABLED_SOURCES, addDisabledSource(disabledSources(), url));
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** 记入名单(已存在则不重复);纯函数,便于单测 */
+    static ArrayList<String> addDisabledSource(ArrayList<String> list, String url) {
+        ArrayList<String> next = new ArrayList<>(list == null ? new ArrayList<String>() : list);
+        if (isEmpty(url)) return next;
+        String value = url.trim();
+        if (!next.contains(value)) next.add(value);
+        return next;
+    }
+
+    /** 移出名单;不在名单里就原样返回 */
+    static ArrayList<String> removeDisabledSource(ArrayList<String> list, String url) {
+        ArrayList<String> next = new ArrayList<>(list == null ? new ArrayList<String>() : list);
+        if (isEmpty(url)) return next;
+        next.remove(url.trim());
+        return next;
     }
 }

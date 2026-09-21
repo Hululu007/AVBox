@@ -221,12 +221,29 @@ public class MyVideoView extends VideoView implements DrawHandler.Callback {
 
     public void clearVideoFrame() {
         if (mMediaPlayer != null) mMediaPlayer.stop();
+        showFrameCover();
+    }
+
+    /**
+     * 只遮黑、不动内核:页面挂载时用 —— 旧内容停在 PAUSED 时,media3 会在新 Surface 重建时
+     * 把上一帧重渲染出来。不能复用 {@link #clearVideoFrame()}:它内部 stop 内核,
+     * 而"同片接管"要靠内核里留着的内容续播(见 PlayContainer.isSamePlaybackOwned)。
+     */
+    public void coverVideoFrame() {
+        showFrameCover();
+    }
+
+    private void showFrameCover() {
         if (frameCover == null) {
             frameCover = new View(getContext());
             frameCover.setBackgroundColor(android.graphics.Color.BLACK);
             mPlayerContainer.addView(frameCover, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT, Gravity.CENTER));
         }
         frameCover.setVisibility(VISIBLE);
+        // 遮罩是追加的,会把控制器(顶栏/手势层/字幕/直播控制层)一起盖住;控制器属 UI 层必须压在最上。
+        // 用 bringToFront 而不是按 index 插:addDisplay() 永远把渲染视图插到 index 0,index 方案在
+        // "渲染视图尚未创建"时会算错位(此时容器里可能只有控制器)
+        if (mVideoController != null) mVideoController.bringToFront();
     }
 
     public void showVideoFrame() {

@@ -148,6 +148,9 @@ public final class KVKeySpec implements KVDecoder.TypeRegistry {
         // 启动看门狗标记:boot_loading_jar 是当前加载中的 jar 地址(可能带 "直播" 前缀,故按 String 存)
         register(HawkConfig.BOOT_LOADING_JAR, "");
         register(HawkConfig.BOOT_SAFE_DISABLED, "");
+        // 风险源黑名单:元素类型必须显式登记,否则读回来退化成 LinkedTreeMap(见本文件末的教训)
+        register(HawkConfig.BOOT_DISABLED_SOURCES, new TypeToken<ArrayList<String>>() {
+        });
         register(HawkConfig.BOOT_VOD_SOURCE, "");
         register(HawkConfig.BOOT_LIVE_SOURCE, "");
         // 0L 是 Long 哨兵:尝试次数与加载时刻必须按 long 解码,否则读回来对不上类型

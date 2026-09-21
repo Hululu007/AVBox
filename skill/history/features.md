@@ -1600,3 +1600,29 @@ P1 最后两组。至此**调度层(会话/取流/解析/嗅探/重试/换线/�
 - **教训**:九轮为了修这行的可见性,补了 `ApiLineSignal` 订阅 + 返工一次 + 十轮再收窄 —— **三轮工作全部白做**,因为用户从一开始就不想要这个入口。用户说"只保留一处"时,要先确认指的是**入口**还是**刷新路径**;UI 上出现"同一功能两个入口"时,先问是不是该删一个,而不是急着把第二个修好。
 - **验证**:`:app:compileDebugKotlin` 通过(仅剩既有 Kotlin 插件弃用警告);`:app:compileDebugJavaWithJavac` UP-TO-DATE(无 Java 改动)。
 - **文档同步**:spec §4.3「接口线路」条目改写为删除记录、分组内容去掉该行、§4.3 弹窗形态条目去掉它的 `AVBoxOptionSheet` 归属、§4.3「已删条目」补一行、§4.7 与 §6.9 里"设置页那一半"的表述改为"已随入口删除"。
+
+## 风险源黑名单:被停用过的源在配置管理页标出来(2026-09-21 同日十二轮)
+
+- **用户问题(原话)**:「如果在切换多仓时遇到无法使用并且会造成闪退的源,目前能否能拦截闪退,还是得先闪退一处再进入才显示禁用」。读码答复:**拦不住** —— 崩在爬虫自己的线程上(`GoProxy.<clinit>` 里 `System.load` 了一个 313 字节的 CDN 报错页),进程级 `UncaughtExceptionHandler` 只能记、不能拦;当前是"先崩一次、下次启动才停用"。并且**换仓这条路上要崩两次**:判据里的"启动加载阶段"锚在 `BOOT_LOAD_START_ELAPSED`,而它只在**本进程第一次装载 jar** 时记(`BootGuard:110-114`,有意的,防播放期崩溃被误判成启动崩溃),换仓属于会话中途装载,崩溃时刻减装载起点远大于 10 秒 ⇒ 第一次重启判不出来(只能靠"累计装载满 3 次"兜底)。
+- **用户选定方向 2**:黑名单 + 界面标记 + 二次确认(而不是先改判据锚点去省掉那一次崩溃)。
+- **改动**:
+  - 存储:`HawkConfig.BOOT_DISABLED_SOURCES`(源地址 `ArrayList<String>`)+ `KVKeySpec` 显式登记元素类型。与 `BOOT_SAFE_DISABLED` 分工明确 —— 后者是**一次性提示**(读后即清),前者是**持久名单**。
+  - `BootGuard`:停用源时顺带记入名单;对外 `isDisabledSource` / `disabledSources`(返回副本,调用方改它不会写回存储)/ `enableSource` / `forgetSources`;增删写成纯函数 `addDisabledSource` / `removeDisabledSource`(去重、空地址不记、null 入参不抛)以便单测。
+  - `ConfigManagePage`:订阅卡与「换仓」sheet 打「已禁用」标记(`errorContainer` 底 + `onErrorContainer` 字 + `labelSmall` + 6dp 圆角);切源统一走 `requestSwitch(item, vod)` —— 命中名单先弹二次确认,`enableAndSwitch()` 才移出名单并切换;`deleteSelected` 连带 `forgetSources` 清记录。**`PendingSwitch` 必须带 `vod`**:列表在 `AnimatedContent` 里渲染,过渡期内外两份内容同时组合,读外层 `isVod` 会把正在退场的那份按错的模式切源(沿用原代码 `mIsVod` 的口径)。
+  - `ApiConfig.firstUsableApiLine`:仓改写挑"首条子源"时跳过黑名单,全被停用则放弃改写(退回"把仓 JSON 当普通配置解析"= 空配置而非闪退)。**不加这条黑名单形同虚设** —— 停用会清掉仓列表(换仓入口随之隐藏),用户只能重新点那条仓订阅卡,而它会照旧被改写到坏子源、再崩一次。
+  - `LivePlayViewModel` position 6(直播页「配置切换」组):命中黑名单直接拒 + Toast 指路,**不改 `LiveSettingItem` 模型** —— 那一组只是个切换列表,没有放二次确认的位置。
+  - `MainScreen` 停用提示补「可在配置管理中重新启用」。
+- **验证**:`:app:testDebugUnitTest` **204 用例 / 0 失败**(基线 199 + 黑名单 5);`:app:compileDebugKotlin` / `:app:compileDebugJavaWithJavac` / `:app:assembleDebug` 全通过(`AVBox_debug.apk` 已产出)。**未装机** —— 本机当前无 adb 设备连接,且用户已明确要求"不要操作我的手机"。
+- **仍存的局限(刻意保留,非遗漏)**:①闪退本身依旧拦不住,这份名单换来的是"崩过之后不会再被自动选中 + 界面上看得见";②名单按**源地址**记 ⇒ 换仓场景标记的是**仓内子源**那一条,订阅卡上那条仓地址本身不会被标记;③同一个 jar 被多个源引用时,名单只记当时生效的那个源地址,别的源引用同一个 jar 不会被牵连。
+- **顺带订正一处文档不一致**:`SpiderLoader.java:118` 的注释原写"连续存活满 **60 秒**后清",而 `BootGuard.STABLE_RUN_MS` 实际是 **10 分钟** —— 注释比代码短一个数量级,排查"计数为何不清"时会被带偏,已改为引用常量名。
+
+## 崩溃判据锚点改为"最近一次装载":换仓切到坏源不再要崩两次(2026-09-21 同日十三轮)
+
+- **承接十二轮**:上一轮只做了方案 2(黑名单 + 界面标记),把"换仓要崩两次"留给用户决定。用户回「继续」,按方案 1 收掉。
+- **真因(十二轮读码已定位)**:`BootGuard.onJarLoadStart` 只在**本进程第一次**装载 jar 时写 `BOOT_LOAD_START_ELAPSED`。于是:进程第一次装载的起点是几分钟前,会话中途换仓那次装载**不更新**起点 ⇒ 崩溃时刻减起点 = 几分钟 ⇒ `crashedDuringStartup` 恒为 false ⇒ 只剩"累计装载 3 次"兜底 ⇒ 用户要崩两次才等到停用。
+- **改法**:每次装载都覆盖起点,与 `BOOT_LOADING_JAR` 保持同一批数据(此前两者本就不一致:jar 记的是最近一次、时刻记的是第一次);删掉只为此存在的 `sProcessStartWallMs` 静态字段。
+- **旧注释给的理由其实不成立(顺带订正)**:那句"启动 5 秒后播放崩了、用户马上重开不会被算成启动崩溃"在**旧写法下同样不成立** —— 启动后 3 秒播放崩掉,Δ 也小于 10 秒,照样被算成装载阶段崩溃。旧写法真正保护的是"换源后不久的非装载期崩溃"(锚在进程第一次装载时 Δ 会很大)。而这条误判的代价已从"静默清掉启动指针、用户只能清数据"降到"源被标记**已禁用** + 二次确认一键恢复"(十二轮黑名单给的)⇒ 放宽锚点是净收益。
+- **回归锁**:`BootGuardTest.midSessionSwitchCrash_countsAsLoadStageCrash` —— 同一份数据同时断言新写法为 `true`、旧写法(拿进程第一次装载当起点)为 `false`,把这个语义钉住。
+- **刻意不改名字**:`crashedDuringStartup` 方法与日志字段 `startupCrash=` 保留("startup" 已是历史叫法)—— 既有真机日志与 `history/` 归档里都是这个字段名,改了对不上号。已在 KDoc 写明"别按字面理解成应用启动",并把 `QUICK_CRASH_MS`、`HawkConfig.BOOT_LOAD_START_ELAPSED` 的注释由"启动加载阶段"改为"装载阶段"。
+- **验证**:单测 **205 用例 / 0 失败**(上一轮 204 + 1);`:app:compileDebugKotlin` / `:app:compileDebugJavaWithJavac` / `:app:assembleDebug` 全通过。**未装机**。
+- **仍覆盖不到的(说明,非缺陷)**:`onJarLoadStart` 依赖 KV,而单测无 Robolectric、`KV.init` 需要 Context ⇒ "起点是否每次都被覆盖"这一层进不了单测,靠的是纯函数那层的回归锁 + 代码审查。另外"装载后 10 秒内的非装载期崩溃会被误算"这条残留窗口没变(实测装载本身只要 28 毫秒,窗口远大于真实装载耗时)。

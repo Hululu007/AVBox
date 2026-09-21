@@ -9,6 +9,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.bean.LiveChannelItem
+import com.github.tvbox.osc.util.BootGuard
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.HistoryHelper
 import com.github.tvbox.osc.util.KV
@@ -169,6 +170,11 @@ internal class LivePlayViewModel : ViewModel() {
                 val configChannelName = preferredRefreshChannelName(host)
                 val configSourceIndex = preferredRefreshSourceIndex(host)
                 val requestId = ++liveConfigRequestId
+                // 黑名单里的坏源选了就崩;这一组只是个切换列表(没有二次确认的位置),直接拒掉并指路
+                if (target.isNotEmpty() && BootGuard.isDisabledSource(target)) {
+                    host.toast("该源已被自动停用，可在配置管理中重新启用")
+                    return
+                }
                 KV.put(HawkConfig.LIVE_API_URL, target)
                 if (target.isEmpty()) {
                     HistoryHelper.clearLiveApiLineList()

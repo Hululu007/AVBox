@@ -24,7 +24,7 @@ public class HawkConfig {
      */
     public static final String BOOT_LOADING_JAR = "boot_loading_jar";
     public static final String BOOT_LOADING_COUNT = "boot_loading_count";
-    /** 上次"开始加载 jar"的开机计时:与崩溃标记同源,用于判"崩溃是否发生在启动加载阶段" */
+    /** 最近一次"开始加载 jar"的开机计时(每次装载都覆盖):与崩溃标记同源,用于判"崩溃是否发生在装载阶段" */
     public static final String BOOT_LOAD_START_ELAPSED = "boot_load_start_elapsed";
     /** 上次"开始加载 jar"的时刻:用于"距上次太久就重新计数"的判定 */
     public static final String BOOT_LAST_ATTEMPT_AT = "boot_last_attempt_at";
@@ -33,6 +33,12 @@ public class HawkConfig {
     public static final String BOOT_LIVE_SOURCE = "boot_live_source";
     /** 上一次因连续崩溃被自动停用的源地址(UI 读它做提示) */
     public static final String BOOT_SAFE_DISABLED = "boot_safe_disabled";
+    /**
+     * 风险源黑名单(源地址列表)。与 {@link #BOOT_SAFE_DISABLED} 的区别:那个是一次性提示(读后即清),
+     * 这份是持久名单 —— 配置管理页据此给源打"已禁用"标记并拦一次,仓改写据此跳过坏子源。
+     * 用户二次确认后可移除(见 {@code BootGuard.enableSource})。
+     */
+    public static final String BOOT_DISABLED_SOURCES = "boot_disabled_sources";
     public static final String LIVE_API_HISTORY = "live_api_history";
     public static final String HOME_API = "home_api";
     public static final String DEFAULT_PARSE = "parse_default";

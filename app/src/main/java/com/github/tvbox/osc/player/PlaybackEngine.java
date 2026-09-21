@@ -149,17 +149,21 @@ public final class PlaybackEngine implements PlaybackHostApi {
                 // 尤其 handlePlayStateForMusicSession 会去 updateSession,那会在没有引擎的情况下
                 // 建出一条空通知并持有 wake/wifi 锁,而释放路径已经跑完、没人再来放锁(2026-09-14 审查)
                 if (released) return;
-                // 直播模式(P4):直播页有自己的控制层与状态机(自动换源/时移),点播侧的
-                // 预载排期、进度落盘、媒体会话、弹幕启动一概不参与 —— 否则会拿上一部点播的
-                // vod 去更新通知/预载(错内容)或把直播画面当成点播起播
-                if (liveMode) return;
-                if (playState == VideoView.STATE_PLAYING && !released) {
-                    // 纯音频没有画面可露、海报就是它的背景(只有确认是影视才需要「收黑帧 + 撤封面」的互斥)
+                // 遮黑帧的揭开与点播/直播无关:直播页共用同一块容器,漏揭就是"有声无画",
+                // 故必须在下面的 liveMode 短路**之前**。纯音频没有画面可露、海报就是它的背景
+                // (只有确认是影视才需要「收黑帧 + 撤封面」的互斥)
+                if (playState == VideoView.STATE_PLAYING) {
                     if (controller.isConfirmedAudioOnly()) {
                         videoView.hideVideoFrameCover();
                     } else {
                         videoView.showVideoFrame();
                     }
+                }
+                // 直播模式(P4):直播页有自己的控制层与状态机(自动换源/时移),点播侧的
+                // 预载排期、进度落盘、媒体会话、弹幕启动一概不参与 —— 否则会拿上一部点播的
+                // vod 去更新通知/预载(错内容)或把直播画面当成点播起播
+                if (liveMode) return;
+                if (playState == VideoView.STATE_PLAYING) {
                     // 纯音频渲染兜底(2026-09-13):URL 预判漏网(无后缀音乐直链)时,轨道信息就绪后补切
                     controller.ensureAudioOnlyRender();
                     // 正片稳定播放 → 延迟评估下一集预载(预载方案第一期)
@@ -244,8 +248,10 @@ public final class PlaybackEngine implements PlaybackHostApi {
         setLiveFlag(true);
         // 直播接管期间播放器有人用(直播页不是 PlayContainer、不走 attach),取消空闲释放排期
         cancelIdleRelease();
-        // 直播接管这一个播放器:点播一律停(含"确认纯音频"的场景,避免与直播双声)
-        if (videoView.isPlaying()) videoView.pause();
+        // 直播接管这一个播放器:旧内容一律停死(含"确认纯音频"的场景,避免与直播双声)。
+        // 只 pause 不够:退页面后内核本就停在 PAUSED,pause() 是空操作,旧内容会留下被直播页 onResume 的 resume() 恢复出声。
+        // 释放须在摘进度管理器之前 —— 那一刻进度键还是旧内容的,正好把它的观看位置落盘(直播无进度语义)
+        releasePlayer();
         videoView.setProgressManager(null);
         // 边播边缓存是点播特性(直播流是 m3u8 直播片,缓存数据源无意义甚至影响起播):直播期间关掉
         videoView.setExoDiskCacheEnabled(false);
@@ -357,6 +363,10 @@ public final class PlaybackEngine implements PlaybackHostApi {
         // 这里清掉会导致返回点播页后失去控制器手势/按键(见 exitLiveState 注释)
         if (liveMode) exitLiveState();
         pageRef = new WeakReference<>(page);
+        // 挂载时页面还不知道要播什么(会话要等详情数据回来),而旧内容若停在 PAUSED,渲染容器一进
+        // 新页面就会带出上一部的最后一帧(media3 在 Surface 重建时重渲染)。先遮黑,起播由状态回调揭开;
+        // 正在播的内容属于"本次接管"(音乐页交接/页面返回),遮了没人来揭,故不动
+        if (!videoView.isPlaying()) videoView.coverVideoFrame();
         videoView.attachContainerTo(page.renderSlot());
         controller.setViewBridge(page.viewBridge());
         // 有人接手了,撤销空闲释放排期

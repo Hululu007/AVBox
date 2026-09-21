@@ -1,9 +1,13 @@
 package com.github.tvbox.osc.util;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
+
+import java.util.ArrayList;
+import java.util.Arrays;
 
 /**
  * [BootGuard] 停用判定的纯 JVM 单测(不碰 KV / 不碰文件 / 不碰 Android 存储)。
@@ -99,5 +103,66 @@ public class BootGuardTest {
         assertFalse(BootGuard.shouldDisable("/x/spider.jar", 1, LOAD + 1, false));
         assertFalse("阈值以下是 2", BootGuard.shouldDisable("/x/spider.jar", 2, LOAD + 1, false));
         assertTrue(BootGuard.shouldDisable("/x/spider.jar", 3, LOAD + 1, false));
+    }
+
+    /**
+     * 会话中途换仓/换源的回归锁(2026-09-21 十三轮):判据比的是"**最近一次**开始装载"的起点,
+     * 不是"本进程第一次装载"。
+     *
+     * <p>旧写法只在本进程首次装载时记起点 ⇒ 用户用了半小时再换仓切到坏源,崩溃时刻减装载起点是
+     * 30 分钟,判不出装载阶段崩溃,只能靠"累计装载 3 次"兜底 ⇒ 用户要崩两次才等到停用。
+     * 换仓切到的坏源与启动源是同一类崩法(<clinit> 里 System.load 报错页,实测 28 毫秒),
+     * 就该一次即停用。
+     */
+    @Test
+    public void midSessionSwitchCrash_countsAsLoadStageCrash() {
+        long firstLoadOfProcess = LOAD;
+        long switchLoad = firstLoadOfProcess + 30 * 60_000L;
+        long crash = switchLoad + 28;
+        assertTrue(BootGuard.crashedDuringStartup(crash, switchLoad));
+        assertTrue(BootGuard.shouldDisable("/x/spider.jar", 1, crash, true));
+        assertFalse("拿进程第一次装载当起点(旧写法)会判成 false —— 这正是要修掉的", BootGuard.crashedDuringStartup(crash, firstLoadOfProcess));
+    }
+
+    // ---------- ④ 风险源黑名单(纯列表运算) ----------
+
+    /** 同一个源反复崩只记一条 —— 名单是地址集合,重复项会让"标记/绕开"两处判定都失去意义 */
+    @Test
+    public void addDisabledSource_dedups() {
+        ArrayList<String> list = BootGuard.addDisabledSource(new ArrayList<String>(), "http://a/1");
+        list = BootGuard.addDisabledSource(list, "http://a/1");
+        assertEquals(1, list.size());
+        assertEquals("http://a/1", list.get(0));
+    }
+
+    /** 空地址(崩溃与加载无关时的残留)不写进名单 —— 否则会出现一条"空地址被禁用"的鬼记录 */
+    @Test
+    public void addDisabledSource_ignoresBlank() {
+        assertTrue(BootGuard.addDisabledSource(new ArrayList<String>(), "").isEmpty());
+        assertTrue(BootGuard.addDisabledSource(new ArrayList<String>(), null).isEmpty());
+    }
+
+    /** 二次确认启用后要真的能移出去,否则用户永远没法再试这个源 */
+    @Test
+    public void removeDisabledSource_removesMatch() {
+        ArrayList<String> list = new ArrayList<>(Arrays.asList("http://a/1", "http://b/2"));
+        list = BootGuard.removeDisabledSource(list, "http://a/1");
+        assertEquals(1, list.size());
+        assertEquals("http://b/2", list.get(0));
+    }
+
+    /** 移除不在名单里的地址是无操作 —— 删除订阅时会批量调用,不能把别人的记录一起带走 */
+    @Test
+    public void removeDisabledSource_missingIsNoop() {
+        ArrayList<String> list = new ArrayList<>(Arrays.asList("http://a/1"));
+        assertEquals(1, BootGuard.removeDisabledSource(list, "http://z/9").size());
+        assertEquals(1, BootGuard.removeDisabledSource(list, "").size());
+    }
+
+    /** 入参为 null 不能抛:调用方传的是 KV 读取结果,缺键/解码失败都可能给到 null */
+    @Test
+    public void blacklist_toleratesNullList() {
+        assertEquals(1, BootGuard.addDisabledSource(null, "http://a/1").size());
+        assertTrue(BootGuard.removeDisabledSource(null, "http://a/1").isEmpty());
     }
 }

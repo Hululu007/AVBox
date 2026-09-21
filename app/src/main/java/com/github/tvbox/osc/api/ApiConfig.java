@@ -25,6 +25,7 @@ import com.github.tvbox.osc.server.ControlManager;
 import com.github.tvbox.osc.util.AES;
 import com.github.tvbox.osc.util.AdBlocker;
 import com.github.tvbox.osc.util.ApiLineSignal;
+import com.github.tvbox.osc.util.BootGuard;
 import com.github.tvbox.osc.util.DefaultConfig;
 import com.github.tvbox.osc.util.FileUtils;
 import com.github.tvbox.osc.util.HawkConfig;
@@ -505,12 +506,29 @@ public class ApiConfig {
         }
     }
 
+    /**
+     * 仓里第一条**没被停用**的子源地址;全被停用则返回空串。
+     *
+     * <p>为什么不直接用第一条:被看门狗停用的坏子源还留在仓配置里,重新启用这个仓时若照旧改写到它,
+     * 用户就又崩一次 —— 名单在这里才有意义。全被停用时不改写(调用方会退回"把仓 JSON 当普通配置解析"),
+     * 结果是空配置而不是闪退。
+     */
+    private static String firstUsableApiLine(ArrayList<String> apiLines) {
+        for (String line : apiLines) {
+            String url = HistoryHelper.getApiLineUrl(line);
+            if (!TextUtils.isEmpty(url) && !BootGuard.isDisabledSource(url)) {
+                return url;
+            }
+        }
+        return "";
+    }
+
     private boolean switchApiCollectionIfNeeded(String apiUrl, String jsonStr) {
         ArrayList<String> apiLines = ConfigParser.parseApiCollection(jsonStr);
         if (apiLines.isEmpty()) {
             return false;
         }
-        String firstApi = HistoryHelper.getApiLineUrl(apiLines.get(0));
+        String firstApi = firstUsableApiLine(apiLines);
         if (TextUtils.isEmpty(firstApi) || firstApi.equals(apiUrl)) {
             return false;
         }
@@ -547,7 +565,7 @@ public class ApiConfig {
         if (apiLines.isEmpty()) {
             return false;
         }
-        String firstApi = HistoryHelper.getApiLineUrl(apiLines.get(0));
+        String firstApi = firstUsableApiLine(apiLines);
         if (TextUtils.isEmpty(firstApi) || firstApi.equals(apiUrl)) {
             return false;
         }

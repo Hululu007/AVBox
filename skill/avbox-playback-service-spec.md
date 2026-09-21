@@ -91,6 +91,7 @@
 - **归属判定(照搬 fongmi)**:`PlaybackSession.playbackKey = sourceKey|vodId|flag|index`;页面 `isOwner()` = 服务当前 session 的 key 与页面目标一致。详情页叠加(A→相关推荐→B)时,B 页 attach 前若发现服务在播 A,则按"**用户显式请求新播放**"处理(停 A、`setData(B)`),不走 fongmi 的 `reclaimPlayback()`(那个是给 PiP/多页共存用的);若只是"返回 A 页"且服务仍在播 A,则只 attach、不重新取流(这是跨页复用的收益点)。
 - **fork 改动**(`player/src/main/java/xyz/doikki/videoplayer/player/VideoView.java`):新增 `attachContainerTo(ViewGroup host)` / `detachContainerFromHost()`,内部复用既有 `startFullScreen()/stopFullScreen()` 的搬运写法(`removeView(mPlayerContainer)` → `host.addView(...)`,VideoView.java:777-841),但**不碰系统栏、不改 `mIsFullScreen`**。
 - **渲染视图**:`addDisplay()` 仍是唯一重建入口(既有约束);跨页面搬运 `mPlayerContainer` 会触发 `SurfaceView.surfaceDestroyed/surfaceCreated` → dkplayer 既有链路会 `setDisplay(null)` 再重挂,IJK 侧已做二进制级证明不会 use-after-free(MEMORY.md「IJK 异步 release × Surface 回调」),Exo 侧 `setVideoSurface(null)` 安全。
+- **挂载先遮黑帧(2026-09-21 修)**:`attach()` 搬容器前,内核**不是"正在播"**就先 `MyVideoView.coverVideoFrame()`(只加黑遮罩、**不停内核**)。理由:页面挂载时还不知道要播什么(会话要等详情数据回来),旧内容停在 PAUSED 时 media3 会在新 Surface 重建时把上一帧**重渲染**出来 ⇒ 新页面闪上一部的画面。揭开 = 引擎状态回调收到 `STATE_PLAYING` 时 `showVideoFrame()`(纯音频走 `hideVideoFrameCover()`),该处理**必须位于 `liveMode` 短路之前** —— 直播页共用同一块容器,若跟着点播侧一起短路,直播重播频道时遮罩没人揭 = 有声无画。**不能**用 `clearVideoFrame()` —— 它内部 `mMediaPlayer.stop()`,会破坏 D6 同片接管的续播。另:`showFrameCover()` 内**必须**把控制器 `bringToFront()` —— 遮罩是追加进 `mPlayerContainer` 的,而控制器(`setVideoController`)在 `PlayContainer.initView()` 里就已挂上,不补这一句会把顶栏/手势层/直播控制层一起盖住;用 `bringToFront` 而非按 index 插入,是因为 `addDisplay()` 永远把渲染视图插到 index 0,index 方案在"渲染视图尚未创建"时会算错位。
 
 ### 2.4 设计选择与推荐
 
@@ -140,7 +141,7 @@
 - **挂摘协议落地**:页面 `attach(this, surfaceSlot)` → 引擎搬 `mPlayerContainer` + `controller.setViewBridge(page.viewBridge())`;页面 `hostDestroy` → `engine.detach(this)`(**一律停播**:pause + 落盘进度 + stop 内核(防起播中退出)+ 撤在途取流;`setVideoController(null)`+`setDanmuView(null)`+容器摘回) + `controller.setViewBridge(headless`)。`playbackKey` 归属判定按 §2.3-D6:同片再进页面直接 attach 续播(引擎里播放器与会话都在),不同片由页面 `setData(session)` 走既有 `reusePlayer` 路径复用同一实例。
 - **真机验收(2026-09-14)**:功能回归通过(用户确认:进出详情页播放器不重建、退页面即停+再进续播、attach/detach 无异常);hprof/实例数量化数据未采集(见 §4 结果行)。
 
-> **进度(2026-09-14)**:**P0 ✅、P1 ✅、P2 ✅、P3 ✅、P4 ✅、P5 ✅(全部落地;真机功能回归通过,量化复测未采集)** —— P5 交付:删 `PlaybackNotification` 门面与 `MusicPlaybackService`(文件 + manifest 条目)、删 `HawkConfig.PLAYBACK_SERVICE` 开关与页面/直播页双路径(`PlayContainer` 1647 → **1551 行**,只剩"引擎持有 + 页面挂摘"单一形态;`initViewModel`/`bindPlayerToPage`/页面自建 `MyVideoView`/`release` 分支全部删除)、控制器直连 `PlaybackService.updateSession/stopSession`。P5 出口条件的**真机功能回归已通过(2026-09-14 用户确认)**;hprof 量化复测未采集(如需归档量化证据可后补)。P4 交付:直播页与点播**共用同一引擎播放器**(`PlaybackEngine.enterLive()/exitLive()/isLiveMode()`,直播期间点播侧状态监听短路、进度管理器与边播缓存标记摘除/恢复、撤点播会话;直播页 `onDestroy` 只退出直播模式不 release;`PlayContainer.hostResume()` 在"点播→直播→点播"回来后自动重挂容器)。**已知边界(R10 有意保留 + 2026-09-14 真机修正)**:① 直播自身 release()(切台/换解码器)路径不动;② **直播页销毁必须停流并释放内核**(`PlaybackEngine.exitLive()` 内 `videoView.release()`)—— 早期文档写「实例留给点播复用」,实测导致「退到首页仍有直播声」且「点播页 attach 后显示/播放直播流」,已纠正(直播无后台播放语义);③ 因此「点播→直播→点播」回点播会重建一次内核(同改造前),「内核实例不增长」的准确含义 = 直播与点播共用同一个 MyVideoView/播放器对象 + 点播↔点播多次进出不重建。状态收口:静态审查共 5 轮(过程见 `history/features.md` 2026-09-14 各节)与真机功能回归均完成;遗留可选项 = §4-6/7 的 hprof 量化复测。
+> **进度(2026-09-14)**:**P0 ✅、P1 ✅、P2 ✅、P3 ✅、P4 ✅、P5 ✅(全部落地;真机功能回归通过,量化复测未采集)** —— P5 交付:删 `PlaybackNotification` 门面与 `MusicPlaybackService`(文件 + manifest 条目)、删 `HawkConfig.PLAYBACK_SERVICE` 开关与页面/直播页双路径(`PlayContainer` 1647 → **1551 行**,只剩"引擎持有 + 页面挂摘"单一形态;`initViewModel`/`bindPlayerToPage`/页面自建 `MyVideoView`/`release` 分支全部删除)、控制器直连 `PlaybackService.updateSession/stopSession`。P5 出口条件的**真机功能回归已通过(2026-09-14 用户确认)**;hprof 量化复测未采集(如需归档量化证据可后补)。P4 交付:直播页与点播**共用同一引擎播放器**(`PlaybackEngine.enterLive()/exitLive()/isLiveMode()`,直播期间点播侧状态监听短路、进度管理器与边播缓存标记摘除/恢复、撤点播会话;直播页 `onDestroy` 只退出直播模式不 release;`PlayContainer.hostResume()` 在"点播→直播→点播"回来后自动重挂容器)。**已知边界(R10 有意保留 + 2026-09-14 真机修正)**:① 直播自身 release()(切台/换解码器)路径不动;② **直播页销毁必须停流并释放内核**(`PlaybackEngine.exitLive()` 内 `videoView.release()`)—— 早期文档写「实例留给点播复用」,实测导致「退到首页仍有直播声」且「点播页 attach 后显示/播放直播流」,已纠正(直播无后台播放语义);③ 因此「点播→直播→点播」回点播会重建一次内核(同改造前),「内核实例不增长」的准确含义 = 直播与点播共用同一个 MyVideoView/播放器对象 + 点播↔点播多次进出不重建;④ **进入直播必须停死旧内核(2026-09-21)**:`enterLive()` 原只 `if (videoView.isPlaying()) videoView.pause()`,而退页面后内核本就停在 PAUSED(见 `VideoView.stopPlaybackKeepPlayer` 的 PAUSED 早退)⇒ 空操作,旧内容留在内核里被直播页 `onResume` 的 `resume()` 恢复出声(直播页频道列表异步加载期间能听到上一首音乐);现改为 `releasePlayer()`,与 `enterLiveState()` 对齐。状态收口:静态审查共 5 轮(过程见 `history/features.md` 2026-09-14 各节)与真机功能回归均完成;遗留可选项 = §4-6/7 的 hprof 量化复测。
 >
 > **P0/P1/P2/P3 历史**:P0 ✅、P1 ✅、P2 ⏳(引擎+服务托管形态)、P3 ⏳(通知/会话并入 + 同片接管) —— P3 交付:通知/媒体会话/锁/通知栏动作并入 `PlaybackService`(FGS `mediaPlayback`,不再 stopSelf 以托管引擎;`ACTION_UPDATE` 时按需重建媒体会话)、新增 `PlaybackNotification` 过渡门面(引擎在→合并路径,否则→`MusicPlaybackService` 旧路径)、**D6 同片接管**在 `PlayContainer.setData` 落地(`playbackKey` 同键=只同步不重播)、manifest 前台类型。`PlaybackService` 564 行。下一步:P3 真机验收 → P4(直播页接入) → P5(清理旧路径/门面/`MusicPlaybackService`)。
 >
@@ -151,6 +152,7 @@
 ## 4. 真机验收清单
 
 > **结果(2026-09-14)**:用户真机回归确认无问题(功能项与稳定性项经日常操作走查);**§4-6(实例创建日志埋点)与 §4-7(hprof 量化复测)未采集数据** —— 如需量化归档可后补,不影响"服务化已稳定"的结论。
+> **2026-09-21 追加 11–14(旧内容残留)**:随同日两处缺陷修复新增,**尚未执行**(改动只到编译 + 单测),下一次真机回归时与 1–10 一起走。
 
 **功能**
 1. 详情页播放:起播/暂停/seek/倍速/长按/双击、切集、切线路、换源(含失败回滚)、切清晰度、全屏↔预览、旋转。
@@ -167,6 +169,13 @@
 **稳定性**
 9. 进程被杀后重启;任务卡片划掉(`onTaskRemoved`);通知栏停止;锁屏媒体键。
 10. 快速连点进出详情页 20 次、播放中来回切 10 次,无崩溃/无 ANR、无声音叠音。
+
+**旧内容残留(2026-09-21 修复后必测;改动只到编译+单测,尚未装机)**
+
+11. 音乐播放中 → 退出音乐页 → **立刻**进直播 → 直播起播前不得有残留音乐声。⚠️ 要**先清一次直播配置或换个直播源**,逼出「频道列表异步加载」那条路径 —— 列表已缓存时 `playChannel` 在 `onCreate` 内同步跑完,这条路径测不到。
+12. 影视 A 播放中 → 退出 → 进影视 B → 加载期不得闪出 A 的画面。⚠️ B 要选**详情数据需等网络**的条目(秒回的缓存条目会让 `releasePlayer()` 抢在 Surface 重建之前,同样测不到)。预期画面保持黑,直到 B 的 `STATE_PLAYING`。
+13. 直播页 → 进任意点播详情页(**进去就返回,不点播放**)→ 回直播页:**必须仍有画面**。这条专测遮黑帧的揭开路径(它位于 `liveMode` 短路之前);漏揭的症状是"有声无画"。
+14. 反向确认未改坏:退出详情页 → 重进**同一部**仍直接续播且不重建内核;详情页 ↔ 音乐页交接;直播切台/时移;点播→直播→回点播。
 
 ## 5. 风险登记
 
@@ -222,3 +231,4 @@
 | 2026-09-14 | P5 后四轮静态审查共修 16+ 处回归/加固(D6 判定改 `startedPlaybackKey`、空闲 TTL 释放引擎、页面所有权收口 `releasePlayer()`、迟到回调防线、`exitLive` 归属守卫前置等),过程与逐条理由见 `history/features.md` 2026-09-14 各节;hprof 量化复测未采集 |
 | 2026-09-14 | **真机功能回归通过(用户确认)**;spec 状态收口为 P0–P5 ✅。第五轮审查另修:`exitLive()` 顺序缺陷(直播 position 写进点播进度缓存 → release 提到 `exitLiveState()` 之前)、直播接管后回直播页停死内核并重播当前频道(`enterLiveState()` 返回 boolean)、`play()` 裸取崩溃防护、`HeadlessView.startVideoPlayback` 复用/释放防线 |
 | 2026-09-19 | **缺陷修复(用户真机确认):未授予 `POST_NOTIFICATIONS` 时播放"抽搐式"卡顿**。根因 = P3 起通知会话的唯一入口 `PlaybackController.updateMusicSession()`(**热路径**,由播放状态回调驱动,实测起播期 8~9 次/秒)无条件调用 `view.requestNotificationPermission()`,而 `PermissionHelper.requestNotificationIfNeeded()` 未授权时未提前返回 ⇒ 每次回调拉起一个 `GrantPermissionsActivity`(固定拒绝下"创建→立刻 finish"),系统窗口反复抢焦点打断渲染 Surface(真机 3.2 秒 22 次)。修复 = `PermissionHelper` 加进程级一次性闸门 + 未授权提前返回(闸门置于 binder 权限查询之前)。**要点**:`am_foreground_service_start`/`notification_enqueue` 当时均正常 ⇒ **FGS 与解码器无关**;排查手法与全部证据见 `history/features.md` 2026-09-19 节。**订正**:本文档链路上曾被记录的"状态变化即重发通知"待办,经真机 `notification_enqueue` 计数证实**不成立**(稳定播放期 0 次重发),该待办已降级 |
+| 2026-09-21 | **两处"旧内容残留"缺陷修复**(用户真机反馈,读码定位 + 静态修改,未装机复测):① 音乐页退出→进直播漏音 —— `enterLive()` 原只 `pause()`(PAUSED 时是空操作),改为 `releasePlayer()` 停死旧内核;② 影视页退出→进新影视页闪上一部画面 —— `attach()` 搬容器前先 `coverVideoFrame()` 遮黑(`MyVideoView` 新增"只遮黑不停内核"的 API;`clearVideoFrame()` 会 stop 内核,不能用于此),起播由 `STATE_PLAYING` 揭开。挂摘协议新增条目见 §2.3、直播边界见 §3-P4 的 R10 ④;过程见 `history/features.md` 2026-09-21 第七轮 |

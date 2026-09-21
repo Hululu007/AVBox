@@ -230,6 +230,7 @@ class LivePlayActivity : BaseActivity() {
         if (takenOverByVod) {
             replayCurrentChannelAfterTakeover()
         } else {
+            // 这里只可能恢复直播流:进入直播时 enterLive() 已把旧内核停死(点播/音乐不留 PAUSED 残留)
             mVideoView?.resume()
         }
     }
