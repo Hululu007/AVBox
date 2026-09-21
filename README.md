@@ -4,6 +4,8 @@
 
 <div align="center">
   <img src="images/avbox.svg" width="120" alt="AVBox"/>
+  <br/>
+  <a href="https://t.me/+nmwVZ0pMpuEwYmI1"><img src="https://img.shields.io/badge/Telegram_AVBox_Group-26A5E4?logo=telegram&logoColor=white" alt="Telegram AVBox Group"/></a>
 </div>
 
 # AVBox（AudioVideoBox）
