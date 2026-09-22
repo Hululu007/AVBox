@@ -408,6 +408,12 @@
 - **`sites[].indexs` / `sites[].danmaku`**:`indexs` 走 `SourceBean.isIndexSource()` 决定卡片路由(索引型源跳搜索而不是开详情)——配置缓存文件的二次读实现(`SourceIndexFlags`)已删,**不要再引入**;`danmaku:0` 只拦**自动搜弹幕**(`DanmakuApi.canSearch(SourceBean)` 的唯一调用方是 `PlaybackController.searchDanmu`),手动搜索与 spider 自带弹幕不受影响。
 - **`lives[].type` 未知取值保持"拒载"**(上游 TVBox 同款;fongmi 的 `Live` 根本没有 type 字段),但拒载必须走 `resetLiveKvOnUnsupportedLine()` 复位 `EPG_URL`/`LIVE_PLAY_TYPE`/`LIVE_WEB_HEADER`,否则会沿用上一条线路的值(串味);**不要**把它"容错成 0"——未知语义会被解析成一份错误但非空的频道表。
 
+### 6.13 启动看门狗与崩溃判定(2026-09-23 补)
+
+- ⚠️ **崩溃标记只由"可能与源有关"的崩溃写入**(`BootGuard.looksSourceRelated`,`IGNORABLE_FRAME_PREFIXES` 是唯一旋钮):遍历 cause + suppressed 全链的帧,**全部**落在平台/界面层才算"无关";无帧 / null / 过滤自身抛错一律按"有关"——漏判会回到"坏源把应用锁进启动崩溃、只能清数据"。刻意不含 `com.github.catvod.`(jar/js/py 装载器与爬虫都在这条链上)。放宽白名单前先读 §4 配置管理页的「风险源标记 + 二次确认」——那是误判的唯一出口。
+- ⚠️ **兜底计数只认"与源有关"的崩溃**:启动时没有崩溃标记 ⇒ `disableBootLoopingSource` 把 `BOOT_LOADING_COUNT` 清零。不清零的话,普通重启与界面崩溃同样会装载 jar、把计数推过 `MAX_LOAD_ATTEMPTS`(3),之后**任何一次**无关但被判"有关"的崩溃都会停用正常源(触发条件比改前更隐蔽)。
+- **残留窗口(未决,见 §7)**:白名单只覆盖平台 + `ui`/`base` ⇒ 栈里带 `util`/`viewmodel`/播放器包装帧的界面 bug 仍会被判"与源有关"。
+
 ## 7. 未决 / 待细化清单
 
 - ~~详情/播放页视觉细化(选集行样式、换源交互)~~(Step 4 已确认并实施,记录见 `history/steps.md`;遗留:预览态加载期无海报占位,旧 ivThumb 缩略图未迁移)
@@ -428,6 +434,7 @@
 - **`mergePushHeaders` 有同款"字符串形态被覆盖"缺陷(既有)**:它同样 `optJSONObject("header")` 后新建对象写回,会把 push 结果的**文本形态** header 覆盖掉;修它需要先定"push 头 vs 源自带头"的优先级语义,未定前不动。
 - **嗅探/代理观测到的头未过滤(2026-09-23 记录,低)**:`PlayUrlResolver` 把 WebView 实际请求头与 Cookie 收进 `loadFoundVideoUrlsHeader`,最终可能进 M3U8 净化的 OkGo 请求;这些头来自真实网络(非配置),正常不含非法字符,但理论上仍可让 `Headers.of` 抛 `IllegalArgumentException`。要闭环应在 `M3u8PurifyUseCase` 的出口兜一层 `HeaderGuard`。
 - **`sites[].header` 的播放兜底是"只补缺键"而非 fongmi 的"整块为空才兜底"**:结果自带任意一个头时仍会补齐站点声明的其余键(对"源只回了 UA、Referer 缺"的场景更实用)。若要严格对齐 fongmi 需改 `mergeSiteHeaders` 的判据,属口味问题。
+- **启动看门狗的崩溃栈白名单只覆盖平台 + `ui`/`base`(2026-09-23)**:栈里带 `com.github.tvbox.osc.util.` / `viewmodel` / 播放器包装帧的**界面** bug 仍会被判"与源有关",连环崩 3 次仍可能停用正常源。收口 = 放宽白名单到全部 `com.github.tvbox.osc.`;代价是播放内核包装(`util/PlayerHelper`、`player/`)崩溃不再算源的问题。判据与当前口径见 §6.13。
 
 ## 8. 历史归档索引(`history/`,按需检索)
 

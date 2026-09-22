@@ -165,4 +165,67 @@ public class BootGuardTest {
         assertEquals(1, BootGuard.addDisabledSource(null, "http://a/1").size());
         assertTrue(BootGuard.removeDisabledSource(null, "http://a/1").isEmpty());
     }
+
+    // ---------- ⑤ 崩溃栈过滤:界面/平台崩溃不算到源头上 ----------
+
+    /** 纯界面栈(Compose + 消息循环 + 应用界面层)判为与源无关,否则界面 bug 崩一次就停用源 */
+    @Test
+    public void uiCrashIsNotSourceRelated() {
+        RuntimeException crash = new RuntimeException("ui bug");
+        crash.setStackTrace(new StackTraceElement[]{
+                frame("androidx.compose.runtime.Recomposer", "run"),
+                frame("kotlinx.coroutines.DispatchedTask", "run"),
+                frame("kotlin.coroutines.jvm.internal.ContinuationImpl", "resumeWith"),
+                frame("android.os.Handler", "handleCallback"),
+                frame("com.github.tvbox.osc.ui.page.MainScreenKt", "MainContent"),
+                frame("java.lang.Thread", "run"),
+        });
+        assertFalse(BootGuard.looksSourceRelated(crash));
+    }
+
+    /** 爬虫帧出现即算"有关";jar 装载器也在链上(它就是源的入口) */
+    @Test
+    public void spiderCrashIsSourceRelated() {
+        RuntimeException crash = new RuntimeException("spider boom");
+        crash.setStackTrace(new StackTraceElement[]{
+                frame("com.github.catvod.spider.GoProxy", "<clinit>"),
+                frame("com.github.catvod.crawler.JarLoader", "invokeInit"),
+                frame("java.lang.Thread", "run"),
+        });
+        assertTrue(BootGuard.looksSourceRelated(crash));
+    }
+
+    /** 爬虫崩在别的线程、由界面层包装抛出时,不能只看最外层那几个界面帧 */
+    @Test
+    public void causeChainIsScanned() {
+        RuntimeException inner = new RuntimeException("spider boom");
+        inner.setStackTrace(new StackTraceElement[]{frame("com.github.catvod.spider.DouDou", "homeContent")});
+        RuntimeException outer = new RuntimeException("wrapped", inner);
+        outer.setStackTrace(new StackTraceElement[]{frame("com.github.tvbox.osc.ui.page.HomeViewModel", "loadHome")});
+        assertTrue(BootGuard.looksSourceRelated(outer));
+    }
+
+    /** suppressed 里的爬虫帧同样不能漏(并发包装过的异常常挂在 suppressed 上) */
+    @Test
+    public void suppressedChainIsScanned() {
+        RuntimeException crash = new RuntimeException("ui bug");
+        crash.setStackTrace(new StackTraceElement[]{frame("androidx.compose.runtime.ComposerImpl", "applyChanges")});
+        RuntimeException suppressed = new RuntimeException("spider boom");
+        suppressed.setStackTrace(new StackTraceElement[]{frame("com.github.catvod.spider.GoProxy", "init")});
+        crash.addSuppressed(suppressed);
+        assertTrue(BootGuard.looksSourceRelated(crash));
+    }
+
+    /** 信息不足(无帧 / null)必须按"有关"处理,否则坏源的自锁防护会失效 */
+    @Test
+    public void unknownCrashCountsAsSourceRelated() {
+        RuntimeException empty = new RuntimeException("no frames");
+        empty.setStackTrace(new StackTraceElement[0]);
+        assertTrue(BootGuard.looksSourceRelated(empty));
+        assertTrue(BootGuard.looksSourceRelated(null));
+    }
+
+    private static StackTraceElement frame(String className, String method) {
+        return new StackTraceElement(className, method, className + ".java", 1);
+    }
 }

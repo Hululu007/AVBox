@@ -2109,3 +2109,14 @@ echo-exo-player-error: code=ERROR_CODE_UNSPECIFIED, msg=Unexpected runtime error
 - **根因**:①证据面逐层打开(第一轮问"支不支持",第五轮才问"字段写错类型会怎样"),每层都必然带出新发现;②"照抄既有写法"会把既有缺陷一起复制(`mergeSiteHeaders` 抄 `mergePushHeaders`、`exclude` 抄 `doh` 分支);③跨文件隐式不变量只有做"改动点 × 全库调用方"碰撞才暴露;④前 3 轮没有编译兜底,发现的都是"会崩 / 会失效"级,跑了 `assembleDebug` + 单测后降到错误防御 / 日志级。
 - **结论与落位**:严重度曲线(阻断 → 中 → 低)即收敛证据,不以"零发现"当停止标准;两条仍生效的约定写进 `SKILL.md`「交付验证与审查收敛」。剩余低优先项照旧挂 `avbox-mobile-ui-spec.md` §7(`M3u8PurifyUseCase` 出口护栏、`mergePushHeaders` 同款缺陷)。
 - **未做**:未再跑一轮验证(用户选择收尾);`M3u8PurifyUseCase` 出口护栏仍是唯一"有明确收益但未做"的低优先项。
+
+## 启动看门狗:崩溃栈过滤(界面 bug 不再把源停用)(2026-09-23,用户"直接改吧";一轮静态审查修 1 处)
+
+- **需求(用户)**:「比如说一些 ui 问题导致的应用崩溃,会不会把源给禁用了」—— 会:看门狗只看"崩溃时刻距上次 jar 装载的毫秒差"与"同源装载计数",不读崩溃栈 ⇒ 界面 bug 崩在装载后 10 秒内会被判成装载阶段崩(一次即停用),连环崩 3 次还会走 `count >= 3` 兜底。
+- **落地**:`BootGuard.install()` 只在 `looksSourceRelated(Throwable)` 为真时才写崩溃标记;判定遍历 cause + suppressed 全链的帧,**全部**落在白名单内才算"无关"。判不出(无帧 / null / 过滤自身抛错)一律按"有关" —— 漏判会让坏源重新把应用锁进启动崩溃,比误禁更难救。
+- **白名单**:`android.` `androidx.` `java.` `javax.` `kotlin` `dalvik.` `libcore.` `com.google.android.` `com.github.tvbox.osc.ui.` `com.github.tvbox.osc.base.`;**刻意不含 `com.github.catvod.`**(jar/js/py 装载器与爬虫都在这条链上)。已否决的更省事写法:只匹配 `com.github.catvod.spider.` 帧(自定义包名 jar / js / py 会漏判)、按崩溃线程过滤(漏掉"爬虫崩在主线程")、"爬虫调用深度"计数器(要十几处插桩)。
+- **本轮审查(用户"根据 SKILL.md 文档审查是否有错误遗漏和引入新回归")修 2 处(1 中 1 低)**:过滤只解决"写不写标记",但 `BOOT_LOADING_COUNT` 每次装载都 +1(界面崩 3 次也会把它推到 3),之后**任何一次**被判"有关"的崩溃(播放器 / okhttp / `util` 栈)都会在下次启动停用正常源 —— 触发条件比改前更隐蔽。修复 = `disableBootLoopingSource` 在**没有崩溃标记**时把计数清零,语义改为"连续 N 次**因与源有关的崩溃而重启**";同步 `MAX_LOAD_ATTEMPTS` 与类注释、`shouldDisable` 的口径描述。低 = 白名单原写裸前缀 `kotlin`(会顺带放过任意 `kotlin*` 开头的第三方包),改精确为 `kotlin.` + `kotlinx.`,并在 UI 用例里补 `kotlinx.coroutines` / `kotlin.coroutines` 两帧锁住。
+- **复核无问题(有据可查)**:①`shouldDisable` 的 `crashElapsed <= 0` 守卫使计数永远无法单独触发停用;②标记每次启动读后即删,不存在多标记共存;③崩溃路径只遍历**已捕获**的栈(Android 在抛异常时填栈),无额外捕获开销,`LOG.i` 的 `boot-guard:` 前缀不匹配 `FILE_LOG_PREFIXES` ⇒ 只落 logcat;④无新增 KV 键 ⇒ 不涉 `KVKeySpec` 登记;⑤新增日志串无中文 ⇒ 不触发 i18n 卡口;⑥`FileUtils.repairBogusNativeLibs` 只认 `*.so`/`.lib*`,不会误删标记文件。
+- **未决(已落 spec §6.13 / §7)**:白名单只覆盖平台 + `ui`/`base`,栈里带 `util` / `viewmodel` / 播放器包装帧的界面 bug 仍可能被判"与源有关"。收口 = 放宽到全部 `com.github.tvbox.osc.`(代价:播放内核包装崩溃不再算源的问题),属独立决策。
+- **顺带发现(既有,非本次引入)**:`.codebuddy/skills/android/` 与 `skill/` 两份文档不同步(`SKILL.md`、`avbox-mobile-ui-spec.md`、`history/features.md` 三处 DIFF),而 skill 加载器读的是前者(缺「交付验证与审查收敛」、§6.12/§6.13)⇒ 后续会话可能按旧规则动手。本次只改 `skill/`(文档地图与检索约定指向的那份)。同步与否待用户定。
+- **验证**:`:app:testDebugUnitTest` **238 用例 / 0 失败**(其中 `BootGuardTest` 20 = 基线 15 + 新增 5)+ `:app:assembleDebug` 绿;`read_lints` 无诊断。**未真机验证** —— 需造一次界面栈崩溃确认不禁源、一次爬虫崩溃确认照旧禁源(logcat 关键字 `boot-guard:`)。**测试空白(说明,非遗漏)**:计数清零与标记文件读写依赖 KV/文件,纯 JVM 单测覆盖不到。

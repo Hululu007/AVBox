@@ -23,6 +23,7 @@ public class HawkConfig {
      * ⚠️ 崩溃时刻**不在这里** —— 它必须同步落盘,走 files/boot_crash.marker。
      */
     public static final String BOOT_LOADING_JAR = "boot_loading_jar";
+    /** 兜底计数:同源**连续**几次装载以"与源有关"的崩溃收场(无崩溃证据的启动会清零,见 BootGuard) */
     public static final String BOOT_LOADING_COUNT = "boot_loading_count";
     /** 最近一次"开始加载 jar"的开机计时(每次装载都覆盖):与崩溃标记同源,用于判"崩溃是否发生在装载阶段" */
     public static final String BOOT_LOAD_START_ELAPSED = "boot_load_start_elapsed";

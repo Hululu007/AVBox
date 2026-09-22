@@ -79,3 +79,4 @@ Select-String -Path skill\history\features.md -Pattern '配置管理页' -Contex
 - **KV(MMKV)复杂键必须在 `util/kv/KVKeySpec` 登记显式类型**，且禁止用匿名 `TypeToken` 捕获类型变量推元素类型（spec §6.7）；另注意 `KV.contains` 才是判存在性、`KV.get(key, def)` 分不清"键不存在"与"值就是 def"。
 - **配置驱动的 header 必须过字符集过滤**（`ConfigParser.isHeaderNameSendable`/`isHeaderValueSendable`）：OkHttp 在构造请求时校验，越界抛 `IllegalArgumentException`，而站点请求分支没有 try/catch ⇒ 一份带中文 header 的配置会把 App 带崩（spec §6.12）。
 - **规则表只能在 `parseJson` 入口清**（`VideoParseRuler.clearRule()`）：放进 `resetConfigData()` 会让换源失败时规则真空（在播内容广告回归/click 失效）；只在 `has("rules")` 时清则跨源残留（spec §6.12）。
+- **崩溃标记只由"可能与源有关"的崩溃写入**（`BootGuard.looksSourceRelated` 的白名单 `IGNORABLE_FRAME_PREFIXES` 是唯一旋钮；无帧/判不出按"有关"）：放宽它等于让坏源重新把应用锁进启动崩溃。没有崩溃标记的启动会把 `BOOT_LOADING_COUNT` 清零（spec §6.13）。

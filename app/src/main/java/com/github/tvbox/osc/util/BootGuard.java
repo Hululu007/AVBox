@@ -17,9 +17,11 @@ import java.util.Collection;
  * <p>场景:第三方爬虫在静态初始化里把 CDN 的报错页当 {@code .so} 加载 ⇒ 每次冷启动必崩,
  * 而源地址是持久化的,用户连"换源"都进不去,只能清数据。崩在爬虫自己的线程上,接不住异常。
  *
- * <p>判据:①崩溃发生在"开始加载 jar 后 10 秒内"⇒ 一次即停用;②同一源累计装载 3 次 ⇒ 停用。
+ * <p>判据:①崩溃发生在"开始加载 jar 后 10 秒内"⇒ 一次即停用;②同一源连续 3 次装载都以"与源有关"的
+ * 崩溃收场 ⇒ 停用(见 {@link #MAX_LOAD_ATTEMPTS}:没有崩溃证据的会话会把计数清零,防计数被顶满)。
  * 判据①比的是**最近一次**开始装载的时刻,不是"本进程第一次装载" —— 会话中途换仓/换源切到坏源
  * 也是装载阶段崩,拿进程第一次装载当起点会把差值算成几分钟,于是要崩两次才停用。
+ * 崩溃标记只由"可能与源有关"的崩溃写入(见 {@link #looksSourceRelated}),界面/平台 bug 不参与停用判定。
  * 停用只清启动指针与仓列表,**不动订阅列表**;同时把源地址记进黑名单
  * ({@link HawkConfig#BOOT_DISABLED_SOURCES}),让界面能标出来、仓改写能绕开它。
  */
@@ -34,10 +36,23 @@ public final class BootGuard {
     /** 连续存活这么久即认定为稳定源,清掉计数 */
     private static final long STABLE_RUN_MS = 10 * 60_000L;
 
-    /** 同一源累计装载这么多次就认为在空转(兜底判据;正常启动同源只装 1~2 次) */
+    /** 同一源连续这么多次"装载后崩(与源有关)"就认为在空转(兜底判据;正常启动同源只装 1~2 次) */
     private static final int MAX_LOAD_ATTEMPTS = 3;
 
     private static final String CRASH_MARKER_NAME = "boot_crash.marker";
+
+    /**
+     * 判为与源无关的崩溃帧前缀:整条异常链都落在这里面才算"界面/平台问题"。
+     * 刻意不含 {@code com.github.catvod.} —— 装载器与爬虫都在这条链上,判不准宁可算"有关"。
+     */
+    private static final String[] IGNORABLE_FRAME_PREFIXES = {
+            "android.", "androidx.", "java.", "javax.", "kotlin.", "kotlinx.", "dalvik.", "libcore.",
+            "com.google.android.",
+            "com.github.tvbox.osc.ui.", "com.github.tvbox.osc.base.",
+    };
+
+    /** cause / suppressed 遍历上限,防人为构造的异常环 */
+    private static final int MAX_THROWABLE_CHAIN = 32;
 
     private BootGuard() {
     }
@@ -46,7 +61,12 @@ public final class BootGuard {
     public static void install() {
         final Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
         Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
-            writeCrashMarker();
+            // 不写标记的崩溃不参与停用判定,否则界面 bug 也会把源算成"崩过"
+            if (looksSourceRelatedSafely(throwable)) {
+                writeCrashMarker();
+            } else {
+                LOG.i("boot-guard: crash unrelated to source, marker skipped");
+            }
             if (previous != null) previous.uncaughtException(thread, throwable);
         });
     }
@@ -70,6 +90,58 @@ public final class BootGuard {
         } catch (Throwable ignored) {
             // 崩溃路径上不能再抛
         }
+    }
+
+    /**
+     * 崩溃栈是否可能与源有关(纯函数,便于单测):整条链的帧都在平台/界面层内才算无关。
+     *
+     * <p>界面 bug 崩在装载后 10 秒内会被判成"装载阶段崩"、崩一次就停用源;而判不出来(无帧/null)
+     * 一律按"有关"处理 —— 漏判会让坏源重新把应用锁进启动崩溃,比误禁更难救。
+     */
+    static boolean looksSourceRelated(Throwable throwable) {
+        if (throwable == null) return true;
+        ArrayList<Throwable> chain = new ArrayList<>();
+        collectThrowables(throwable, chain);
+        boolean sawFrame = false;
+        for (Throwable item : chain) {
+            StackTraceElement[] frames = item.getStackTrace();
+            if (frames == null) continue;
+            for (StackTraceElement frame : frames) {
+                if (frame == null) continue;
+                sawFrame = true;
+                String className = frame.getClassName();
+                if (className == null || !isIgnorableFrame(className)) return true;
+            }
+        }
+        return !sawFrame;
+    }
+
+    /** 过滤自身出错时按"有关"处理:崩溃路径上不能因为判定失败而漏记 */
+    private static boolean looksSourceRelatedSafely(Throwable throwable) {
+        try {
+            return looksSourceRelated(throwable);
+        } catch (Throwable ignored) {
+            return true;
+        }
+    }
+
+    /** 收集 cause 链与 suppressed(带环与规模保护) */
+    private static void collectThrowables(Throwable throwable, ArrayList<Throwable> out) {
+        if (throwable == null || out.size() >= MAX_THROWABLE_CHAIN || out.contains(throwable)) return;
+        out.add(throwable);
+        try {
+            for (Throwable suppressed : throwable.getSuppressed()) collectThrowables(suppressed, out);
+        } catch (Throwable ignored) {
+            // 取不到 suppressed 不影响判定
+        }
+        collectThrowables(throwable.getCause(), out);
+    }
+
+    private static boolean isIgnorableFrame(String className) {
+        for (String prefix : IGNORABLE_FRAME_PREFIXES) {
+            if (className.startsWith(prefix)) return true;
+        }
+        return false;
     }
 
     private static File crashMarkerFile() {
@@ -170,9 +242,15 @@ public final class BootGuard {
     public static String disableBootLoopingSource() {
         try {
             String loading = KV.get(HawkConfig.BOOT_LOADING_JAR, "");
-            long count = KV.get(HawkConfig.BOOT_LOADING_COUNT, 0L);
             // takeCrashMarkerElapsed 读完即删,故判定结果只算一次再复用
             long crashElapsed = takeCrashMarkerElapsed();
+            if (crashElapsed <= 0) {
+                // 无"与源有关"的崩溃证据 = 上一轮不是崩溃循环。普通重启与界面崩溃同样会装载 jar,
+                // 不清零就会把兜底计数推过阈值,让一次无关崩溃停用正常源。
+                KV.put(HawkConfig.BOOT_LOADING_COUNT, 0L);
+                return "";
+            }
+            long count = KV.get(HawkConfig.BOOT_LOADING_COUNT, 0L);
             long loadStartElapsed = KV.get(HawkConfig.BOOT_LOAD_START_ELAPSED, 0L);
             boolean startupCrash = crashedDuringStartup(crashElapsed, loadStartElapsed);
             if (!shouldDisable(loading, count, crashElapsed, startupCrash)) {
@@ -192,7 +270,7 @@ public final class BootGuard {
     }
 
     /**
-     * 停用判定(纯函数,便于单测):崩在装载阶段 **或** 累计装载达 {@link #MAX_LOAD_ATTEMPTS} 次。
+     * 停用判定(纯函数,便于单测):崩在装载阶段 **或** 崩溃收场的装载达 {@link #MAX_LOAD_ATTEMPTS} 次。
      *
      * <p>{@code startupCrash} 由调用方传入:算它要读并删除崩溃标记,只能读一次。
      */
