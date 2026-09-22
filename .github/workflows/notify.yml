@@ -4,6 +4,23 @@ on:
   release:
     types: [published]
   workflow_dispatch: # 允许手动触发测试
+    inputs:
+      tag:
+        description: '版本标签（如 v1.1.0），留空则发送“手动测试”'
+        required: false
+  workflow_call: # 供 release.yml 打包发布后直接调用（GITHUB_TOKEN 建的 release 不会触发 release 事件）
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v1.1.0)'
+        type: string
+        required: true
+    secrets:
+      TELEGRAM_TOKEN:
+        required: false
+      TELEGRAM_CHAT_ID:
+        required: false
+      TELEGRAM_THREAD_ID:
+        required: false
 
 jobs:
   notify-on-release:
@@ -17,10 +34,10 @@ jobs:
           thread-id: ${{ secrets.TELEGRAM_THREAD_ID }}
           message: |
             🚀 新版本发布！
-            名称: ${{ github.event.release.name || '手动测试' }}
-            标签: ${{ github.event.release.tag_name || '手动测试' }}
+            名称: ${{ inputs.tag || github.event.release.name || '手动测试' }}
+            标签: ${{ inputs.tag || github.event.release.tag_name || '手动测试' }}
             仓库: ${{ github.repository }}
             发布者: ${{ github.actor }}
-            查看: ${{ github.event.release.html_url || '手动测试' }}
+            查看: ${{ inputs.tag && format('{0}/{1}/releases/tag/{2}', github.server_url, github.repository, inputs.tag) || github.event.release.html_url || '手动测试' }}
           parse-mode: markdown
           disable-web-page-preview: true
