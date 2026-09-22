@@ -76,7 +76,8 @@ fun PlayerBottomBar(
     // `16dp + vs_30/2 - 40dp/2`（与详情页右下角全屏入口的 bottom 偏移同一式子，见 DetailActivity 注释），
     // 使「暂停钮 / 进度条 / 全屏钮」共用同一水平中心线，且进度条中心线位置与改动前一致。
     val bottomPad = if (state.previewMode) {
-        16.dp + playerDim(R.dimen.vs_30) / 2 - PreviewPlayPauseBox / 2
+        // vs_30 太小时该式子会变负(Compose 的 padding 要求非负)，钳到 0
+        (16.dp + playerDim(R.dimen.vs_30) / 2 - PreviewPlayPauseBox / 2).coerceAtLeast(0.dp)
     } else {
         16.dp
     }

@@ -2,7 +2,6 @@ package com.github.tvbox.osc.player;
 
 import android.content.Context;
 import android.os.Looper;
-import android.util.Pair;
 
 import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.base.App;
@@ -303,6 +302,7 @@ public class ExoPlayer extends ExoMediaPlayer {
         TrackInfo data = new TrackInfo();
         MappingTrackSelector.MappedTrackInfo mappedInfo = trackSelector.getCurrentMappedTrackInfo();
         if (mappedInfo == null) return data;
+        logRendererListOnce(mappedInfo);
 
         for (int rendererIndex = 0; rendererIndex < mappedInfo.getRendererCount(); rendererIndex++) {
             int type = mappedInfo.getRendererType(rendererIndex);
@@ -342,6 +342,20 @@ public class ExoPlayer extends ExoMediaPlayer {
         return data;
     }
 
+    /** 渲染器清单只落一次盘:getTrackInfo 在播放状态回调里被高频调用 */
+    private boolean rendererListLogged;
+
+    private void logRendererListOnce(MappingTrackSelector.MappedTrackInfo mappedInfo) {
+        if (rendererListLogged) return;
+        rendererListLogged = true;
+        StringBuilder sb = new StringBuilder("echo-setTrack renderers:");
+        for (int i = 0; i < mappedInfo.getRendererCount(); i++) {
+            sb.append(" [").append(i).append("]type=").append(mappedInfo.getRendererType(i))
+                    .append('/').append(mappedInfo.getRendererName(i));
+        }
+        LOG.i(sb.toString());
+    }
+
     public void setTrack(int groupIndex, int trackIndex, String playKey) {
         MappingTrackSelector.MappedTrackInfo mappedInfo = trackSelector.getCurrentMappedTrackInfo();
         setTrack(findAudioRendererIndex(mappedInfo), groupIndex, trackIndex, playKey);
@@ -374,11 +388,28 @@ public class ExoPlayer extends ExoMediaPlayer {
             DefaultTrackSelector.Parameters.Builder builder = trackSelector.buildUponParameters();
             builder.setRendererDisabled(rendererIndex, false);
             builder.clearSelectionOverrides(rendererIndex);
+            // 同一 track type 只允许一路渲染器持有选择:media3 只取第一个同类 definition、不清其余,
+            // 两路音频渲染器同时 enable 即抛 "Multiple renderer media clocks enabled."(清掉即自动 disable)。
+            int targetType = mappedInfo.getRendererType(rendererIndex);
+            for (int i = 0; i < mappedInfo.getRendererCount(); i++) {
+                if (i != rendererIndex && mappedInfo.getRendererType(i) == targetType) {
+                    builder.clearSelectionOverrides(i);
+                }
+            }
             builder.setSelectionOverride(rendererIndex, groups, override);
             trackSelector.setParameters(builder.build());
+            // 诊断:记录真正下发的选择(渲染器/组/轨/格式);本机 ROM 吞 logcat,只信 App 文件日志
+            Format applied = groups.get(groupIndex).getFormat(trackIndex);
+            LOG.i("echo-setTrack applied: renderer=" + rendererIndex + " group=" + groupIndex + " track=" + trackIndex
+                    + " type=" + targetType
+                    + " mime=" + (applied == null ? "null" : applied.sampleMimeType)
+                    + " channels=" + (applied == null ? -1 : applied.channelCount)
+                    + " codecs=" + (applied == null ? "null" : applied.codecs)
+                    + " playKey=" + playKey);
 
-            if (mappedInfo.getRendererType(rendererIndex) == C.TRACK_TYPE_AUDIO && !playKey.isEmpty()) {
-                AudioTrackMemory.save(playKey, groupIndex, trackIndex);
+            if (targetType == C.TRACK_TYPE_AUDIO) {
+                // 渲染器下标必须一起记:(组,轨)只在所属渲染器内有效
+                AudioTrackMemory.save(playKey, rendererIndex, groupIndex, trackIndex);
             }
         } catch (Exception e) {
             LOG.i("echo-setTrack error: " + e.getMessage());
@@ -386,16 +417,28 @@ public class ExoPlayer extends ExoMediaPlayer {
     }
 
     public void loadDefaultTrack(String playKey) {
-        Pair<Integer, Integer> pair = AudioTrackMemory.exoLoad(playKey);
-        if (pair == null) return;
+        AudioTrackMemory.ExoTrack remembered = AudioTrackMemory.exoLoad(playKey);
+        if (remembered == null) return;
 
         MappingTrackSelector.MappedTrackInfo mappedInfo = trackSelector.getCurrentMappedTrackInfo();
         if (mappedInfo == null) return;
 
-        int audioRendererIndex = findAudioRendererIndex(mappedInfo);
+        int audioRendererIndex = resolveAudioRendererIndex(mappedInfo, remembered.rendererIndex);
         if (audioRendererIndex == C.INDEX_UNSET) return;
 
-        setTrack(audioRendererIndex, pair.first, pair.second, "");
+        setTrack(audioRendererIndex, remembered.groupIndex, remembered.trackIndex, "");
+    }
+
+    /**
+     * 还原音轨记忆时定位渲染器:`(组,轨)` 只在所属渲染器内有效,套到别的渲染器会静默选错轨;
+     * 记忆无渲染器下标或该下标已不是音频渲染器时回落第一个音频渲染器。
+     */
+    private int resolveAudioRendererIndex(MappingTrackSelector.MappedTrackInfo mappedInfo, int remembered) {
+        if (remembered >= 0 && remembered < mappedInfo.getRendererCount()
+                && mappedInfo.getRendererType(remembered) == C.TRACK_TYPE_AUDIO) {
+            return remembered;
+        }
+        return findAudioRendererIndex(mappedInfo);
     }
 
     public void loadDefaultSubtitleTrack() {

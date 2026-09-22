@@ -149,6 +149,14 @@ public final class PlaybackEngine implements PlaybackHostApi {
                 // 尤其 handlePlayStateForMusicSession 会去 updateSession,那会在没有引擎的情况下
                 // 建出一条空通知并持有 wake/wifi 锁,而释放路径已经跑完、没人再来放锁(2026-09-14 审查)
                 if (released) return;
+                // 播放错误落一条盘:本机 ROM 吞 logcat,只有 App 文件日志能取证(白名单已含 echo-player)
+                if (playState == VideoView.STATE_ERROR) {
+                    LOG.i("echo-player error: kernel="
+                            + (videoView.getMediaPlayer() == null ? "null" : videoView.getMediaPlayer().getClass().getSimpleName())
+                            + " pos=" + videoView.getCurrentPosition()
+                            + " started=" + controller.isPlaybackStarted()
+                            + " url=" + controller.webPlayUrl());
+                }
                 // 遮黑帧的揭开与点播/直播无关:直播页共用同一块容器,漏揭就是"有声无画",
                 // 故必须在下面的 liveMode 短路**之前**。纯音频没有画面可露、海报就是它的背景
                 // (只有确认是影视才需要「收黑帧 + 撤封面」的互斥)
@@ -747,8 +755,8 @@ public final class PlaybackEngine implements PlaybackHostApi {
         @Override
         public void startVideoPlayback(String url, HashMap<String, String> headers, boolean forceExoPlayer) {
             if (released) return;
-            // 与页面桥一致的复用/释放防线:stopPlaybackKeepPlayer 可能留下"IDLE + 内核仍在"的组合,
-            // 直接 start() 会走 initPlayer() 新建内核并覆盖旧的(旧的无人 release,见 fork 同名注释)。
+            // 与页面桥一致的复用/释放防线:stopPlaybackKeepPlayer 可能留下"IDLE + 内核仍在"的组合,必须走非复用路径,
+            // 且先显式 release 才能让引擎侧状态(已起播内容/进度管理器/预载归属)与内核真实情况一致。
             // 无页面时到达的取流结果窗口窄(退页面即 cancelInFlight),但迟到的嗅探/OkGo 回调仍可能撞上。
             boolean reusePlayer = !forceExoPlayer && videoView.getMediaPlayer() != null;
             if (!reusePlayer && videoView.getMediaPlayer() != null) releasePlayer();

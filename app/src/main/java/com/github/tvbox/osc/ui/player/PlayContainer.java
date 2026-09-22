@@ -898,6 +898,10 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
         if (bean.size() < 1) return;
         List<String> names = new ArrayList<>();
         for (TrackInfoBean item : bean) names.add(item.name);
+        // 诊断:把弹窗列出的轨道与当前选中项落盘(vivo ROM 吞 logcat,只能看文件日志)
+        LOG.i("echo-setTrack list: kernel=" + mediaPlayer.getClass().getSimpleName()
+                + " count=" + bean.size() + " selected=" + trackInfo.getAudioSelected(false)
+                + " names=" + names);
         mController.getUiState().setSelectDialog(new SelectDialogState(
                 mContext.getString(R.string.player_switch_audio_track),
                 names,
@@ -911,6 +915,10 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
                         }
                         mediaPlayer.pause();
                         long progress = mediaPlayer.getCurrentPosition();
+                        // 诊断:记录点击了哪条轨 + 切换前的位置/状态
+                        LOG.i("echo-setTrack request: name=" + value.name + " render=" + value.renderId
+                                + " group=" + value.trackGroupId + " track=" + value.trackId
+                                + " pos=" + progress + " state=" + (mVideoView == null ? -999 : mVideoView.getCurrentPlayState()));
                         if (mediaPlayer instanceof IjkMediaPlayer) ((IjkMediaPlayer) mediaPlayer).setTrack(value.trackId, scheduler.progressKey());
                         if (mediaPlayer instanceof ExoPlayer) ((ExoPlayer) mediaPlayer).setTrack(value, scheduler.progressKey());
                         final int seq = trackSwitchSeq.incrementAndGet();
@@ -920,6 +928,10 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
                                 if (seq != trackSwitchSeq.get()) return;
                                 if (mediaPlayer instanceof IjkMediaPlayer) mediaPlayer.seekTo(progress);
                                 mediaPlayer.start();
+                                // 诊断:切轨 +200ms 后的内核状态。⚠️ 只读播放状态、不读位置:本 runnable 在 try 块之外,
+                                // 而这 200ms 内内核可能已被释放,IJK 的 getCurrentPosition() 无异常保护(会崩主线程)
+                                LOG.i("echo-setTrack after start: state="
+                                        + (mVideoView == null ? -999 : mVideoView.getCurrentPlayState()));
                             }
                         }, 200);
                     } catch (Exception e) {

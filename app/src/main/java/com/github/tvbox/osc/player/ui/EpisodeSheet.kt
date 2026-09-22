@@ -32,7 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -49,7 +49,6 @@ import com.github.tvbox.osc.player.state.EpisodeSheetState
 
 @Composable
 fun EpisodeSheet(sheet: EpisodeSheetState, onDismiss: () -> Unit) {
-    val context = LocalContext.current
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Row(Modifier.fillMaxSize()) {
             // 左半屏:点击收起(旧 episode_dismiss)
@@ -83,11 +82,15 @@ fun EpisodeSheet(sheet: EpisodeSheetState, onDismiss: () -> Unit) {
                 Spacer(Modifier.height(playerDim(R.dimen.vs_20)))
                 val gridState = rememberLazyGridState()
                 var widthPx by remember { mutableStateOf(0) }
-                val spanCount = remember(sheet.episodes, widthPx) {
+                // 列数启发式里的字号/左右余量必须与按钮本体同一套换算（playerTextSize/playerDim），
+                // 否则窗口尺寸变化后估宽与实际按钮宽度错位、列数算错
+                val textPx = with(LocalDensity.current) { playerTextSize(R.dimen.ts_20).toPx() }
+                val itemPaddingPx = with(LocalDensity.current) { playerDim(R.dimen.vs_10).roundToPx() }
+                val itemMarginPx = with(LocalDensity.current) { playerDim(R.dimen.vs_5).roundToPx() }
+                val spanCount = remember(sheet.episodes, widthPx, textPx, itemPaddingPx, itemMarginPx) {
                     if (widthPx <= 0) 2 else {
-                        val res = context.resources
                         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-                        paint.textSize = res.getDimension(R.dimen.ts_20)
+                        paint.textSize = textPx
                         val bounds = Rect()
                         var maxTextWidth = 1
                         for (episode in sheet.episodes) {
@@ -96,8 +99,8 @@ fun EpisodeSheet(sheet: EpisodeSheetState, onDismiss: () -> Unit) {
                             paint.getTextBounds(name, 0, name.length, bounds)
                             if (bounds.width() > maxTextWidth) maxTextWidth = bounds.width()
                         }
-                        val itemPadding = res.getDimensionPixelSize(R.dimen.vs_10) * 2
-                        val itemMargin = res.getDimensionPixelSize(R.dimen.vs_5) * 2
+                        val itemPadding = itemPaddingPx * 2
+                        val itemMargin = itemMarginPx * 2
                         val itemWidth = maxTextWidth + itemPadding + itemMargin
                         (widthPx / itemWidth.coerceAtLeast(1)).coerceIn(1, 4)
                     }

@@ -391,9 +391,8 @@ public class IjkMediaPlayer extends IjkPlayer {
     public void setTrack(int trackIndex,String playKey) {
         int audioSelected = mMediaPlayer.getSelectedTrack(ITrackInfo.MEDIA_TRACK_TYPE_AUDIO);
         if (trackIndex!=audioSelected){
-            if (!playKey.isEmpty()) {
-                AudioTrackMemory.save(playKey, trackIndex);
-            }
+            // playKey 可能为 null(progressKey 是 @Nullable):直接 isEmpty() 抛 NPE 会让后续 seekTo/start 全不执行
+            AudioTrackMemory.save(playKey, trackIndex);
             mMediaPlayer.selectTrack(trackIndex);
         }
     }

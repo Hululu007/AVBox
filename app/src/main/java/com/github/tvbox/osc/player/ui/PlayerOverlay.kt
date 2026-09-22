@@ -1,6 +1,7 @@
 package com.github.tvbox.osc.player.ui
 
-import android.content.res.Configuration
+import android.content.res.Resources
+import android.util.TypedValue
 import androidx.annotation.DimenRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -29,6 +30,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -40,6 +42,7 @@ import com.github.tvbox.osc.R
 import com.github.tvbox.osc.player.state.PlayerActions
 import com.github.tvbox.osc.player.state.PlayerUiState
 import com.github.tvbox.osc.ui.components.ScallopShape
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import xyz.doikki.videoplayer.player.VideoView
 
@@ -122,21 +125,60 @@ fun PlayerOverlay(
 }
 
 // ---------------------------------------------------------------------------
-// 共享辅助：AutoSize(mm) 尺寸换算 / 菜单按钮
+// 共享辅助：mm 尺寸换算 / 菜单按钮
 // ---------------------------------------------------------------------------
 
-/**
- * 项目 dimens 以 mm 为单位（AutoSize），换算为 Compose Dp 保持物理缩放一致 */
+/** 覆盖层设计基准宽（= `BaseActivity.getSizeInDp()` 的常态值） */
+private const val PLAYER_DESIGN_WIDTH = 1280f
+
+/** 覆盖层尺寸的唯一事实来源（窗口长边像素 / 设计宽）。⚠️ 别改回 `getDimension*()` + 方向补偿：
+ *  AutoSize 的 screenWidth 由库（显示宽）与 `refreshAutoSize`（窗口宽）两处写入、变更又不触发重组，旧方向的尺寸会烙进 TextUnit ⇒ 小窗↔全屏切换时字号突变。 */
 @Composable
-internal fun playerDim(@DimenRes id: Int): Dp {
-    val px = LocalContext.current.resources.getDimensionPixelSize(id)
-    return with(LocalDensity.current) { (px * portraitCompensation()).toDp() }
+private fun playerMmScale(): Float {
+    // containerSize 是真实容器像素且随布局即时更新（自由窗口/桌面模式/分屏下比 Configuration 准）；首帧未量出时回落 Configuration
+    val container = LocalWindowInfo.current.containerSize
+    val longEdgePx = if (container.width > 0 && container.height > 0) {
+        maxOf(container.width, container.height).toFloat()
+    } else {
+        val conf = LocalConfiguration.current
+        maxOf(conf.screenWidthDp, conf.screenHeightDp) * LocalDensity.current.density
+    }
+    return if (longEdgePx > 0f) longEdgePx / PLAYER_DESIGN_WIDTH else 1f
 }
 
+/** dimen 的原始数值（不带任何单位换算）；非 mm 单位返回 null。
+ *  只认字面量：覆盖层用到的 dimen 必须保持配置无关（别加 `values-sw600dp` 之类），否则这里的 Resources 读不到新配置。 */
+private fun rawMm(resources: Resources, @DimenRes id: Int): Float? {
+    val tv = TypedValue()
+    try {
+        resources.getValue(id, tv, true)
+    } catch (e: Resources.NotFoundException) {
+        return null
+    }
+    if (tv.type != TypedValue.TYPE_DIMENSION) return null
+    if ((tv.data and TypedValue.COMPLEX_UNIT_MASK) != TypedValue.COMPLEX_UNIT_MM) return null
+    // ⚠️ 必须用 complexToFloat：维度值的 data 是定点编码(高 24 位尾数 + 低位单位/基数)，
+    // getFloat() 会把这段位模式当 IEEE 浮点重解释(30mm → 1e-41)，尺寸静默变成 0
+    return TypedValue.complexToFloat(tv.data)
+}
+
+/** mm dimens 按当前窗口换算为 Compose Dp；取整规则同旧 `getDimensionPixelSize`，非 mm 走系统换算。 */
+@Composable
+internal fun playerDim(@DimenRes id: Int): Dp {
+    val res = LocalContext.current.resources
+    val raw = rawMm(res, id)
+    val px = if (raw != null) raw * playerMmScale() else res.getDimension(id)
+    val pxInt = if (px == 0f) 0 else px.roundToInt().coerceAtLeast(1)
+    return with(LocalDensity.current) { pxInt.toFloat().toDp() }
+}
+
+/** 与 [playerDim] 同一套换算，保留浮点（旧 `getDimension` 不取整）；菜单按钮字号用。 */
 @Composable
 internal fun playerTextSize(@DimenRes id: Int): TextUnit {
-    val px = LocalContext.current.resources.getDimension(id)
-    return with(LocalDensity.current) { (px * portraitCompensation()).toSp() }
+    val res = LocalContext.current.resources
+    val raw = rawMm(res, id)
+    val px = if (raw != null) raw * playerMmScale() else res.getDimension(id)
+    return with(LocalDensity.current) { px.toSp() }
 }
 
 /**
@@ -148,23 +190,6 @@ internal fun playerTextSize(@DimenRes id: Int): TextUnit {
 @Composable
 internal fun playerEdgePadding(): Dp =
     if (LocalConfiguration.current.screenWidthDp >= 600) 24.dp else 16.dp
-
-/**
- * 竖屏补偿：AutoSize 按屏宽适配（BaseActivity design 1280dp），竖屏时“宽度”变短边，
- * density 缩为横屏的 宽/高 倍，所有 mm 尺寸物理上同步缩水（旧 XML 竖屏同样如此）。
- * 这里乘以 屏高px/屏宽px（= 横屏 density / 竖屏 density），使竖屏与横屏物理观感一致。
- */
-@Composable
-private fun portraitCompensation(): Float {
-    val conf = LocalConfiguration.current
-    return if (conf.orientation == Configuration.ORIENTATION_PORTRAIT) {
-        // Configuration.screenWidthPx 在新 SDK stub 已移除，用 displayMetrics 取物理像素
-        val dm = LocalContext.current.resources.displayMetrics
-        if (dm.widthPixels > 0) dm.heightPixels.toFloat() / dm.widthPixels else 1f
-    } else {
-        1f
-    }
-}
 
 /**
  * 中央控制组（图二样式）：显示底栏时屏幕中央出现三个半透明圆形按钮：

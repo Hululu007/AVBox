@@ -1995,3 +1995,63 @@ P1 最后两组。至此**调度层(会话/取流/解析/嗅探/重试/换线/�
 **既存观察（非本次引入，未动）**：`HomePullRefreshIndicator` 的 `isRefreshing` 全库恒为 `false` ⇒ 下拉松手后指示器停在 `distanceFraction = 0` 的静态环上，而页面此时已被整屏 spinner 取代，顶部会同时存在一个静态环与中央转圈；属 2026-09-12 改版的遗留。
 
 **第三轮核实通过**：本地源红线未受影响 —— `isLocalSourceUnreadable` / `isLocalSourceMissing` 只认 `clan://localhost/` 与 `file://` 两种"本机文件"形态，两者都不是 `http/https`，因此永远不会走快照分支（"本地源拉取失败不静默回落旧快照"的语义完整保留）；局域网 `clan://<ip>` 同样不吃快照（且它本来就快）；超时 toast 不会串页 —— `pageErrorEvents` 是 `replay = 0` 的 SharedFlow，而 `HorizontalPager` 默认 `beyondViewportPageCount = 0`，用户切到其它 tab 后 `HomePage` 已离开组合、收集者被取消，弹窗不会打扰其它页面，分区的 Error 状态仍留在 VM 里（切回来看得到「重试」）；`useCachedConfig()` 读的 `HawkConfig.API_URL` 与 `loadConfig` 用来算缓存文件名的 KV 键一致；`BootGuard.disableBootLoopingSource()` 在 `startInit` 之前同步执行 ⇒ 快照判据用的是"已被看门狗处理过"的地址，不会算出错误的缓存路径。
+
+## 修复:切音轨报「视频播放出错」(media3 双音频渲染器时钟冲突)及四处同族缺陷（2026-09-22）
+
+**现象(用户报告)**："播放视频时点击切换音轨,会出现视频播放错误";必现,伴随「播放出错,自动重试」与同地址重播,重播后再切必再崩。命中面 = **两条音轨落在不同音频渲染器**的片源(实测 AAC + 杜比 DDP/E-AC3 的 `…DDP2.0.2Audios.mp4`)。
+
+**取证(本机 vivo ROM 吞 App 自身 tag 的 logcat)**：清空缓冲区后 dump 7770 行,属本应用进程的仅 **1 行**(同窗口 fongmi 的 AudioTrack 行却在),系统侧 MediaCodec/AudioFlinger 亦无输出 ⇒ **logcat 这条通道在本机不可用**。可用通道 = App 自己的文件日志 `files/preload_debug.log`(debug 包 `LOG.FILE_LOG=BuildConfig.DEBUG`,`adb shell run-as com.github.avbox.osc cat` 可读)。把切轨链路与播放错误落盘后,一次复现即拿到异常本体:
+
+```
+echo-exo-player-error: code=ERROR_CODE_UNSPECIFIED, msg=Unexpected runtime error
+  | cause[0]=IllegalStateException: Multiple renderer media clocks enabled.
+```
+
+设备渲染器实测(新增一次性诊断 `echo-setTrack renderers:`):`[0]MediaCodecVideoRenderer [1]ExperimentalFfmpegVideoRenderer [2]MediaCodecAudioRenderer [3]FfmpegAudioRenderer [4]TextRenderer [5-8]MetadataRenderer [9]CameraMotionRenderer [10]ImageRenderer`。
+
+**根因(media3 1.11.1 源码级)**：① 设备 MediaCodec 不认的编码,其轨组被 media3 映射到 ffmpeg 扩展渲染器(AAC→renderer 2,E-AC3→renderer 3);② `ExoPlayer.setTrack` 只清/设**目标**渲染器的 `SelectionOverride`,而 `DefaultTrackSelector.findDefinitionForType` 只取"第一个"同类 definition、**从不清其余渲染器** ⇒ 两路音频渲染器同时 enable;③ 音频渲染器都提供 media clock(`DecoderAudioRenderer` / `MediaCodecAudioRenderer.getMediaClock()→this`;`BaseRenderer`/`NoSampleRenderer`→null,视频/字幕渲染器不覆写),`DefaultMediaClock.onRendererEnabled` 直接抛上述异常;④ 异常经 fork `ExoMediaPlayer.onPlayerError → onError()` → `STATE_ERROR` → `ComposeVideoController` → `PlayContainer.errReplay()` → `errorWithRetry("视频播放出错")` → `PlaybackController.retryAfterStartedError()`(释放内核 + 同地址重播);又因切轨前已写入音轨记忆,重播后 `loadDefaultTrack` 把 override 钉回 ⇒ 必复现。
+
+**修复(7 文件 +153/−24)**：
+
+1. `player/ExoPlayer.setTrack`:同一 track type 只允许一路渲染器持有选择(设目标前清掉同类其余渲染器的 override;清掉即自动 disable,刻意**不写** `rendererDisabled` 粘性状态,以免影响后续换集自动选轨)。按类型而非"仅音频"—— 本机视频也有两路渲染器,双视轨虽不抛该异常,但同属"两个渲染器同时解码"的错误状态。
+2. **音轨记忆带渲染器**:`util/AudioTrackMemory` 新增 `_exo_renderer` 键(渲染器/组/轨三元组);还原时用记忆里的渲染器,旧键(无该键)或渲染器表变化时回落第一个音频渲染器;`save/exoLoad/ijkLoad` 加空 `playKey` 守卫(不再生成 `audio_track_null_*` 垃圾键)。
+3. **IJK 切音轨 NPE**:`IjkMediaPlayer.setTrack(index, playKey)` 的 `!playKey.isEmpty()`(`progressKey()` 是 `@Nullable`)抛 NPE 冒到 `PlayContainer` 的 catch ⇒ 紧随的 `seekTo/start()` 全不执行、**画面永久停在暂停**;守卫下沉到 `AudioTrackMemory`。
+4. **fork `VideoView`**:① `release()` 原把释放整段挂在 `!isInIdleState()` 下,而 `stopPlaybackKeepPlayer()` 在 PREPARING/BUFFERING(刚点播放就退出)会留下「IDLE + 内核仍在」⇒ 释放退化成空操作、旧实例被 `initPlayer()` 覆盖且无人 release;② `startPlay()` 补"旧实例必先释放",把该类泄漏从"依赖调用方自觉"变成结构上不可能(引擎与页面桥的"防线"都调用同一个 state-gated `release()`,防不住)。
+
+**审查(用户"是否有错误遗漏和引入新回归")**：
+
+- **软/硬解切换、内核切换不会产生该错误**:两者都"释放内核 → 新建播放器实例 → 全新 `DefaultTrackSelector`(Parameters 从零)",而该异常的必要条件是"同一实例内两路同类渲染器同时被选中";两条路径的生效机制另已核对(EXO `requireKernelRebuild` + 重建;IJK `setCodec()` 后 `reset()→setOptions()`)。
+- **审查自查发现并修掉 2 处(其一为本轮引入)**:① 切轨诊断里读了 IJK 位置,而该 runnable 在 try 块之外执行、fork `IjkPlayer.getCurrentPosition()` 无保护且 `release()` 是**后台线程异步**释放 ⇒ 200ms 内内核被释放即可崩主线程(已改为只读播放状态);② 上述 `startPlay()` 覆盖旧实例。
+- **核实未改**:清 override 不会反而触发自动选轨(`findDefinitionForType` 取到非空即跳过自动选轨,其余渲染器因无 selection 被 disable);旧记忆兼容(读出 -1 → 回落);KV 动态键契约(调用侧 -1 默认值,无需登记 `KVKeySpec`);白名单新增 5 个前缀所命中的**全部**日志无热路径;`STATE_ERROR` 诊断在 ERROR 下走 `isInPlaybackState()==false` 分支、不碰已释放内核;fork `release()` 全部调用点都不依赖旧的"IDLE 时 no-op"。
+- **验证**:`testDebugUnitTest` 230 例 0 失败;`assembleDebug` / `assembleRelease`(R8 + shrink,64.75 MB)全绿;真机 vivo V2425A:修复前 `applied` 后 126ms 即 error,修复后音轨 **2→1→2→1 四次来回切 0 error** 且位置持续推进(18141→364334→366050→375257→377086 ms);退出重进 `applied renderer=3 … mime=audio/eac3 playKey=`(空 playKey = 记忆还原);切内核 EXO↔IJK、切解码 硬解↔软解 与冒烟(起播/换集/切轨/退出重进)通过。
+
+**实测背景(解释命中面;本 bug 非 E-AC3 专属)**：本机 ROM 把 AC3/EAC3/DTS 硬件解码器整段注释(`/vendor/etc/media_codecs_vivo_c2_audio.xml` 的 ac3+eac3 块、`media_codecs_vivo_audio.xml` 的 ac3+eac3 块),AOSP 配置亦不含 `eac3` ⇒ 系统无 `audio/eac3` 解码器,E-AC3 只能走 App 内置 ffmpeg 软解,因而与 AAC 分属两路渲染器;对照 AAC 因有 AOSP `c2.android.aac.decoder` 仍走 MediaCodec。故命中面是"两条音轨落在不同音频渲染器"的任意片源(AAC+DDP / AAC+DTS / AAC+AC3)。
+
+**遗留(已登记,未动)**：① fork `IjkPlayer.getCurrentPosition()/getDuration()` 无保护,任何"释放后读位置"的调用点都可能崩;② `IjkMediaPlayer.setTrack(int)` 用音轨/字幕轨下标挡**视轨**切换,下标相同时静默不切(视轨与内置字幕共用该方法);③ `ExoPlayer.setPreferSoftwareDecode` 是进程级静态位(点播/直播/音乐页共用;每次起播前都会推一次,当前安全但耦合较紧);④ 音轨记忆仍按 (渲染器,组,轨) **下标**存,同片内同编码分多 group 且换集顺序变化时可能落到同渲染器内另一条轨(按格式/语言记才是彻底解)。
+
+**更正(同日)**：上条落盘时改动面记为 7 文件 +153/−24;随后按 `SKILL.md` 注释红线(不写日期与过程叙事、单条 ≤2 行)精简了本轮新增的代码注释,最终为 **+122/−25**,功能与验证结论不变 —— 代码里只保留「不写会再踩的坑」,过程叙述以本条目为准。
+
+## 修复:小窗转全屏后底栏那一排控件字号突变(mm 档 × 方向补偿不同步)（2026-09-22,方案 A 已落地）
+
+**现象(用户报)**:竖屏详情页小窗(预览态)播放中切全屏,底栏菜单行字号明显变小(约 1/2.2);收起底栏再呼出、或之后某次重组又能恢复,故看着像"时好时坏"。
+
+**根因(读码 + 真机日志)**:覆盖层字号 = `playerTextSize` = `AutoSize 换算出的 mm px` × `portraitCompensation()`(竖屏 屏高/屏宽,横屏 1)。两个因子来源不同 ——
+① 补偿只由 Compose 的 `LocalConfiguration` 驱动,方向一变**当帧**就变;
+② mm→px 只由 `AutoSizeConfig.screenWidth` 决定,而它有**两个写入者**:AutoSize 1.2.1 在 `AutoSizeConfig.init()` 里给 Application 注册的 `ComponentCallbacks`(`ScreenUtils.getScreenSize(application)` = **显示**宽),以及 `BaseActivity.refreshAutoSize()`(`getDefaultDisplay().getMetrics()` = **窗口**宽,只在 `onResume`/`onWindowFocusChanged`/300ms 延迟里跑)。窗口≠显示(分屏/自由窗口/桌面模式)时两者分歧;小窗↔全屏/旋转时 mm 值可能仍是旧方向/旧窗口的 ⇒ 尺寸差最大 2.2 倍。
+**且错了不会自愈**:`App.java` 关了 supportDP/SP ⇒ AutoSize 只改 `xdpi`,Compose 的 `LocalDensity` 不变,改它不产生任何状态失效;而 `playerTextSize` 已把结果烙进 `TextUnit`(底栏只在 `controlsVisible` 由假变真时整棵重建 ⇒ "收起再呼出就正常")。spec §6.10 早前已把"旋转后约 300ms 内 mm 档仍是旧值"记为坑,这里是它的必然结果。
+
+**日志证据**:同机(vivo V2425A,1260×2800)同一次抓取里同时出现 `targetDensity = 0.984375`(=1260/1280,窗口宽)与 `2.187500`(=2800/1280,显示宽);`.logs/cap2.txt` 整场 105 次适配全是 `0.984375`,而 12:52:51 / 12:54:20 确有 `ViewRootImpl: AppSizeAfterRelayout size: Point(2800,1260), rotation: ROTATION_90`;库的 Application 级回调确实被调用(旋转那一刻打了 `initScaledDensity = 3.5 on ConfigurationChanged`)。`.logs/audio_switch_capture.txt` 里 `Point(1260,2800), rotation: ROTATION_90`(竖屏形小窗挂在横屏显示上)配上 `2.1875`/`0.984375` 两个值,即"小窗偏大 → 全屏掉一半"的直接对应。
+
+**修法(最终 4 文件)**:`PlayerOverlay.kt` 的 `playerDim`/`playerTextSize` 不再读 AutoSize 换算后的 px,改为 `原始 mm 数值(TypedValue 取,判 COMPLEX_UNIT_MM)× 窗口长边 / 1280`;比例由 `playerMmScale()` 提供(`LocalWindowInfo.containerSize` 优先、首帧回落 `Configuration`+`LocalDensity`,容器一变必然重组重算);删掉 `portraitCompensation()`。**稳态与旧实现等价**(旧式 = mm×屏宽/1280×屏高/屏宽 = mm×长边/1280;仅取整顺序不同,≤1px;该等价与设备/方向/密度无关,手机·平板·电视·分屏一致)。非 mm 单位(dp/sp)回落系统换算。`EpisodeSheet` 列数启发式里 3 处直读 `resources.getDimension*` 一并改走同一套 helper(否则估宽与实际按钮宽度错位、列数算错)。`DetailScreens`/`PlayerBottomBar` 两处 `playerDim(vs_30)` 推导的 padding 加 `.coerceAtLeast(0.dp)`。注释按红线只留"别改回 `getDimension*()` + 方向补偿"这一条坑。
+
+**刻意不动**:`ComposeVideoController.initNativeSubtitleViews` 的原生字幕 padding 仍走 AutoSize —— 对齐长边口径会把竖屏 padding 放大 2.2 倍(5→11 / 15→33 / 20→44 px),属可见变化且与本 bug 无关,留给"AutoSize 退役"专项。
+
+**验证**:`compileDebugKotlin` ✓、`assembleDebug` ✓、`testDebugUnitTest` 230 例 0 失败(均 `--offline`)。
+
+**⚠️ 装机后事故与更正(同日)**:首版装机后**每次进详情页必崩** —— `IllegalArgumentException: Padding must be non-negative @ DetailScreens.kt:190`(该行是 `16.dp + playerDim(vs_30)/2 - 20.dp`,Compose 要求 padding 非负)。抓 logcat 得 `raw=1.0769E-41` / `dp=0.2857`:根因是我用 `TypedValue.getFloat()` 取 dimen 原始值 —— 维度值的 `data` 是**定点编码**(`30mm` → `data=0x1E05` = 尾数<<8 | 单位),`getFloat()` 只是把这段位模式按 IEEE 浮点重解释 ⇒ 1e-41 ⇒ `playerDim` 全变 ~0.29dp ⇒ 式子变负。正确 API = **`TypedValue.complexToFloat(tv.data)`**(返回原始单位数值 30.0f)。旧代码走 `getDimension*()` 所以从没踩到,这是本次新引入的坑。已修 + 真机确认详情页恢复正常(不再闪退)。
+
+**连带伤害(BootGuard,必须告诉用户)**:反复闪退被 `BootGuard` 判成"这个源把进程崩掉",两个远端源被写进持久黑名单(`HawkConfig.BOOT_DISABLED_SOURCES`)、配置管理页标「已禁用」—— 用户看到的"所有源都不能用"实为此事,不是源/网络坏了。恢复路径:配置管理页点该源行 → 二次确认弹窗 → 确定(`BootGuard.enableSource()`)。
+
+**防御性加固**:两处依赖 `playerDim(vs_30)` 的算式(`DetailScreens.kt` 全屏入口底距、`PlayerBottomBar` 预览态底距)加 `.coerceAtLeast(0.dp)` —— 长边 < ~342dp 的小窗口下该式子本来就会变负并直接崩 Compose(与本次 bug 无关,是既有脆弱点)。
+
+**教训(已写进 spec §6.10)**:① 读 dimen 原始值只能用 `TypedValue.complexToFloat`,不能用 `getFloat()`;② 任何由尺寸推导出来的 `padding/size` 都要钳非负 —— Compose 对负值是**抛异常**,不是忽略;③ 这类改动必须真机走一遍(本次编译/单测全绿仍然崩,离线无法发现)。

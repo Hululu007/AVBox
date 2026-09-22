@@ -221,6 +221,11 @@ public class VideoView<P extends AbstractPlayer> extends FrameLayout
         if (mProgressManager != null) {
             mCurrentPosition = mProgressManager.getSavedProgress(mProgressKey == null ? mUrl : mProgressKey);
         }
+        // 新建前必释放旧实例:本路径可能在「IDLE + 内核仍在」下被调用,直接 initPlayer() 会覆盖旧实例而不 release
+        if (mMediaPlayer != null) {
+            mMediaPlayer.release();
+            mMediaPlayer = null;
+        }
         initPlayer();
         addDisplay();
         startPrepare(false);
@@ -430,8 +435,8 @@ public class VideoView<P extends AbstractPlayer> extends FrameLayout
     public void stopPlaybackKeepPlayer() {
         if (mMediaPlayer == null) return;
         // 已被 pause() 停住的保持 PAUSED:**PAUSED + 实例仍在 = 可复用状态**;
-        // 反之若置成 IDLE,则 IDLE + 实例仍在 是个危险组合 —— 此后任何 start() 都会走
-        // startPlay() → initPlayer() 新建一个内核并覆盖旧的(旧的不会被 release),既泄漏又毁掉跨页复用
+        // 反之若置成 IDLE,则 IDLE + 实例仍在 是个危险组合 —— 此后 start() 会走 startPlay() → initPlayer() 新建内核
+        // (该组合下的旧实例释放已由 release() 与 startPlay() 各自兜底);语义上仍保持本方法不产出该组合。
         if (mCurrentPlayState == STATE_PAUSED) return;
         mMediaPlayer.stop();
         setPlayState(STATE_IDLE);
@@ -460,12 +465,13 @@ public class VideoView<P extends AbstractPlayer> extends FrameLayout
             mAudioFocusHelper.abandonFocus();
             mAudioFocusHelper = null;
         }
+        // 内核释放不随播放状态跳过:stopPlaybackKeepPlayer 会留下「IDLE + 内核仍在」,此时若跳过释放,
+        // 后续 startPlay() 将覆盖旧实例而不 release(引擎与页面桥都走本方法,不能靠状态闸拦)。
+        if (mMediaPlayer != null) {
+            mMediaPlayer.release();
+            mMediaPlayer = null;
+        }
         if (!isInIdleState()) {
-            //释放播放器
-            if (mMediaPlayer != null) {
-                mMediaPlayer.release();
-                mMediaPlayer = null;
-            }
             //释放renderView
             if (mRenderView != null) {
                 mPlayerContainer.removeView(mRenderView.getView());

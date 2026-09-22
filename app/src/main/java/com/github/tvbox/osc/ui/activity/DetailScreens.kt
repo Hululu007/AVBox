@@ -187,7 +187,11 @@ fun DetailScreen(activity: DetailActivity, vm: DetailViewModel) {
                     tint = Color.White.copy(alpha = 0.9f),
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(end = 16.dp, bottom = 16.dp + playerDim(R.dimen.vs_30) / 2 - 20.dp)
+                        .padding(
+                            end = 16.dp,
+                            // vs_30 太小时该式子会变负(Compose 直接抛 IllegalArgumentException)，钳到 0
+                            bottom = (16.dp + playerDim(R.dimen.vs_30) / 2 - 20.dp).coerceAtLeast(0.dp),
+                        )
                         .size(40.dp)
                         .clickable { vm.setFullScreen(true) }
                         .padding(9.dp),
