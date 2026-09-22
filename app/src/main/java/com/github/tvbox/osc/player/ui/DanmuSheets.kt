@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -27,8 +26,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.api.DanmakuApi
 import com.github.tvbox.osc.bean.DanmuSearchResult
@@ -48,34 +45,34 @@ private val DANMU_SPEEDS = listOf(2.4f, 1.8f, 1.5f, 1.0f)
 
 @Composable
 fun DanmuSettingSheet(sheet: DanmuSettingSheetState, onDismiss: () -> Unit) {
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            SheetPanel(width = playerDim(R.dimen.vs_520)) {
-                Spacer(Modifier.height(playerDim(R.dimen.vs_24)))
-                SheetTitle(stringResource(R.string.danmu_settings))
-                Spacer(Modifier.height(playerDim(R.dimen.vs_12)))
-                // TYPE_SET_DANMU_SETTINGS 第二参数:仅颜色行传 true
-                val postSettings: (Boolean) -> Unit = { forColor ->
-                    EventBus.getDefault().post(RefreshEvent(RefreshEvent.TYPE_SET_DANMU_SETTINGS, forColor))
-                }
-                var colorIdx by remember { mutableIntStateOf(if (DanmuHelper.useRandomColor()) 1 else 0) }
-                var speedIdx by remember {
-                    mutableIntStateOf(DANMU_SPEEDS.indexOf(DanmuHelper.getSpeed()).coerceAtLeast(0))
-                }
-                var size by remember { mutableIntStateOf(Math.round(DanmuHelper.getSizeScale() * 10)) }
-                var line by remember { mutableIntStateOf(DanmuHelper.getMaxLine()) }
-                var alpha by remember { mutableIntStateOf(Math.round(DanmuHelper.getAlpha() * 100)) }
+    PlayerDialog(onDismiss = onDismiss) {
+        val dismissThen = LocalPlayerSheetDismissThen.current
+        SheetPanel(width = playerDim(R.dimen.vs_520)) {
+            Spacer(Modifier.height(playerDim(R.dimen.vs_24)))
+            SheetTitle(stringResource(R.string.danmu_settings))
+            Spacer(Modifier.height(playerDim(R.dimen.vs_12)))
+            // TYPE_SET_DANMU_SETTINGS 第二参数:仅颜色行传 true
+            val postSettings: (Boolean) -> Unit = { forColor ->
+                EventBus.getDefault().post(RefreshEvent(RefreshEvent.TYPE_SET_DANMU_SETTINGS, forColor))
+            }
+            var colorIdx by remember { mutableIntStateOf(if (DanmuHelper.useRandomColor()) 1 else 0) }
+            var speedIdx by remember {
+                mutableIntStateOf(DANMU_SPEEDS.indexOf(DanmuHelper.getSpeed()).coerceAtLeast(0))
+            }
+            var size by remember { mutableIntStateOf(Math.round(DanmuHelper.getSizeScale() * 10)) }
+            var line by remember { mutableIntStateOf(DanmuHelper.getMaxLine()) }
+            var alpha by remember { mutableIntStateOf(Math.round(DanmuHelper.getAlpha() * 100)) }
 
-                SheetLabelRow(stringResource(R.string.danmu_online)) {
-                    SheetButton(
-                        text = stringResource(R.string.common_search),
-                        onClick = {
-                            onDismiss()
-                            sheet.onOpenSearch()
-                        },
-                        modifier = Modifier.weight(1f),
-                    )
-                }
+            SheetLabelRow(stringResource(R.string.danmu_online)) {
+                SheetButton(
+                    text = stringResource(R.string.common_search),
+                    onClick = {
+                        // 先播退场再换面板,两个面板窗口不重叠
+                        dismissThen { sheet.onOpenSearch() }
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+            }
                 SheetLabelRow(stringResource(R.string.danmu_color)) {
                     SheetChipRow(
                         listOf(
@@ -162,7 +159,6 @@ fun DanmuSettingSheet(sheet: DanmuSettingSheetState, onDismiss: () -> Unit) {
                     )
                 }
                 Spacer(Modifier.height(playerDim(R.dimen.vs_24)))
-            }
         }
     }
 }
@@ -216,9 +212,9 @@ fun DanmuSearchSheet(sheet: DanmuSearchSheetState, onDismiss: () -> Unit) {
         onDispose { DanmakuApi.cancel() }
     }
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            SheetPanel(
+    PlayerDialog(onDismiss = onDismiss) {
+        val dismiss = LocalPlayerSheetDismiss.current
+        SheetPanel(
                 width = playerDim(R.dimen.vs_960),
                 modifier = Modifier.height(playerDim(R.dimen.vs_480)),
             ) {
@@ -255,7 +251,7 @@ fun DanmuSearchSheet(sheet: DanmuSearchSheetState, onDismiss: () -> Unit) {
                                     DanmakuApi.loadSearchResult(item, object : DanmakuApi.SearchResultCallback {
                                         override fun onSuccess(danmu: String?) {
                                             mainHandler.post {
-                                                onDismiss()
+                                                dismiss()
                                                 if (danmu != null) sheet.onLoad(danmu)
                                             }
                                         }
@@ -274,6 +270,5 @@ fun DanmuSearchSheet(sheet: DanmuSearchSheetState, onDismiss: () -> Unit) {
                 }
                 Spacer(Modifier.height(playerDim(R.dimen.vs_30)))
             }
-        }
     }
 }

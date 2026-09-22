@@ -31,7 +31,7 @@ public interface PlayerControlApi {
 
     /**
      * 控制层 Compose UI 状态（Step 6 对话框 sheet 化：PlayContainer 经此写入
-     * 弹幕/字幕/投屏/选集面板状态与音轨选择弹窗，替代直接 new View 对话框）。
+     * 弹幕/字幕/投屏面板状态与音轨选择弹窗，替代直接 new View 对话框）。
      */
     PlayerUiState getUiState();
 

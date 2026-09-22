@@ -80,10 +80,7 @@ fun PlayerOverlay(
             )
         }
 
-        // Step 6 对话框 Compose 化（替代 View 版 Danmu/SearchDanmu/Subtitle/SearchSubtitle/Cast/Episode Dialog）
-        state.episodeSheet?.let { sheet ->
-            EpisodeSheet(sheet) { state.episodeSheet = null }
-        }
+        // Step 6 对话框 Compose 化（替代 View 版 Danmu/SearchDanmu/Subtitle/SearchSubtitle/Cast Dialog）
         state.danmuSettingSheet?.let { sheet ->
             DanmuSettingSheet(sheet) { state.danmuSettingSheet = null }
         }
@@ -178,7 +175,9 @@ internal fun playerTextSize(@DimenRes id: Int): TextUnit {
     val res = LocalContext.current.resources
     val raw = rawMm(res, id)
     val px = if (raw != null) raw * playerMmScale() else res.getDimension(id)
-    return with(LocalDensity.current) { px.toSp() }
+    // 非负保证：TextUnit/尺寸一旦为负或非有限，下游(布局/排版)会直接抛异常
+    val safePx = if (px.isFinite()) px.coerceAtLeast(0f) else 0f
+    return with(LocalDensity.current) { safePx.toSp() }
 }
 
 /**

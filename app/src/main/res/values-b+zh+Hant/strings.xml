@@ -198,6 +198,7 @@
     <string name="music_next">下一首</string>
 
     <!-- 搜尋設定面板 -->
+    <string name="search_home_poster">首頁海報</string>
     <string name="search_layout_horizontal">橫向展示</string>
     <string name="search_layout_vertical">縱向展示</string>
     <string name="search_exact">精準搜尋</string>

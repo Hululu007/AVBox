@@ -2055,3 +2055,37 @@ echo-exo-player-error: code=ERROR_CODE_UNSPECIFIED, msg=Unexpected runtime error
 **防御性加固**:两处依赖 `playerDim(vs_30)` 的算式(`DetailScreens.kt` 全屏入口底距、`PlayerBottomBar` 预览态底距)加 `.coerceAtLeast(0.dp)` —— 长边 < ~342dp 的小窗口下该式子本来就会变负并直接崩 Compose(与本次 bug 无关,是既有脆弱点)。
 
 **教训(已写进 spec §6.10)**:① 读 dimen 原始值只能用 `TypedValue.complexToFloat`,不能用 `getFloat()`;② 任何由尺寸推导出来的 `padding/size` 都要钳非负 —— Compose 对负值是**抛异常**,不是忽略;③ 这类改动必须真机走一遍(本次编译/单测全绿仍然崩,离线无法发现)。
+
+## 弹窗壳统一:app 内覆盖层对话框 + 播放器面板动画 + 删除僵尸选集面板(2026-09-22,未 commit)
+
+**批次(30 文件,+590/−417)**:
+
+- **app 内对话框去平台窗口化**:新增 `ui/components/Dialogs.kt` —— `AVBoxDialog`/`AVBoxAlertDialog` 走应用窗口内覆盖层(与 `AVBoxBottomSheet` 同一套宿主路由/遮罩/动画),观感照抄 M3 `AlertDialogDefaults`/`AlertDialogContent`(形状/配色/24dp 内边距/按钮排布);进场 0.90→1.0 缩放 + 淡入 220ms、遮罩 `BottomSheetDefaults.ScrimColor.copy(alpha = 0.6)` 与面板同一进度;键盘弹起面板自己上移(`imePadding`,覆盖层没有 dialog window 帮忙避让 IME);收弹窗时显式 `clearFocus(force = true)` + `keyboard.hide()`(平台 dialog 是"窗口没了键盘跟着没")。`BottomSheet.kt` 抽出 `OverlayRequest` 统一路由(有 `SheetHost` 槽位就投窗口根、否则就地渲染)+ `SheetVariant.BOTTOM/CENTER` + `SheetHostScaffold` + `LocalSheetDismissThen`。**7 处平台 `AlertDialog` 全部替换**(MainScreen 启动失败 / PreferenceSettings 语言重启 / ConfigManage 源停用 + 新增订阅 / HistoryPage 删除确认 / SettingsPage 文本编辑 / LiveScreens 密码),**8 个独立 Activity 全包 `SheetHostScaffold`**。
+- **播放器侧保留平台 Dialog、只加窗口内动画**:`PlayerSheets.PlayerDialog` —— `Dialog(usePlatformDefaultWidth = false)` 不动(独立窗口天然屏蔽播放器手势、隔离返回键),内容 0.92→1.0 缩放 + 淡入 220ms,退场先播完再回调;面板内关闭入口一律 `LocalPlayerSheetDismiss`(只关闭)/`LocalPlayerSheetDismissThen`(先播退场 → 执行动作 → 关闭;弹幕设置→搜索用它避免两个窗口重叠);自铺一层遮罩收"点面板外空白"(平台 `dismissOnClickOutside` 在满屏内容下**永不触发** —— `DialogLayout.isInsideContent` 比的是整屏 Box 的实测尺寸);遮罩**变暗**仍是平台窗口 dim(瞬现,Compose 拿不到)。6 个面板(弹幕设置/搜索、字幕设置/搜索、投屏、轨道选择)全部改走该壳。
+- **删除僵尸选集面板**:`player/ui/EpisodeSheet.kt`(右半屏面板 + 左半屏点击关闭)连同 `EpisodeSheetState` / `PlayerUiState.episodeSheet` / `VodControlListener.showEpisodeDialog` / `PlayerActions.onNext|PreLongClicked` 一并移除 —— 它唯一的触发链(长按底栏「上一集/下一集」)在 Compose 化后没有任何 UI 绑定,属僵尸路径(旧的 Paint 测宽 1~4 列自适应逻辑随之退场);播放器不再有选集入口,选集回竖屏详情页选集行。
+- **详情页**:排序按钮图标与文案同向(都表达"点一下会切到什么":`reverseSort=true` → 新增 `ic_episode_order_asc`(向上箭头)+「正序」,否则 `ic_episode_reverse` +「倒序」);选集网格底部 `contentPadding` = `navigationBars` insets + 16dp(面板底色仍铺到屏幕最底,只把收尾行抬起来)。
+- **防御**:`PlayerOverlay.playerTextSize` 对换算结果加 `isFinite()/coerceAtLeast(0f)`(TextUnit/尺寸为负或非有限时下游布局/排版直接抛异常)。
+
+**关键坑(已写进代码注释)**:
+
+- **阻断式弹窗不能走退场动画**:`dismissible = false`(启动失败必须重试/离线二选一)时点遮罩/返回键只调 `onDismissRequest`、不置 `dismissing` —— 否则"播了退场却没人清状态"会让面板隐身留场(`dismissing = true` 还会吞掉后续关闭入口),覆盖层继续吃掉整屏触摸 = 用户卡死;带动作的关闭(重试/离线)必须照常走,否则按钮变死键。
+- **组合销毁兜底分两种**:`plainDismissPending` 只补"点遮罩/返回键"路径的 `onDismissRequest`;带动作的关闭(`after != null`)**绝不能补** —— 它的收尾不是 `onDismissRequest`(语言切换对话框"取消=回滚",补调会把用户刚确认的动作反过来)。播放器侧 `PlayerDialog` 6 处 `onDismiss` 都是"置 null"幂等,才敢统一兜底。
+- **退场 220ms 的自保**:面板还挂着时加一层吃触摸的盖子(旧实现 `onDismiss` 当场摘状态,没有这个窗口),否则连点两个选项触发两次动作;`closing` 兼作防重入,退场期间重复关闭直接吞。
+- **覆盖层内容必须 `fillMaxWidth`**:`AVBoxAlertDialog` 的内容列靠它拿到"面板右侧",按钮的 `align(End)` 才有可对(我们的壳层 Surface 不传 M3 `propagateMinConstraints` 的 280dp 最小约束),否则按钮贴到左边(装机反馈)。
+- **槽位唯一 = 后提交者顶替**:面板里点出确认对话框时(ConfigManage 仓面板 → 停用源确认)必须同步收掉面板状态(`if (pendingSwitch != null) repoSheetOpen = false`),否则对话框关闭后面板会"复活";`SheetHost` 用 `key(req.id)` 重建覆盖层,避免复用上一个请求的 `Animatable/dismissing` 状态被退场动画带走。
+- **就地渲染的隐蔽性**:契约是"有槽位投窗口根,否则就地渲染" —— 就地渲染时 `Box(fillMaxSize)` 会被调用点容器吃掉。装机事故:`PreferenceSettingsActivity` 没提供槽位,其"切换语言"对话框被渲染进设置列表**卡片内部**且没有遮罩 ⇒ 独立 Activity 一律套 `SheetHostScaffold`(新增弹层若写在行内/列表内尤其必须)。
+
+**验证与审查**:
+
+- `:app:compileDebugKotlin` + `:app:compileDebugJavaWithJavac`(Java 侧单跑;本批改到 `PlayContainer.java`/`PlayerControlApi.java`)exit 0;`i18n_gate` 0/0(无文案变更)。
+- 审查(用户"查看 git 历史,未提交的代码是否有错误遗漏和引入新回归"):4 类删除符号全仓 0 残留(详情页同名 `EpisodeSheet` 是另一实体)、平台 `AlertDialog(` 0 残留、player/ui 无绕过退场动画的直接 `onDismiss()`、6 处面板 `onDismiss` 幂等 + 全部对话框确认动作自清状态逐条核对(含 `enableAndSwitch`)、弹层顶替场景仅 ConfigManage 一处且已修、8 个有弹层的 Activity 全已套 host(Play/PreloadSettings 无弹层)⇒ 结论 = 代码层无错误/明确回归。
+- **待真机走查**:① 密码弹窗(LivePlayActivity)/弹幕 API(PreferenceSettings)/新增订阅(ConfigManage)三个 Activity 未声明 `windowSoftInputMode=adjustResize`(仅 MainActivity/Search 有),新覆盖层靠 edge-to-edge 的 IME insets 避让键盘 —— 验证"键盘弹起面板上移、收键盘回位、输入框不被挡";② 播放器面板"点面板外空白关闭"是新增交互(220ms 退场期间不双触发、不穿透);③ 观感差异(非 bug):仓面板→停用源确认时面板被同步清状态、退场动画被绕过;`PlayerDialog` 0.92 vs `AVBoxDialog` 0.90 而注释写"同参数"。
+- 文档:spec 同步更新(文件布局行去掉 `EpisodeSheet.kt`、`PlayerDialog` 归入 `PlayerSheets.kt`、播放器对话框段落改为"保留平台 Dialog + 面板动画"、§6.5 新增"独立 Activity 必须套 `SheetHostScaffold`"规则);本节为过程记录,随审查一并补齐双副本同步。
+
+## 搜索设置面板新增「首页海报」标题(2026-09-22,未 commit)
+
+- **需求(用户,附截图)**:搜索设置 sheet 里「横向展示 / 竖向展示」分段的左上角增加标题「首页海报」,注意多语言。
+- **改动(4 文件)**:`ui/components/SearchSettingsSheet.kt` 的 `headerContent` 里、`CapsuleSegmentedButton` **之前**插入一个 `Text`(`titleMedium` + `onSurface` + `padding(start/end 16dp, top 8dp)`)。`AVBoxBottomSheet` 的标题区顺序是"把手 → headerContent → title",故新标题落在分段正上方且左对齐,字号/颜色与 sheet 的 title(「搜索设置」)同款;`headerContent` 的两个兄弟节点由外层标题区 `Column` 直接纵向排列,无需额外包 `Column`。资源 `search_home_poster` 三层齐备:`values`「首页海报」/ `values-en`「Home posters」/ `values-b+zh+Hant`「首頁海報」;港差异层按"与基础层同值不进差异层"不新增(回落基础层)。
+- **验证**:`:app:compileDebugKotlin -q` exit 0;`i18n_gate` ui 0 / 非 ui 0;`i18n_check_keys` `declared=referenced=425`(424→425,无重名/未用/未声明/同值多 key);`i18n_align` `en` / `b+zh+Hant` / `zh-rHK --subset` 全 `RESULT: PASS`(港层 `REDUNDANT-VS-UPPER=0`);4 个改动文件行尾未混(kt 与 en/Hant 层 CRLF、`values` 层 LF,均保持原样式)。
+- **待真机**:标题与把手/分段的间距观感(8dp)、英文 `Home posters` 是否被截断。
+- **顺手发现(未动)**:`.codebuddy/tools/check_line_endings.py` 的文件清单仍列着已删除的 `player/ui/EpisodeSheet.kt`,直接跑会 `FileNotFoundError` 中断(上一批删文件后未更新脚本)。

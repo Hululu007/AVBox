@@ -13,6 +13,7 @@ import androidx.compose.ui.platform.ComposeView
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.base.BaseActivity
+import com.github.tvbox.osc.ui.components.SheetHostScaffold
 import com.github.tvbox.osc.bean.VodInfo
 import com.github.tvbox.osc.cache.CacheManager
 import com.github.tvbox.osc.cache.RoomDataManger
@@ -111,18 +112,21 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
         player.addOnStateChangeListener(stateListener)
         findViewById<ComposeView>(R.id.compose_view).setContent {
             AVBoxTheme {
-                MusicPlayerScreen(
-                    state = ui,
-                    onBack = { finish() },
-                    onTogglePlay = { togglePlay() },
-                    onPrevious = { host.playPrevious() },
-                    onNext = { host.playNext(false) },
-                    onSeek = { seekTo(it) },
-                    onSelectQueue = { playAt(it, false) },
-                    onCyclePlayMode = { cyclePlayMode() },
-                    onToggleCollect = { toggleCollect() },
-                    onCast = { showCast() },
-                )
+                // 独立 Activity 页面:套窗口根槽位,弹层无论写在哪都能全屏弹出(见 SheetHostScaffold)
+                SheetHostScaffold {
+                    MusicPlayerScreen(
+                        state = ui,
+                        onBack = { finish() },
+                        onTogglePlay = { togglePlay() },
+                        onPrevious = { host.playPrevious() },
+                        onNext = { host.playNext(false) },
+                        onSeek = { seekTo(it) },
+                        onSelectQueue = { playAt(it, false) },
+                        onCyclePlayMode = { cyclePlayMode() },
+                        onToggleCollect = { toggleCollect() },
+                        onCast = { showCast() },
+                    )
+                }
             }
         }
         ui.playMode = MusicPlayMode.of(MusicSettings.playMode())

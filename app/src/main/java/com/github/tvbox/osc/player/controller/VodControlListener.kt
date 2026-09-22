@@ -9,8 +9,6 @@ interface VodControlListener {
 
     fun playPre()
 
-    fun showEpisodeDialog()
-
     fun prepared()
 
     fun changeParse(pb: ParseBean)

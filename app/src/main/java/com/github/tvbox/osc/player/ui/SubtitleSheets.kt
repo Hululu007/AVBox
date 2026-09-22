@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -34,8 +33,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.res.stringResource
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.bean.Subtitle
@@ -69,9 +66,10 @@ fun SubtitleSheet(sheet: SubtitleSheetState, onDismiss: () -> Unit) {
         mutableStateOf(if (d == 0) "0" else (d / 1000.0).toString())
     }
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            SheetPanel(width = playerDim(R.dimen.vs_640)) {
+    PlayerDialog(onDismiss = onDismiss) {
+        val dismiss = LocalPlayerSheetDismiss.current
+        val dismissThen = LocalPlayerSheetDismissThen.current
+        SheetPanel(width = playerDim(R.dimen.vs_640)) {
                 Column(
                     Modifier
                         .align(Alignment.CenterHorizontally)
@@ -80,19 +78,16 @@ fun SubtitleSheet(sheet: SubtitleSheetState, onDismiss: () -> Unit) {
                 ) {
                     if (sheet.hasInternal) {
                         SheetButton(stringResource(R.string.subtitle_builtin), onClick = {
-                            onDismiss()
-                            sheet.onSelectInternal()
+                            dismissThen { sheet.onSelectInternal() }
                         }, modifier = Modifier.fillMaxWidth())
                         Spacer(Modifier.height(playerDim(R.dimen.vs_10)))
                     }
                     SheetButton(stringResource(R.string.subtitle_local), onClick = {
-                        onDismiss()
-                        sheet.onSelectLocal()
+                        dismissThen { sheet.onSelectLocal() }
                     }, modifier = Modifier.fillMaxWidth())
                     Spacer(Modifier.height(playerDim(R.dimen.vs_10)))
                     SheetButton(stringResource(R.string.subtitle_online), onClick = {
-                        onDismiss()
-                        sheet.onSelectRemote()
+                        dismissThen { sheet.onSelectRemote() }
                     }, modifier = Modifier.fillMaxWidth())
                     Spacer(Modifier.height(playerDim(R.dimen.vs_10)))
                     // 字号行:exo 模式百分比 50~200 步 5;外挂字号 12~60 步 2
@@ -156,7 +151,7 @@ fun SubtitleSheet(sheet: SubtitleSheetState, onDismiss: () -> Unit) {
                                 } else {
                                     // 样式一 = 外挂字幕白色
                                     sheet.onSelectStyle(0)
-                                    onDismiss()
+                                    dismiss()
                                     Toast.makeText(context, context.getString(R.string.toast_subtitle_style_ok), Toast.LENGTH_SHORT).show()
                                 }
                             },
@@ -181,7 +176,7 @@ fun SubtitleSheet(sheet: SubtitleSheetState, onDismiss: () -> Unit) {
                                 } else {
                                     // 样式二 = 外挂字幕粉色 #FFB6C1
                                     sheet.onSelectStyle(1)
-                                    onDismiss()
+                                    dismiss()
                                     Toast.makeText(context, context.getString(R.string.toast_subtitle_style_ok), Toast.LENGTH_SHORT).show()
                                 }
                             },
@@ -226,7 +221,6 @@ fun SubtitleSheet(sheet: SubtitleSheetState, onDismiss: () -> Unit) {
                     }
                 }
             }
-        }
     }
 }
 
@@ -334,9 +328,9 @@ fun SubtitleSearchSheet(sheet: SubtitleSearchSheetState, onDismiss: () -> Unit) 
             }
     }
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            SheetPanel(
+    PlayerDialog(onDismiss = onDismiss) {
+        val dismiss = LocalPlayerSheetDismiss.current
+        SheetPanel(
                 width = playerDim(R.dimen.vs_960),
                 modifier = Modifier.height(playerDim(R.dimen.vs_480)),
             ) {
@@ -385,7 +379,7 @@ fun SubtitleSearchSheet(sheet: SubtitleSearchSheetState, onDismiss: () -> Unit) 
                                                     if (subtitle.url != null) sheet.onLoadSubtitle(subtitle)
                                                 }
                                             }
-                                            onDismiss()
+                                            dismiss()
                                         }
                                     },
                                 )
@@ -395,6 +389,5 @@ fun SubtitleSearchSheet(sheet: SubtitleSearchSheetState, onDismiss: () -> Unit) 
                 }
                 Spacer(Modifier.height(playerDim(R.dimen.vs_30)))
             }
-        }
     }
 }

@@ -834,20 +834,8 @@ class ComposeVideoController @JvmOverloads constructor(
         hideBottom()
     }
 
-    override fun onNextLongClicked() {
-        if (!fastClickAllowed("next_long")) return
-        listener?.showEpisodeDialog()
-        hideBottom()
-    }
-
     override fun onPreClicked() {
         listener?.playPre()
-        hideBottom()
-    }
-
-    override fun onPreLongClicked() {
-        if (!fastClickAllowed("pre_long")) return
-        listener?.showEpisodeDialog()
         hideBottom()
     }
 

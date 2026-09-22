@@ -23,7 +23,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -55,8 +54,10 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.tvbox.osc.R
+import com.github.tvbox.osc.ui.components.AVBoxAlertDialog
 import com.github.tvbox.osc.ui.components.AppTopBarScaffold
 import com.github.tvbox.osc.ui.components.AVBoxBottomSheet
+import com.github.tvbox.osc.ui.components.LocalSheetDismissThen
 import com.github.tvbox.osc.ui.components.SettingsCard
 import com.github.tvbox.osc.ui.components.SettingsCardPosition
 import com.github.tvbox.osc.ui.components.SettingsGroup
@@ -479,7 +480,7 @@ fun TextEditDialog(
     onConfirm: (String) -> Unit,
 ) {
     var text by rememberSaveable { mutableStateOf(initialText) }
-    AlertDialog(
+    AVBoxAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
@@ -492,7 +493,10 @@ fun TextEditDialog(
             )
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(text.trim()) }) { Text(stringResource(R.string.common_confirm)) }
+            val dismissThen = LocalSheetDismissThen.current
+            TextButton(onClick = { dismissThen { onConfirm(text.trim()) } }) {
+                Text(stringResource(R.string.common_confirm))
+            }
         },
     )
 }

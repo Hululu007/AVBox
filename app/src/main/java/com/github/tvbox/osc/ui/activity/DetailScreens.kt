@@ -12,10 +12,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -464,7 +467,12 @@ private fun EpisodeRow(
                 modifier = Modifier.weight(1f),
             )
             PillAction(
-                iconRes = R.drawable.ic_episode_reverse,
+                // 图标与文案同向:都表达"点一下会切到什么" —— 正序=向上箭头,倒序=向下箭头
+                iconRes = if (info.reverseSort) {
+                    R.drawable.ic_episode_order_asc
+                } else {
+                    R.drawable.ic_episode_reverse
+                },
                 text = stringResource(if (info.reverseSort) R.string.detail_order_asc else R.string.detail_order_desc),
                 onClick = { vm.toggleReverse() },
             )
@@ -774,7 +782,12 @@ private fun EpisodeSheet(vm: DetailViewModel, revision: Int) {
                     .fillMaxWidth()
                     .weight(1f, fill = false)
                     .heightIn(max = gridHeight),
-                contentPadding = PaddingValues(horizontal = 16.dp),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    end = 16.dp,
+                    // 底部避开手势条/导航栏：面板底色仍铺到屏幕最底(沉浸不变),只把收尾行抬起来
+                    bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 16.dp,
+                ),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {

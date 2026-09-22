@@ -198,6 +198,7 @@
     <string name="music_next">Next</string>
 
     <!-- Search settings sheet -->
+    <string name="search_home_poster">Home posters</string>
     <string name="search_layout_horizontal">Horizontal</string>
     <string name="search_layout_vertical">Vertical</string>
     <string name="search_exact">Exact search</string>

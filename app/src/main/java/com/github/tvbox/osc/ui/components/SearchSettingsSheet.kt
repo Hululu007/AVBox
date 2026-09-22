@@ -81,6 +81,12 @@ fun SearchSettingsSheet(onDismiss: () -> Unit) {
         title = stringResource(R.string.search_settings),
         containerColor = MaterialTheme.colorScheme.surfaceContainer,
         headerContent = {
+            Text(
+                text = stringResource(R.string.search_home_poster),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
+            )
             CapsuleSegmentedButton(
                 options = listOf(
                     SegmentOption(

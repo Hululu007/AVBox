@@ -4,7 +4,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.github.tvbox.osc.bean.Subtitle
-import com.github.tvbox.osc.bean.VodInfo
 import com.github.tvbox.osc.dlna.CastVideo
 import xyz.doikki.videoplayer.player.VideoView
 
@@ -117,8 +116,6 @@ class PlayerUiState {
     var subtitleSearchSheet: SubtitleSearchSheetState? by mutableStateOf(null)
     /** 投屏设备面板 */
     var castSheet: CastSheetState? by mutableStateOf(null)
-    /** 选集面板 */
-    var episodeSheet: EpisodeSheetState? by mutableStateOf(null)
 
     // —— 衍生可见性（照搬 updatePortraitMenu 的逐按钮规则；与方向无关，预览态由菜单行/解析行的 previewMode 守卫） ——
 
@@ -200,14 +197,6 @@ class CastSheetState(
     val onCastSuccess: () -> Unit,
 )
 
-/** 选集面板状态（替代 View 版 EpisodeDialog） */
-class EpisodeSheetState(
-    val title: String,
-    val episodes: List<VodInfo.VodSeries>,
-    val currentIndex: Int,
-    val onSelect: (Int) -> Unit,
-)
-
 /**
  * 控制层意图集（UI → 控制器）。由 ComposeVideoController 实现。
  * 命名与 §5.3 按钮清单一一对应。
@@ -219,9 +208,7 @@ interface PlayerActions {
 
     // 播控按钮（onXxxLongClicked 为遥控器确认键/触摸长按）
     fun onNextClicked()
-    fun onNextLongClicked()
     fun onPreClicked()
-    fun onPreLongClicked()
     /** 播放/暂停切换（底栏「播放」按钮 + 中央控制组中间按钮） */
     fun onPlayPauseClicked()
     fun onRefreshClicked()

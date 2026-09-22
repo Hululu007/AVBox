@@ -6,6 +6,7 @@ import com.github.tvbox.osc.ui.theme.enableTransparentEdgeToEdge
 import androidx.compose.ui.platform.ComposeView
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.base.BaseActivity
+import com.github.tvbox.osc.ui.components.SheetHostScaffold
 import com.github.tvbox.osc.ui.page.ThemeSettingsScreen
 import com.github.tvbox.osc.ui.theme.AVBoxTheme
 
@@ -28,7 +29,10 @@ class ThemeSettingsActivity : BaseActivity() {
         enableTransparentEdgeToEdge()
         findViewById<ComposeView>(R.id.compose_view).setContent {
             AVBoxTheme {
-                ThemeSettingsScreen(onNavigateBack = { finish() })
+                // 独立 Activity 页面:套窗口根槽位,弹层无论写在哪都能全屏弹出(见 SheetHostScaffold)
+                SheetHostScaffold {
+                    ThemeSettingsScreen(onNavigateBack = { finish() })
+                }
             }
         }
     }

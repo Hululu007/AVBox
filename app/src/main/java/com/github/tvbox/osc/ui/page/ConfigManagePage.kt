@@ -32,7 +32,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -60,12 +59,14 @@ import androidx.compose.ui.unit.dp
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.ui.activity.ConfigManageActivity
+import com.github.tvbox.osc.ui.components.AVBoxAlertDialog
 import com.github.tvbox.osc.ui.components.AVBoxBottomSheet
 import com.github.tvbox.osc.ui.components.CapsuleSegmentedButton
 import com.github.tvbox.osc.ui.components.LoadState
 import com.github.tvbox.osc.ui.components.AppTopBarScaffold
 import com.github.tvbox.osc.ui.components.LoadStateBox
 import com.github.tvbox.osc.ui.components.LocalSheetDismiss
+import com.github.tvbox.osc.ui.components.LocalSheetDismissThen
 import com.github.tvbox.osc.ui.components.SegmentOption
 import com.github.tvbox.osc.ui.components.SegmentStyle
 import com.github.tvbox.osc.ui.components.SettingsCard
@@ -663,17 +664,21 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
 
     val pending = pendingSwitch
     if (pending != null) {
-        AlertDialog(
+        AVBoxAlertDialog(
             onDismissRequest = { pendingSwitch = null },
             title = { Text(stringResource(R.string.dialog_source_disabled_title)) },
             text = {
                 Text(stringResource(R.string.dialog_source_disabled_message, pending.item.name))
             },
             confirmButton = {
-                TextButton(onClick = { enableAndSwitch() }) { Text(stringResource(R.string.dialog_source_disabled_confirm)) }
+                val dismissThen = LocalSheetDismissThen.current
+                TextButton(onClick = { dismissThen { enableAndSwitch() } }) {
+                    Text(stringResource(R.string.dialog_source_disabled_confirm))
+                }
             },
             dismissButton = {
-                TextButton(onClick = { pendingSwitch = null }) { Text(stringResource(R.string.common_cancel)) }
+                val dismissAnimated = LocalSheetDismiss.current
+                TextButton(onClick = { dismissAnimated() }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }
@@ -691,6 +696,9 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
                 // 与在订阅列表里点同一条源等价 —— switchToVod 里已经处理了"是否落在仓里"的仓列表保留判定,
                 // 所以换完仓后入口仍在。统一走 requestSwitch:仓里藏着的坏子源同样要过二次确认
                 requestSwitch(SubscribeSource(name, url), isVod)
+                // 命中"源已停用"时 requestSwitch 会立刻弹确认对话框,而覆盖层槽位只有一个(面板会被顶掉)。
+                // 这里同步收掉面板状态:否则面板的可见性标志还是 true,对话框关掉后它会被重新提交而"复活"。
+                if (pendingSwitch != null) repoSheetOpen = false
             },
         )
     }
@@ -896,7 +904,7 @@ private fun AddSubscribeDialog(
             )
         }
     }
-    AlertDialog(
+    AVBoxAlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Row(
@@ -944,8 +952,9 @@ private fun AddSubscribeDialog(
             }
         },
         confirmButton = {
+            val dismissThen = LocalSheetDismissThen.current
             TextButton(
-                onClick = { onSave(name.trim(), url.trim()) },
+                onClick = { dismissThen { onSave(name.trim(), url.trim()) } },
                 enabled = url.isNotBlank(),
             ) { Text(stringResource(R.string.common_save)) }
         },

@@ -36,7 +36,6 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.Icon
@@ -73,10 +72,12 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.bean.LiveChannelGroup
 import com.github.tvbox.osc.bean.LiveChannelItem
+import com.github.tvbox.osc.ui.components.AVBoxAlertDialog
 import com.github.tvbox.osc.ui.components.AVBoxBottomSheet
 import com.github.tvbox.osc.ui.components.LoadStateBox
 import com.github.tvbox.osc.ui.components.LoadState
 import com.github.tvbox.osc.ui.components.LocalSheetDismiss
+import com.github.tvbox.osc.ui.components.LocalSheetDismissThen
 import com.github.tvbox.osc.ui.components.SettingsCard
 import com.github.tvbox.osc.ui.components.SettingsCardPosition
 import com.github.tvbox.osc.ui.components.SettingsGroup
@@ -134,10 +135,11 @@ private fun LivePasswordDialog(
     onDismiss: () -> Unit,
 ) {
     var password by remember { mutableStateOf("") }
-    AlertDialog(
+    AVBoxAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.live_password_title)) },
         text = {
+            val dismissThen = LocalSheetDismissThen.current
             OutlinedTextField(
                 value = password,
                 onValueChange = { password = it },
@@ -149,18 +151,22 @@ private fun LivePasswordDialog(
                     imeAction = ImeAction.Done,
                 ),
                 keyboardActions = KeyboardActions(
-                    onDone = { if (password.isNotBlank()) onConfirm(password.trim()) },
+                    onDone = {
+                        if (password.isNotBlank()) dismissThen { onConfirm(password.trim()) }
+                    },
                 ),
             )
         },
         confirmButton = {
+            val dismissThen = LocalSheetDismissThen.current
             TextButton(
                 enabled = password.isNotBlank(),
-                onClick = { onConfirm(password.trim()) },
+                onClick = { dismissThen { onConfirm(password.trim()) } },
             ) { Text(stringResource(R.string.common_confirm)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+            val dismissAnimated = LocalSheetDismiss.current
+            TextButton(onClick = { dismissAnimated() }) { Text(stringResource(R.string.common_cancel)) }
         },
     )
 }

@@ -29,7 +29,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -68,6 +67,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.server.ControlManager
 import com.github.tvbox.osc.ui.activity.LivePlayActivity
+import com.github.tvbox.osc.ui.components.AVBoxAlertDialog
+import com.github.tvbox.osc.ui.components.LocalSheetDismissThen
 import com.github.tvbox.osc.ui.components.LocalSheetHost
 import com.github.tvbox.osc.ui.components.SheetHost
 import com.github.tvbox.osc.ui.components.SheetHostState
@@ -106,15 +107,24 @@ fun MainScreen() {
 
 @Composable
 private fun BootErrorDialog(msg: String) {
-    AlertDialog(
+    AVBoxAlertDialog(
         onDismissRequest = {},
+        // 启动失败必须重试/离线二选一,不允许点空白关掉(旧平台 Dialog 传空 onDismissRequest 就是这个效果;
+        // 改成弹层后若走退场动画而不清状态,面板会隐身留场并把整屏触摸吃掉)
+        dismissible = false,
         title = { Text(stringResource(R.string.config_load_failed)) },
         text = { Text(msg) },
         confirmButton = {
-            TextButton(onClick = { AppBootstrap.retry() }) { Text(stringResource(R.string.common_retry)) }
+            val dismissThen = LocalSheetDismissThen.current
+            TextButton(onClick = { dismissThen { AppBootstrap.retry() } }) {
+                Text(stringResource(R.string.common_retry))
+            }
         },
         dismissButton = {
-            TextButton(onClick = { AppBootstrap.continueOffline() }) { Text(stringResource(R.string.common_cancel)) }
+            val dismissThen = LocalSheetDismissThen.current
+            TextButton(onClick = { dismissThen { AppBootstrap.continueOffline() } }) {
+                Text(stringResource(R.string.common_cancel))
+            }
         },
     )
 }

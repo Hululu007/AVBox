@@ -47,7 +47,6 @@ import com.github.tvbox.osc.player.danmu.DanmuLoadController;
 import com.github.tvbox.osc.player.state.CastSheetState;
 import com.github.tvbox.osc.player.state.DanmuSearchSheetState;
 import com.github.tvbox.osc.player.state.DanmuSettingSheetState;
-import com.github.tvbox.osc.player.state.EpisodeSheetState;
 import com.github.tvbox.osc.player.state.PlayerUiState;
 import com.github.tvbox.osc.player.state.SelectDialogState;
 import com.github.tvbox.osc.player.state.SubtitleSearchSheetState;
@@ -605,11 +604,6 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
             @Override
             public void playPre() {
                 PlayContainer.this.playPrevious();
-            }
-
-            @Override
-            public void showEpisodeDialog() {
-                PlayContainer.this.showEpisodeDialog();
             }
 
             @Override
@@ -1499,26 +1493,6 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
         playViaScheduler(false);
     }
 
-    private void showEpisodeDialog() {
-        if (!isAttached() || scheduler.vod() == null || scheduler.vod().seriesMap == null || TextUtils.isEmpty(scheduler.vod().playFlag)) return;
-        List<VodInfo.VodSeries> episodes = scheduler.vod().seriesMap.get(scheduler.vod().playFlag);
-        if (episodes == null || episodes.isEmpty()) return;
-        String title = TextUtils.isEmpty(scheduler.vod().name)
-                ? mContext.getString(R.string.detail_episodes)
-                : mContext.getString(R.string.detail_episodes_of, scheduler.vod().name);
-        mController.getUiState().setEpisodeSheet(new EpisodeSheetState(
-                title,
-                episodes,
-                scheduler.vod().playIndex,
-                position -> {
-                    if (position < 0 || position >= episodes.size() || position == scheduler.vod().playIndex) return kotlin.Unit.INSTANCE;
-                    scheduler.clearTriedLines();
-                    scheduler.vod().playIndex = position;
-                    scheduler.setReusePlayerOnSwitch(true);
-                    playViaScheduler(false);
-                    return kotlin.Unit.INSTANCE;
-                }));
-    }
     public void setPlayTitle(boolean show) {
         if (!show) {
             mController.setTitle("");

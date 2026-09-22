@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -25,7 +24,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.event.RefreshEvent
+import com.github.tvbox.osc.ui.components.AVBoxAlertDialog
 import com.github.tvbox.osc.ui.components.AppTopBarScaffold
+import com.github.tvbox.osc.ui.components.LocalSheetDismiss
+import com.github.tvbox.osc.ui.components.LocalSheetDismissThen
 import com.github.tvbox.osc.ui.components.SettingsCard
 import com.github.tvbox.osc.ui.components.SettingsCardPosition
 import com.github.tvbox.osc.ui.components.SettingsGroup
@@ -241,16 +243,22 @@ private fun LanguageRow() {
         pending = null
     }
     pending?.let {
-        AlertDialog(
+        AVBoxAlertDialog(
             onDismissRequest = cancel,
             text = { Text(stringResource(R.string.settings_language_restart_message)) },
             dismissButton = {
-                TextButton(onClick = cancel) { Text(stringResource(R.string.common_cancel)) }
+                val dismissAnimated = LocalSheetDismiss.current
+                TextButton(onClick = { dismissAnimated() }) { Text(stringResource(R.string.common_cancel)) }
             },
             confirmButton = {
+                // 确认走"先播退场动画再执行动作":动作(pending 清空 + 置重启中)与取消(回滚语言)收尾不同,
+                // 所以这里不能复用 onDismissRequest
+                val dismissThen = LocalSheetDismissThen.current
                 TextButton(onClick = {
-                    pending = null
-                    restarting = true
+                    dismissThen {
+                        pending = null
+                        restarting = true
+                    }
                 }) { Text(stringResource(R.string.common_confirm)) }
             },
         )

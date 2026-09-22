@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.base.BaseActivity
+import com.github.tvbox.osc.ui.components.SheetHostScaffold
 import com.github.tvbox.osc.bean.Movie
 import com.github.tvbox.osc.bean.MovieSort
 import com.github.tvbox.osc.ui.components.FilterSheet
@@ -114,12 +115,15 @@ class PartitionListActivity : BaseActivity() {
         enableTransparentEdgeToEdge()
         findViewById<ComposeView>(R.id.compose_view).setContent {
             AVBoxTheme {
-                PartitionListScreen(
-                    mode = intent.getStringExtra(EXTRA_MODE) ?: MODE_PARTITION,
-                    title = intent.getStringExtra(EXTRA_TITLE) ?: "",
-                    sortJson = intent.getStringExtra(EXTRA_SORT),
-                    videosJson = intent.getStringExtra(EXTRA_VIDEOS),
-                )
+                // 独立 Activity 页面:套窗口根槽位,弹层无论写在哪都能全屏弹出(见 SheetHostScaffold)
+                SheetHostScaffold {
+                    PartitionListScreen(
+                        mode = intent.getStringExtra(EXTRA_MODE) ?: MODE_PARTITION,
+                        title = intent.getStringExtra(EXTRA_TITLE) ?: "",
+                        sortJson = intent.getStringExtra(EXTRA_SORT),
+                        videosJson = intent.getStringExtra(EXTRA_VIDEOS),
+                    )
+                }
             }
         }
     }
