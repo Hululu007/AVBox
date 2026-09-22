@@ -1242,7 +1242,7 @@ public class PlaybackController {
 
     /** 取流结果没带弹幕地址时联网搜一份(与进度键绑定:切集后旧结果作废) */
     private void searchDanmu(String danmaku) {
-        if (!TextUtils.isEmpty(danmaku) || !DanmakuApi.canSearch() || vod() == null) return;
+        if (!TextUtils.isEmpty(danmaku) || !DanmakuApi.canSearch(sourceBean()) || vod() == null) return;
         VodInfo.VodSeries series = currentSeries(vod().playFlag, vod().playIndex);
         String key = progressKey();
         DanmakuApi.search(vod().name, series == null ? "" : series.name, new DanmakuApi.SearchCallback() {

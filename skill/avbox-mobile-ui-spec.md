@@ -395,6 +395,19 @@
 - ⚠️ **不要在会话中重解析配置**:`parseJson` 第一行 `resetConfigData() → clearSpiderCache() → jarLoader.clear()`,会销毁所有 spider 与 DexClassLoader,而**重装 jar 只发生在 `AppBootstrap`**(`getCSP` 在 loader 为空时只返回 `SpiderNull`)⇒ 中途重解析 = 所有 spider 源失效到下次启动;要热刷新必须走 `AppBootstrap.retry()` 全套。
 - ⚠️ **不能"预装上一次的 jar"来做并行**:`JarLoader.load(MAIN_KEY, …)` 开头 `if (loaders.containsKey(key)) return true` ⇒ 预装的是旧 URL 的 jar 时,真实配置到达后会**静默沿用旧 jar**(爬虫全错);且预装本身会被上面那次 clear 清掉 —— 两头都白做。
 
+### 6.12 订阅源配置与站点字段(2026-09-23 补,均由静态审查/回归得出)
+
+对照基线:fongmi/影视TV 5.6.3(`示例文件/TV-fongmi`,只读)。本项目是 TVBox 血统,站点字段覆盖面历来与 fongmi 不同(有的更宽、有的更窄),**改动配置解析前先读本节**。
+
+- ⚠️ **规则表清理时机**:`VideoParseRuler.clearRule()` 只能在 `parseJson` 入口无条件调。放进 `resetConfigData()` 会在**换源之前**清空,换源失败(走 `callback.error`,不进 `parseJson`)时规则真空 → 在播内容广告回归、click 脚本失效;只在 `has("rules")` 时清则会让上一条配置的规则/正则/脚本**跨源残留**(残留 rule 会把非视频误判为视频,危害大于 exclude)。
+- ⚠️ **hosts 是点播/直播两份**:`ApiConfig` 的 `vodHosts`/`liveHosts` 分开存,`getMyHost()` 返回**合并视图(点播优先)**;`OkGoHelper.refreshHosts()` 是唯一刷新出口(`CustomDns.lookup` 只认 `OkGoHelper.myHosts` 快照,写完 hosts 不刷新就永远不生效)。跟随态下 `liveHosts` 只是点播 hosts 的副本,`resetConfigData()` 要按 `isLiveFollowVod()` 一并清;独立直播源被换掉/切回跟随的入口(`clearLiveConfig`、`switchLiveApiCollectionIfNeeded`、`ConfigManagePage.applyLiveSource`/`applyLiveFollowVod`、`LivePlayViewModel` 的配置切换)必须调 `clearLiveHosts()` —— **不能**塞进 `invalidateLiveConfig()`,它也被点播侧调用,会误伤"点播变更时保留独立直播映射"的语义。
+- ⚠️ **所有配置/标记来源的 header 都必须过 `util/HeaderGuard`**(口径 = 名 0x21-0x7e、值 tab+0x20-0x7e):OkHttp 在**构造请求时**才校验,越界抛 `IllegalArgumentException`,而站点请求分支**都没有 try/catch** ⇒ 一份带中文 header 的配置等于"该源把 App 带崩"。已接入 5 类来源共 7 处:`sites[].header`(`ConfigParser.parseHeaderObject`,单测 `parseSites_dropsIllegalHeaders` 锁定)、`lives[].header` 与 `channels[].header`(`ApiConfig`)、`parseBean.ext` 的两种解析分支(`PlayUrlResolver`)、`parses[].ext` 的聚合解析分支(`util/parser/JsonParallel.getReqHeader`)、`push://` 的 `@Headers=` 标记头(`SourceViewModel.parseMarkedHeaders`)。单测 `ConfigParserTest.parseSites_dropsIllegalHeaders` 与 `HeaderGuardTest` 锁定口径。**新增任何"从配置/标记取 header 塞进请求"的入口都要先过它**。同一原因,表单 POST 分支要跳过 `content-type`/`content-length`/`host`,否则会覆盖 FormBody 的表单类型。
+- **`sites[].header` 的唯一入口**:type 0/1/4 的 11 处站点请求走 `SourceViewModel.siteGet()`(OkGo 只能用 `headers(k,v)` 逐个加,`headers(Map)` 那个重载要的是 `HttpHeaders`);`extend` 超长时改走表单 POST 的分支走 `RemoteTVBox.post` 的带 header 重载。type 3 spider 的请求走 jar 内自有网络栈,**结构上注入不进去**(fongmi 官方文档同样标注 type 3 不套用)。
+- ⚠️ **播放结果合并站点 header 必须先归一化**:`SourceViewModel.mergeSiteHeaders` 必须先用 `PlayerHelper.extractPlayHeaders(result)` 取出已有的头(该方法**兼容 `header`/`headers` 的对象与 JSON 文本两种形态**),再"只补缺键",最后统一写 `header` 并 `remove("headers")`。直接 `optJSONObject("header")` 对文本形态返回 null ⇒ 会把源自带的 Referer/UA/token **整块覆盖**。调用点 4 处:type 3 / type 0-1 / type 4 / 直连播放。
+- **`sites[].hide` 只作用于源切换列表**(`getSwitchSourceBeanList()`,当前首页源例外,否则列表没有高亮项)+ 首页兜底源 `firstVisibleSite()` 跳过 hide;**搜索页/搜索设置/详情快速搜索池一律不过滤**(与 fongmi 一致:fongmi 的 `isHide()` 只用在站点列表 adapter;加了过滤会让"已选源被新配置标 hide"触发选择过期重置)。⚠️ 由此**"首页源 == 站点列表第 0 项"不再是真理**:任何按列表下标 0 判首页源的地方都要改用 `getHomeSourceBean()` 的 key(`SourceViewModel.isHomeSource` 就是这条)。
+- **`sites[].indexs` / `sites[].danmaku`**:`indexs` 走 `SourceBean.isIndexSource()` 决定卡片路由(索引型源跳搜索而不是开详情)——配置缓存文件的二次读实现(`SourceIndexFlags`)已删,**不要再引入**;`danmaku:0` 只拦**自动搜弹幕**(`DanmakuApi.canSearch(SourceBean)` 的唯一调用方是 `PlaybackController.searchDanmu`),手动搜索与 spider 自带弹幕不受影响。
+- **`lives[].type` 未知取值保持"拒载"**(上游 TVBox 同款;fongmi 的 `Live` 根本没有 type 字段),但拒载必须走 `resetLiveKvOnUnsupportedLine()` 复位 `EPG_URL`/`LIVE_PLAY_TYPE`/`LIVE_WEB_HEADER`,否则会沿用上一条线路的值(串味);**不要**把它"容错成 0"——未知语义会被解析成一份错误但非空的频道表。
+
 ## 7. 未决 / 待细化清单
 
 - ~~详情/播放页视觉细化(选集行样式、换源交互)~~(Step 4 已确认并实施,记录见 `history/steps.md`;遗留:预览态加载期无海报占位,旧 ivThumb 缩略图未迁移)
@@ -410,6 +423,11 @@
 - **列表-详情双栏(大屏 Expanded 档)**:2026-09-21 决定本次不做。届时的前置决策 = `DetailActivity` 与主壳的关系(倾向 `ActivityEmbedding`,而非引入 §2 已明确排除的 navigation-compose);另需重审 `PlayContainer` 的挂摘协议(§6.1)在分屏/双栏下的生命周期。
 - **AutoSize 去留**:目前仅播放器覆盖层依赖 mm 档。若将来播放器覆盖层也改用 dp,则 AutoSize 可从 `BaseActivity.getResources()` 摘除。属独立决策,不在 §4.11 范围内。
 - ~~大屏自适应 / 侧边 Rail~~(2026-09-21 定稿:**阶段一/二均已实施**,平板侧真机行为待验;范围与判据见 §4.11、玻璃标定见 §5、坑见 §6.10)
+- **解析/嗅探链路的取流结果不带站点 header(2026-09-23)**:`sites[].header` 目前覆盖"type 0/1/4 接口请求 + 播放结果兜底"两处;fongmi 还会经 `SiteApi` → `ParseJob` → `Parse.ext.header` 把它传播进解析/嗅探请求 ⇒ 需要 Referer/Cookie 才取得到的源,在"带解析"的播放路径上仍可能 403。补的话要动 `PlayUrlResolver.prepareJson`/`jsonParse`,属播放核心链路,须单独评估。
+- ~~其它配置驱动的 header 未做字符集过滤~~(2026-09-23 已解决:抽成 `util/HeaderGuard` 并接入 `lives[].header`/`channels[].header`/`parseBean.ext` 两个分支/`push://` 标记头共 6 处,见 §6.12)
+- **`mergePushHeaders` 有同款"字符串形态被覆盖"缺陷(既有)**:它同样 `optJSONObject("header")` 后新建对象写回,会把 push 结果的**文本形态** header 覆盖掉;修它需要先定"push 头 vs 源自带头"的优先级语义,未定前不动。
+- **嗅探/代理观测到的头未过滤(2026-09-23 记录,低)**:`PlayUrlResolver` 把 WebView 实际请求头与 Cookie 收进 `loadFoundVideoUrlsHeader`,最终可能进 M3U8 净化的 OkGo 请求;这些头来自真实网络(非配置),正常不含非法字符,但理论上仍可让 `Headers.of` 抛 `IllegalArgumentException`。要闭环应在 `M3u8PurifyUseCase` 的出口兜一层 `HeaderGuard`。
+- **`sites[].header` 的播放兜底是"只补缺键"而非 fongmi 的"整块为空才兜底"**:结果自带任意一个头时仍会补齐站点声明的其余键(对"源只回了 UA、Referer 缺"的场景更实用)。若要严格对齐 fongmi 需改 `mergeSiteHeaders` 的判据,属口味问题。
 
 ## 8. 历史归档索引(`history/`,按需检索)
 

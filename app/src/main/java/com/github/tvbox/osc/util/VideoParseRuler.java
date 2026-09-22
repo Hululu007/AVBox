@@ -15,12 +15,14 @@ public class VideoParseRuler {
     private static final HashMap<String, ArrayList<ArrayList<String>>> HOSTS_FILTER = new HashMap<>();
     private static final HashMap<String, ArrayList<String>> HOSTS_REGEX = new HashMap<>();
     private static final HashMap<String, ArrayList<String>> HOSTS_SCRIPT = new HashMap<>();
+    private static final HashMap<String, ArrayList<String>> HOSTS_EXCLUDE = new HashMap<>();
 
     public static void clearRule() {
         HOSTS_RULE.clear();
         HOSTS_FILTER.clear();
         HOSTS_REGEX.clear();
         HOSTS_SCRIPT.clear();
+        HOSTS_EXCLUDE.clear();
     }
 
     public static void addHostRule(String host, ArrayList<String> rule) {
@@ -69,6 +71,10 @@ public class VideoParseRuler {
 
     public static boolean checkIsVideoForParse(String webUrl, String url) {
         try {
+            // exclude 是否决项,优先级高于 rules 与内置嗅探正则(与 fongmi Sniffer 同序)
+            if (isExcluded(webUrl, url)) {
+                return false;
+            }
             boolean isVideo = DefaultConfig.isVideoFormat(url);
             if (!HOSTS_RULE.isEmpty() && !isVideo && webUrl != null) {
                 Uri uri = Uri.parse(webUrl);
@@ -183,5 +189,37 @@ public class VideoParseRuler {
             }
         }
         return "";
+    }
+
+    public static void addHostExclude(String host, ArrayList<String> exclude) {
+        if (exclude == null || exclude.isEmpty()) return;
+        ArrayList<String> temp = HOSTS_EXCLUDE.get(host);
+        if (temp == null) temp = new ArrayList<>();
+        temp.addAll(exclude);
+        HOSTS_EXCLUDE.put(host, temp);
+    }
+
+    public static ArrayList<String> getHostExcludes(String host) {
+        return HOSTS_EXCLUDE.get(host);
+    }
+
+    /** 命中任一排除条件即判为非视频;host 精确命中优先,否则退 "*" 兜底(与 HOSTS_RULE 一致) */
+    private static boolean isExcluded(String webUrl, String url) {
+        if (HOSTS_EXCLUDE.isEmpty() || webUrl == null) return false;
+        Uri uri = Uri.parse(webUrl);
+        ArrayList<String> excludes = getHostExcludes(uri.getHost());
+        if (excludes == null) excludes = getHostExcludes("*");
+        if (excludes == null) return false;
+        for (String exclude : excludes) {
+            if (exclude == null || exclude.isEmpty()) continue;
+            if (url.contains(exclude)) return true;
+            // 单条正则写坏只作废这一条,不能让整个嗅探判定抛出去退化成"所有视频都不解析"
+            try {
+                if (getPattern(exclude).matcher(url).find()) return true;
+            } catch (Throwable th) {
+                LOG.i("echo-EXCLUDE bad pattern:" + exclude);
+            }
+        }
+        return false;
     }
 }

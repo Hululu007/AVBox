@@ -1,6 +1,8 @@
 package com.github.tvbox.osc.bean;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Map;
 
 public class SourceBean {
     private String key;
@@ -20,6 +22,10 @@ public class SourceBean {
     private String clickSelector; // 需要点击播放的嗅探站点selector   ddrk.me;#id
     private String style; // 展示风格
     private String icon; // 站点头像/logo
+    private int hide; // 1=从站点切换列表隐藏
+    private int indexs; // 1=索引型源:卡片只是关键词入口,只走搜索不进详情
+    private int danmaku = 1; // 0=本站不通过全局弹幕 API 自动搜弹幕
+    private Map<String, String> header; // 站点级请求头(type 0/1/4 的接口请求会带,并作为播放请求头的兜底)
 
     private String safeString(String value) {
         return value == null ? "" : value;
@@ -145,4 +151,23 @@ public class SourceBean {
     public String getIcon() { return safeString(icon); }
 
     public void setIcon(String icon) { this.icon = safeString(icon); }
+
+    /** 未配置时返回只读空表:调用方不必判空,但不要修改返回值 */
+    public Map<String, String> getHeader() {
+        return header == null ? Collections.emptyMap() : header;
+    }
+
+    public void setHeader(Map<String, String> header) { this.header = header; }
+
+    public boolean isHidden() { return hide == 1; }
+
+    public void setHide(int hide) { this.hide = hide; }
+
+    public boolean isIndexSource() { return indexs == 1; }
+
+    public void setIndexs(int indexs) { this.indexs = indexs; }
+
+    public boolean isDanmakuEnabled() { return danmaku != 0; }
+
+    public void setDanmaku(int danmaku) { this.danmaku = danmaku; }
 }

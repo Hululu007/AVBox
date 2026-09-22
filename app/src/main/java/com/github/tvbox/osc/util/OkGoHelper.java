@@ -108,12 +108,14 @@ public class OkGoHelper {
         ExoMediaSourceHelper.getInstance(App.getInstance()).setOkClient(ItvClient);
     }
 
-    public static DnsOverHttps dnsOverHttps = null;
+    // DNS 解析在 OkHttp 线程读,init/reloadDns 在主线程写
+    public static volatile DnsOverHttps dnsOverHttps = null;
 
     public static ArrayList<String> dnsHttpsList = new ArrayList<>();
 
     public static boolean is_doh = false;
-    public static Map<String, String> myHosts = null;
+    // 配置解析可能在 IO 线程写、DNS 解析在 OkHttp 线程读,需 volatile 保证可见性
+    public static volatile Map<String, String> myHosts = null;
 
     /**
      * 合并后的 DoH 配置数组(**唯一数据源**,2026-09-12 用户定稿):
@@ -180,6 +182,11 @@ public class OkGoHelper {
             dnsHttpsList.add(name);
         }
         if(KV.get(HawkConfig.DOH_URL, 0)+1>dnsHttpsList.size())KV.put(HawkConfig.DOH_URL, 0);
+        refreshHosts();
+    }
+
+    /** 刷新 hosts 快照:CustomDns.lookup 只在 myHosts 为 null(首次刷新前)时才回落读 ApiConfig,写完必须显式刷新 */
+    public static void refreshHosts() {
         myHosts = ApiConfig.get().getMyHost();
     }
 

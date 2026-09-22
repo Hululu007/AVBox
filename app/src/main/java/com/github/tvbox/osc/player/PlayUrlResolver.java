@@ -32,6 +32,7 @@ import com.github.tvbox.osc.bean.ParseBean;
 import com.github.tvbox.osc.bean.SourceBean;
 import com.github.tvbox.osc.util.AdBlocker;
 import com.github.tvbox.osc.util.DefaultConfig;
+import com.github.tvbox.osc.util.HeaderGuard;
 import com.github.tvbox.osc.util.LOG;
 import com.github.tvbox.osc.util.LanguageManager;
 import com.github.tvbox.osc.util.VideoParseRuler;
@@ -282,10 +283,16 @@ final class PlayUrlResolver {
                     HashMap<String, String> headerMap = PlaybackController.extractHeaders(jsonObject);
                     if (headerMap != null) {
                         for (String key : headerMap.keySet()) {
+                            String value = headerMap.get(key);
+                            // 解析器的 ext 头来自配置,非法字符会让 okhttp 构造请求时抛异常
+                            if (!HeaderGuard.isSendable(key, value)) {
+                                LOG.i("echo-ext-header-skip:" + key);
+                                continue;
+                            }
                             if (key.equalsIgnoreCase("user-agent")) {
-                                host.setWebUserAgent(headerMap.get(key).trim());
+                                host.setWebUserAgent(value.trim());
                             } else {
-                                reqHeaders.put(key, headerMap.get(key));
+                                reqHeaders.put(key, value);
                             }
                         }
                         if (reqHeaders.size() > 0) host.setWebHeaderMap(reqHeaders);
@@ -303,6 +310,10 @@ final class PlayUrlResolver {
                 HashMap<String, String> headerMap = PlaybackController.extractHeaders(jsonObject);
                 if (headerMap != null) {
                     for (String key : headerMap.keySet()) {
+                        if (!HeaderGuard.isSendable(key, headerMap.get(key))) {
+                            LOG.i("echo-ext-header-skip:" + key);
+                            continue;
+                        }
                         reqHeaders.put(key, headerMap.get(key));
                     }
                 }

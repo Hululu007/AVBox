@@ -3,9 +3,9 @@ package com.github.tvbox.osc.ui.page
 import android.content.Context
 import android.widget.Toast
 import com.github.tvbox.osc.R
+import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.bean.Movie
 import com.github.tvbox.osc.ui.activity.PartitionListActivity
-import com.github.tvbox.osc.util.SourceIndexFlags
 
 sealed interface VodCardTarget {
     data class Action(val video: Movie.Video) : VodCardTarget
@@ -23,7 +23,7 @@ sealed interface VodCardTarget {
  */
 private fun isSearchOnlySource(sourceKey: String?): Boolean {
     if (sourceKey.isNullOrEmpty()) return true
-    return SourceIndexFlags.isIndexSource(sourceKey)
+    return ApiConfig.get().getSource(sourceKey)?.isIndexSource == true
 }
 
 internal fun Movie.Video.isFolderCard(): Boolean = tag == "folder"

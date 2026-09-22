@@ -30,6 +30,7 @@ import com.github.tvbox.osc.util.BootGuard;
 import com.github.tvbox.osc.util.DefaultConfig;
 import com.github.tvbox.osc.util.FileUtils;
 import com.github.tvbox.osc.util.HawkConfig;
+import com.github.tvbox.osc.util.HeaderGuard;
 import com.github.tvbox.osc.util.HistoryHelper;
 import com.github.tvbox.osc.util.LOG;
 import com.github.tvbox.osc.util.LanguageManager;
@@ -78,12 +79,16 @@ public class ApiConfig {
     // 无 volatile 时其他线程可能读到未完全初始化的实例
     private static volatile ApiConfig instance;
     private final LinkedHashMap<String, SourceBean> sourceBeanList;
-    private SourceBean mHomeSource;
+    // 排序/缓存判定会在后台线程读,配置加载线程写
+    private volatile SourceBean mHomeSource;
     private ParseBean mDefaultParse;
     private final List<LiveChannelGroup> liveChannelGroupList;
     private final List<ParseBean> parseBeanList;
     private List<String> vipParseFlags;
-    private Map<String,String> myHosts;
+    // 点播/直播两套 hosts 分开存:合并视图见 getMyHost,避免直播配置把点播的覆盖掉。
+    // volatile:DNS 解析在 OkHttp 线程读,配置解析在主线程写
+    private volatile Map<String,String> vodHosts;
+    private volatile Map<String,String> liveHosts;
     private List<IJKCode> ijkCodes;
     private String currentPlaySourceKey = "";
     private String loadedLiveConfigUrl = "";
@@ -599,6 +604,8 @@ public class ApiConfig {
         HistoryHelper.setLiveApiHistory(apiUrl);
         loadedLiveConfigUrl = "";
         clearLiveConfigResult();
+        // 换子源后旧子源的 hosts 映射要立刻失效,不能等这次加载成功(失败则残留到下次)
+        clearLiveHosts();
         ApiLineSignal.INSTANCE.notifyChanged();
         return true;
     }
@@ -629,6 +636,11 @@ public class ApiConfig {
         parseBeanList.clear();
         searchSourceBeanList = new ArrayList<>();
         KV.put(HawkConfig.LIVE_GROUP_LIST,new JsonArray());
+        // 只清点播那份 hosts:独立直播源的映射由直播配置自己维护
+        vodHosts = null;
+        // 跟随态下 liveHosts 就是点播 hosts 的副本,一并清掉才不会让被删源的映射继续生效
+        if (isLiveFollowVod()) liveHosts = null;
+        OkGoHelper.refreshHosts();
     }
 
     /**
@@ -667,7 +679,14 @@ public class ApiConfig {
         KV.put(HawkConfig.LIVE_API_URL, "");
         // 仓列表跟着被清掉的直播源一起作废(2026-09-21):留着会在「配置切换」里列出已失效的子源
         HistoryHelper.clearLiveApiLineList();
+        clearLiveHosts();
         invalidateLiveConfig();
+    }
+
+    /** 直播源被换掉/切回跟随时清直播侧 hosts:否则旧源的 DNS 映射会一直生效到下次加载成功 */
+    public void clearLiveHosts() {
+        liveHosts = null;
+        OkGoHelper.refreshHosts();
     }
 
     /**
@@ -704,6 +723,8 @@ public class ApiConfig {
 
     private void parseJson(String apiUrl, String jsonStr) {
         resetConfigData();
+        // 规则表等新配置到手再清:换源失败时旧规则要留给仍在播的旧源,清早了会让广告回归/click 失效
+        VideoParseRuler.clearRule();
         LOG.i("echo-apiurl:" + apiUrl);
         JsonObject infoJson = gson.fromJson(jsonStr, JsonObject.class);
         // 配置级头像(2026-09-10):接口 JSON 顶层 "logo",胶囊头像的兜底来源(站点级 icon 优先)
@@ -717,7 +738,7 @@ public class ApiConfig {
         for (SourceBean sb : sites) {
             sourceBeanList.put(sb.getKey(), sb);
         }
-        SourceBean firstSite = sites.isEmpty() ? null : sites.get(0);
+        SourceBean firstSite = firstVisibleSite(sites);
         if (sourceBeanList != null && sourceBeanList.size() > 0) {
             String home = KV.get(HawkConfig.HOME_API, "");
             SourceBean sh = getSource(home);
@@ -781,10 +802,9 @@ public class ApiConfig {
             }
         }
 
-        myHosts = new HashMap<>();
-        if (infoJson.has("hosts")) {
-            myHosts = ConfigParser.parseHosts(infoJson.getAsJsonArray("hosts"));
-        }
+        // 写完立即刷新:下方 rules/ads 段若抛异常,快照不会停在上一条配置的映射上
+        vodHosts = infoJson.has("hosts") ? ConfigParser.parseHosts(infoJson.getAsJsonArray("hosts")) : null;
+        OkGoHelper.refreshHosts();
 
         loadProxyRules(infoJson);
 
@@ -848,6 +868,20 @@ public class ApiConfig {
                     for (JsonElement one : array) {
                         String host = one.getAsString();
                         VideoParseRuler.addHostScript(host, scripts);
+                    }
+                }
+                //排除不嗅探的 URL 条件(fongmi 规则的 exclude):命中即否决,优先于内置嗅探正则
+                //字段类型写错时忽略该条,不能让整份配置解析失败(同 doh 的兜底态度)
+                if (obj.has("hosts") && obj.has("exclude")
+                        && obj.get("hosts").isJsonArray() && obj.get("exclude").isJsonArray()) {
+                    ArrayList<String> excludes = new ArrayList<>();
+                    for (JsonElement one : obj.getAsJsonArray("exclude")) {
+                        excludes.add(one.getAsString());
+                    }
+                    if (!excludes.isEmpty()) {
+                        for (JsonElement one : obj.getAsJsonArray("hosts")) {
+                            VideoParseRuler.addHostExclude(one.getAsString(), excludes);
+                        }
                     }
                 }
             }
@@ -968,6 +1002,9 @@ public class ApiConfig {
         KV.put(HawkConfig.EPG_URL, ConfigParser.extractLiveTextEpg(content));
         KV.put(HawkConfig.LIVE_PLAY_TYPE, KV.get(HawkConfig.PLAY_TYPE, 2));
         KV.put(HawkConfig.LIVE_WEB_HEADER, null);
+        // 文本直播配置没有 hosts 字段:清掉上一份直播源留下的映射,否则会继续生效
+        liveHosts = null;
+        OkGoHelper.refreshHosts();
         JsonArray livesArray = TxtSubscribe.parseToJsonArray(content);
         loadLives(livesArray);
         LOG.i("echo-live-text-config-----------load:" + apiUrl);
@@ -998,10 +1035,9 @@ public class ApiConfig {
             loadLiveApi(livesOBJ);
         }
 
-        myHosts = new HashMap<>();
-        if (infoJson.has("hosts")) {
-            myHosts = ConfigParser.parseHosts(infoJson.getAsJsonArray("hosts"));
-        }
+        liveHosts = infoJson.has("hosts") ? ConfigParser.parseHosts(infoJson.getAsJsonArray("hosts")) : null;
+        // DNS 只认 OkGoHelper.myHosts 快照,写完必须刷新,否则直播 hosts 实际不生效
+        OkGoHelper.refreshHosts();
         LOG.i("echo-api-live-config-----------load");
     }
 
@@ -1165,7 +1201,13 @@ public class ApiConfig {
                     JsonObject headerObj = obj.getAsJsonObject("header");
                     HashMap<String, String> channelHeader = new HashMap<>();
                     for (Map.Entry<String, JsonElement> entry : headerObj.entrySet()) {
-                        channelHeader.put(entry.getKey(), entry.getValue().getAsString());
+                        if (entry.getValue() == null || !entry.getValue().isJsonPrimitive()) continue;
+                        String value = entry.getValue().getAsString();
+                        if (!HeaderGuard.isSendable(entry.getKey(), value)) {
+                            LOG.i("echo-channel-header-skip:" + entry.getKey());
+                            continue;
+                        }
+                        channelHeader.put(entry.getKey(), value);
                     }
                     liveChannelItem.setChannelHeader(channelHeader);
                 }
@@ -1281,8 +1323,10 @@ public class ApiConfig {
                         String jarUrl = livesOBJ.has("jar")?livesOBJ.get("jar").getAsString().trim():"";
                         spiderLoader.loadLiveSpider(api, jarUrl, livesOBJ);
                     }
-                }else {
-                    liveChannelGroupList.clear();
+                } else {
+                    // fongmi 的 lives 无 type 字段,TVBox 上游同样只认 0/3:未知取值保持拒载
+                    LOG.i("echo-live-unsupported-type:" + type + " api:" + api);
+                    resetLiveKvOnUnsupportedLine();
                     return;
                 }
             }
@@ -1305,15 +1349,21 @@ public class ApiConfig {
                 int timeout = Math.max(5, Math.min(30, livesOBJ.get("timeout").getAsInt()));
                 KV.put(HawkConfig.LIVE_CONNECT_TIMEOUT, (timeout + 4) / 5 - 1);
             }
-            if(livesOBJ.has("header")) {
+            if(livesOBJ.has("header") && livesOBJ.get("header").isJsonObject()) {
                 JsonObject headerObj = livesOBJ.getAsJsonObject("header");
                 HashMap<String, String> liveHeader = new HashMap<>();
                 for (Map.Entry<String, JsonElement> entry : headerObj.entrySet()) {
-                    liveHeader.put(entry.getKey(), entry.getValue().getAsString());
+                    if (entry.getValue() == null || !entry.getValue().isJsonPrimitive()) continue;
+                    String value = entry.getValue().getAsString();
+                    if (!HeaderGuard.isSendable(entry.getKey(), value)) {
+                        LOG.i("echo-live-header-skip:" + entry.getKey());
+                        continue;
+                    }
+                    liveHeader.put(entry.getKey(), value);
                 }
                 KV.put(HawkConfig.LIVE_WEB_HEADER, liveHeader);
             } else if(livesOBJ.has("ua")) {
-                String ua = livesOBJ.get("ua").getAsString();
+                String ua = DefaultConfig.safeJsonString(livesOBJ, "ua", "");
                 HashMap<String,String> liveHeader = new HashMap<>();
                 liveHeader.put("User-Agent", ua);
                 KV.put(HawkConfig.LIVE_WEB_HEADER, liveHeader);
@@ -1327,6 +1377,13 @@ public class ApiConfig {
         } catch (Throwable th) {
             th.printStackTrace();
         }
+    }
+
+    /** 线路被拒载时的 KV 复位:与文本直播分支保持同一套"无直播配置"状态,避免沿用上一条线路的 EPG/UA/内核 */
+    private void resetLiveKvOnUnsupportedLine() {
+        KV.put(HawkConfig.EPG_URL, "");
+        KV.put(HawkConfig.LIVE_PLAY_TYPE, KV.get(HawkConfig.PLAY_TYPE, 2));
+        KV.put(HawkConfig.LIVE_WEB_HEADER, null);
     }
 
     public void setLiveJar(String liveJar) {
@@ -1574,11 +1631,22 @@ public class ApiConfig {
         return new ArrayList<>(sourceBeanList.values());
     }
     public List<SourceBean> getSwitchSourceBeanList() {
+        // 标 hide 的站点不进切换列表;当前首页源例外,否则列表里没有高亮项
         List<SourceBean> filteredList = new ArrayList<>();
+        String homeKey = getHomeSourceBean().getKey();
         for (SourceBean bean : sourceBeanList.values()) {
+            if (bean.isHidden() && !bean.getKey().equals(homeKey)) continue;
             filteredList.add(bean);
         }
         return filteredList;
+    }
+
+    /** 首页兜底源:优先第一个未标 hide 的站点(否则首页会选中一个不在切换列表里的源);全是 hide 时退回第一条 */
+    private static SourceBean firstVisibleSite(List<SourceBean> sites) {
+        for (SourceBean bean : sites) {
+            if (!bean.isHidden()) return bean;
+        }
+        return sites.isEmpty() ? null : sites.get(0);
     }
 
     private List<SourceBean> searchSourceBeanList;
@@ -1628,8 +1696,12 @@ public class ApiConfig {
         return ijkCodes.get(0);
     }
 
+    /** 点播/直播两套 hosts 的合并视图(点播优先):DNS 解析只认这一份 */
     public Map<String,String> getMyHost() {
-        return myHosts;
+        Map<String,String> merged = new HashMap<>();
+        if (liveHosts != null) merged.putAll(liveHosts);
+        if (vodHosts != null) merged.putAll(vodHosts);
+        return merged;
     }
 
     private void loadProxyRules(JsonObject infoJson) {

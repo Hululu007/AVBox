@@ -11,6 +11,7 @@ import com.github.catvod.net.OkHttp;
 import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.base.App;
 import com.github.tvbox.osc.bean.DanmuSearchResult;
+import com.github.tvbox.osc.bean.SourceBean;
 import com.github.tvbox.osc.util.DanmuHelper;
 import com.github.tvbox.osc.util.HawkConfig;
 import com.github.tvbox.osc.util.LOG;
@@ -70,7 +71,9 @@ public class DanmakuApi {
         void onError(String message);
     }
 
-    public static boolean canSearch() {
+    /** 站点可标 `danmaku:0` 关掉本站的自动搜弹幕;手动搜索不受此限 */
+    public static boolean canSearch(SourceBean sourceBean) {
+        if (sourceBean != null && !sourceBean.isDanmakuEnabled()) return false;
         return DanmuHelper.isOpen() && !TextUtils.isEmpty(getApiUrl());
     }
 

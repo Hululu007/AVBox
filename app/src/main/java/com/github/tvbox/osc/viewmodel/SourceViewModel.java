@@ -28,8 +28,10 @@ import com.github.tvbox.osc.player.thirdparty.RemoteTVBox;
 import com.github.tvbox.osc.util.DefaultConfig;
 import com.github.tvbox.osc.util.FileUtils;
 import com.github.tvbox.osc.util.HawkConfig;
+import com.github.tvbox.osc.util.HeaderGuard;
 import com.github.tvbox.osc.util.LOG;
 import com.github.tvbox.osc.util.MD5;
+import com.github.tvbox.osc.util.PlayerHelper;
 import com.github.tvbox.osc.util.thunder.Thunder;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
@@ -192,12 +194,24 @@ public class SourceViewModel extends ViewModel {
     }
 
     private static boolean shouldBypassSortCache(String sourceKey, SourceBean sourceBean) {
-        return isFirstSource(sourceKey) && isDoubanSource(sourceBean);
+        return isHomeSource(sourceKey) && isDoubanSource(sourceBean);
     }
 
-    private static boolean isFirstSource(String sourceKey) {
-        List<SourceBean> sources = ApiConfig.get().getSourceBeanList();
-        return !sources.isEmpty() && sources.get(0) != null && sourceKey.equals(sources.get(0).getKey());
+    /** 首页源判定:兜底源可能不是列表第 0 项(第 0 项被标 hide 时会往后挑),所以比首页源 key 而不是下标 0 */
+    private static boolean isHomeSource(String sourceKey) {
+        return !TextUtils.isEmpty(sourceKey) && sourceKey.equals(ApiConfig.get().getHomeSourceBean().getKey());
+    }
+
+    /**
+     * type 0/1/4 接口请求统一入口:带上站点级 header(fongmi 的 sites[].header)。
+     * spider 的请求走 jar 内自有网络栈,注入不进去(fongmi 官方也标注 type 3 不套用)。
+     */
+    private static GetRequest<String> siteGet(SourceBean sourceBean) {
+        GetRequest<String> request = OkGo.<String>get(sourceBean.getApi());
+        for (Map.Entry<String, String> entry : sourceBean.getHeader().entrySet()) {
+            request.headers(entry.getKey(), entry.getValue());
+        }
+        return request;
     }
 
     private static boolean isDoubanSource(SourceBean sourceBean) {
@@ -317,7 +331,7 @@ public class SourceViewModel extends ViewModel {
             };
             httpPrepareThreadPool.execute(waitResponse);
         } else if (type == 0 || type == 1) {
-            OkGo.<String>get(sourceBean.getApi())
+            siteGet(sourceBean)
                     .tag(sourceBean.getKey() + "_sort")
                     .execute(new AbsCallback<String>() {
                         @Override
@@ -370,7 +384,7 @@ public class SourceViewModel extends ViewModel {
             String extend=sourceBean.getExt();
             extend=getFixUrl(extend);
             if(URLEncoder.encode(extend).length()<1000){
-                GetRequest<String> request = OkGo.<String>get(sourceBean.getApi())
+                GetRequest<String> request = siteGet(sourceBean)
                         .tag(sourceBean.getKey() + "_sort")
                         .params("filter", "true");
                 // 当 extend 不为空且非空字符串时添加参数
@@ -431,7 +445,7 @@ public class SourceViewModel extends ViewModel {
                     if (extend != null && !extend.isEmpty()) {
                         params.put("extend",extend);
                     }
-                    RemoteTVBox.post(sourceBean.getApi(), params, new okhttp3.Callback() {
+                    RemoteTVBox.post(sourceBean.getApi(), params, sourceBean.getHeader(), new okhttp3.Callback() {
                         @Override
                         public void onFailure(@NonNull Call call, IOException e) {
                             postSortResult(sourceKey, null);
@@ -508,7 +522,7 @@ public class SourceViewModel extends ViewModel {
                 }
             });
         } else if (type == 0 || type == 1) {
-            OkGo.<String>get(homeSourceBean.getApi())
+            siteGet(homeSourceBean)
                     .tag(homeSourceBean.getApi())
                     .params("ac", type == 0 ? "videolist" : "detail")
                     .params("t", sortData.id)
@@ -558,7 +572,7 @@ public class SourceViewModel extends ViewModel {
                 ext = Base64.encodeToString("{}".getBytes(), Base64.DEFAULT |  Base64.NO_WRAP);
             }
 
-            GetRequest<String> request = OkGo.<String>get(homeSourceBean.getApi())
+            GetRequest<String> request = siteGet(homeSourceBean)
                     .tag(homeSourceBean.getApi())
                     .params("ac", "detail")
                     .params("filter", "true")
@@ -652,7 +666,7 @@ public class SourceViewModel extends ViewModel {
             };
             spThreadPool.execute(waitResponse);
         } else if (type == 0 || type == 1) {
-            OkGo.<String>get(sourceBean.getApi())
+            siteGet(sourceBean)
                     .tag("detail")
                     .params("ac", sourceBean.getType() == 0 ? "videolist" : "detail")
                     .params("ids", TextUtils.join(",", ids))
@@ -772,7 +786,7 @@ public class SourceViewModel extends ViewModel {
             String extend=sourceBean.getExt();
             extend=fallback ? getFixUrl(extend, 6) : getFixUrl(extend);
 
-            GetRequest<String> request = OkGo.<String>get(sourceBean.getApi())
+            GetRequest<String> request = siteGet(sourceBean)
                     .tag("detail")
                     .params("ac", type == 0 ? "videolist" : "detail")
                     .params("ids", id);
@@ -876,7 +890,7 @@ public class SourceViewModel extends ViewModel {
                 json(result, "", sourceBean.getKey(), searchToken);
             }
         } else if (type == 0 || type == 1) {
-            OkGo.<String>get(sourceBean.getApi())
+            siteGet(sourceBean)
                     .params("wd", wd)
                     .params(type == 1 ? "ac" : null, type == 1 ? "detail" : null)
                     .tag(requestTag)
@@ -921,7 +935,7 @@ public class SourceViewModel extends ViewModel {
                 e.printStackTrace();
             }
 
-            GetRequest<String> request = OkGo.<String>get(sourceBean.getApi())
+            GetRequest<String> request = siteGet(sourceBean)
                     .tag(requestTag)
                     .params("wd", queryWd)
                     .params("ac" ,"detail")
@@ -1018,12 +1032,13 @@ public class SourceViewModel extends ViewModel {
                             JSONObject result = normalizePlayerResult(new JSONObject(json));
                             result.put("key", url);
                             mergePushHeaders(result, pushUrl);
+                            mergeSiteHeaders(result, sourceBean);
                             result.put("proKey", progressKey);
                             result.put("subtKey", subtitleKey);
                             if (!result.has("flag"))
                                 result.put("flag", playFlag);
                             if (TextUtils.isEmpty(result.optString("url", "")) && shouldDirectPlay(sourceBean, requestUrl)) {
-                                postPlayResult(seqHolder, resultChannel, requestSeq, createDirectPlayResult(url, pushUrl, progressKey, subtitleKey, playFlag));
+                                postPlayResult(seqHolder, resultChannel, requestSeq, createDirectPlayResult(url, pushUrl, progressKey, subtitleKey, playFlag, sourceBean));
                             } else {
                                 postPlayResult(seqHolder, resultChannel, requestSeq, result);
                             }
@@ -1057,6 +1072,7 @@ public class SourceViewModel extends ViewModel {
                     result.put("url", requestUrl);
                 }
                 mergePushHeaders(result, pushUrl);
+                mergeSiteHeaders(result, sourceBean);
                 result.put("proKey", progressKey);
                 result.put("subtKey", subtitleKey);
                 result.put("playUrl", playUrl);
@@ -1070,7 +1086,7 @@ public class SourceViewModel extends ViewModel {
             String extend=sourceBean.getExt();
             extend=getFixUrl(extend);
 
-            GetRequest<String> request = OkGo.<String>get(sourceBean.getApi())
+            GetRequest<String> request = siteGet(sourceBean)
                     .tag(requestTag)
                     .params("play", requestUrl)
                     .params("flag" ,playFlag);
@@ -1096,6 +1112,7 @@ public class SourceViewModel extends ViewModel {
                             JSONObject result = normalizePlayerResult(new JSONObject(json));
                             result.put("key", url);
                             mergePushHeaders(result, pushUrl);
+                            mergeSiteHeaders(result, sourceBean);
                             result.put("proKey", progressKey);
                             result.put("subtKey", subtitleKey);
                             if (!result.has("flag"))
@@ -1128,7 +1145,7 @@ public class SourceViewModel extends ViewModel {
                 && (requestUrl.startsWith("http://") || requestUrl.startsWith("https://"));
     }
 
-    private JSONObject createDirectPlayResult(String rawUrl, PushUrl pushUrl, String progressKey, String subtitleKey, String playFlag) {
+    private JSONObject createDirectPlayResult(String rawUrl, PushUrl pushUrl, String progressKey, String subtitleKey, String playFlag, SourceBean sourceBean) {
         try {
             JSONObject result = new JSONObject();
             result.put("key", rawUrl);
@@ -1139,6 +1156,7 @@ public class SourceViewModel extends ViewModel {
             result.put("jx", 0);
             result.put("url", pushUrl.url);
             mergePushHeaders(result, pushUrl);
+            mergeSiteHeaders(result, sourceBean);
             LOG.i("echo--getPlay--direct:" + pushUrl.url);
             return result;
         } catch (Throwable th) {
@@ -1253,6 +1271,32 @@ public class SourceViewModel extends ViewModel {
         }
     }
 
+    /**
+     * 站点级 header 作为播放请求的兜底头(fongmi 同语义):只补结果里没有的键,结果自带的头优先。
+     * 没配 header 的源这里是空操作。
+     */
+    private void mergeSiteHeaders(JSONObject result, SourceBean sourceBean) {
+        if (result == null || sourceBean == null) return;
+        Map<String, String> siteHeader = sourceBean.getHeader();
+        if (siteHeader.isEmpty()) return;
+        try {
+            // 必须先按播放侧的同一口径解析(兼容 header/headers 的对象与 JSON 文本两种形态):
+            // 直接看 optJSONObject 会把字符串形态当成"没有头",把源自带的头整块覆盖掉
+            HashMap<String, String> merged = PlayerHelper.extractPlayHeaders(result);
+            if (merged == null) merged = new HashMap<>();
+            for (Map.Entry<String, String> entry : siteHeader.entrySet()) {
+                if (!merged.containsKey(entry.getKey())) merged.put(entry.getKey(), entry.getValue());
+            }
+            JSONObject header = new JSONObject();
+            for (Map.Entry<String, String> entry : merged.entrySet()) header.put(entry.getKey(), entry.getValue());
+            result.put("header", header);
+            // 合并结果统一放 header 一个键,避免 header/headers 两份来源被重复抽取
+            result.remove("headers");
+        } catch (Throwable th) {
+            LOG.e("SourceViewModel", "merge site headers failed", th);
+        }
+    }
+
     private void mergePushHeaders(JSONObject result, PushUrl pushUrl) {
         if (result == null || pushUrl == null || pushUrl.headers.isEmpty()) return;
         try {
@@ -1294,7 +1338,13 @@ public class SourceViewModel extends ViewModel {
             while (keys.hasNext()) {
                 String key = keys.next();
                 String value = json.optString(key, "");
-                if (!TextUtils.isEmpty(key)) pushUrl.headers.put(key, value);
+                if (TextUtils.isEmpty(key)) continue;
+                // push 标记头同样会进 OkGo 与本地 m3u8 净化:非法字符挡在入口
+                if (!HeaderGuard.isSendable(key, value)) {
+                    LOG.i("echo-push-header-skip:" + key);
+                    continue;
+                }
+                pushUrl.headers.put(key, value);
             }
             pushUrl.url = pushUrl.url.substring(0, start) + pushUrl.url.substring(end + 1);
             return true;
@@ -1535,7 +1585,7 @@ public class SourceViewModel extends ViewModel {
                                             return;
                                         }
                                         if (sb.getType() == 4) {
-                                            OkGo.<String>get(sb.getApi())
+                                            siteGet(sb)
                                                     .tag("detail")
                                                     .params("ac","detail")
                                                     .params("ids", finalPushUrl)

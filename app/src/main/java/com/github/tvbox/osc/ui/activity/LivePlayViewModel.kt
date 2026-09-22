@@ -192,6 +192,8 @@ internal class LivePlayViewModel : ViewModel() {
                     // 换到仓列表之外的地址 ⇒ 退出仓模式
                     if (!HistoryHelper.isLiveApiLineUrl(target)) HistoryHelper.clearLiveApiLineList()
                 }
+                // 切直播源:旧源的 hosts 映射立即失效,不等这次加载的结果
+                ApiConfig.get().clearLiveHosts()
                 ApiConfig.get().invalidateLiveConfig()
                 ApiConfig.get().refreshLiveApiHistoryItems()
                 ApiConfig.get().loadLiveConfig(false, object : ApiConfig.LoadConfigCallback {

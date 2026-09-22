@@ -8,6 +8,7 @@ import com.github.tvbox.osc.server.RemoteServer;
 import com.github.tvbox.osc.util.HawkConfig;
 import com.github.tvbox.osc.util.OkGoHelper;
 import com.github.tvbox.osc.util.KV;
+import com.github.tvbox.osc.util.LOG;
 
 import java.io.IOException;
 import java.net.URLEncoder;
@@ -134,6 +135,11 @@ public class RemoteTVBox {
     }
 
     public static void post(String url, Map<String, String> params, okhttp3.Callback callback) {
+        post(url, params, null, callback);
+    }
+
+    /** headers 非空时逐个加到请求上(站点级 header 的 POST 分支用) */
+    public static void post(String url, Map<String, String> params, Map<String, String> headers, okhttp3.Callback callback) {
         OkHttpClient base = OkGoHelper.getDefaultClient();
         OkHttpClient.Builder builder = base != null ? base.newBuilder() : new OkHttpClient.Builder().proxySelector(OkGoHelper.proxySelector()).proxyAuthenticator(OkGoHelper.proxyAuthenticator());
         builder.readTimeout(1000, TimeUnit.MILLISECONDS);
@@ -147,7 +153,25 @@ public class RemoteTVBox {
             }
         }
         FormBody formBody = formBodyBuilder.build();
-        client.newCall(new Request.Builder().url(url).post(formBody).build()).enqueue(callback);
+        Request.Builder requestBuilder = new Request.Builder().url(url);
+        if (headers != null) {
+            for (Map.Entry<String, String> entry : headers.entrySet()) {
+                // 表单 POST 的 Content-Type/Content-Length 由请求体接管,配置里写了会破坏提交
+                if (isBodyManagedHeader(entry.getKey())) {
+                    LOG.i("echo-site-header-skip-body:" + entry.getKey());
+                    continue;
+                }
+                requestBuilder.header(entry.getKey(), entry.getValue());
+            }
+        }
+        client.newCall(requestBuilder.post(formBody).build()).enqueue(callback);
+    }
+
+    /** 由请求体接管的头:配置里写进来只会让 body 与 header 不一致 */
+    private static boolean isBodyManagedHeader(String name) {
+        return "content-type".equalsIgnoreCase(name)
+                || "content-length".equalsIgnoreCase(name)
+                || "host".equalsIgnoreCase(name);
     }
 
     public abstract static class Callback {

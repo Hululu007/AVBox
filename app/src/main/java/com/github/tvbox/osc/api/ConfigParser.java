@@ -6,6 +6,7 @@ import com.github.tvbox.osc.bean.Depot;
 import com.github.tvbox.osc.bean.LiveSettingItem;
 import com.github.tvbox.osc.bean.SourceBean;
 import com.github.tvbox.osc.util.DefaultConfig;
+import com.github.tvbox.osc.util.HeaderGuard;
 import com.github.tvbox.osc.util.HistoryHelper;
 import com.github.tvbox.osc.util.LOG;
 import com.google.gson.Gson;
@@ -120,6 +121,10 @@ final class ConfigParser {
             sb.setClickSelector(DefaultConfig.safeJsonString(obj, "click", ""));
             sb.setStyle(DefaultConfig.safeJsonString(obj, "style", ""));
             sb.setIcon(DefaultConfig.safeJsonString(obj, "icon", ""));
+            sb.setHide(DefaultConfig.safeJsonInt(obj, "hide", 0));
+            sb.setIndexs(DefaultConfig.safeJsonInt(obj, "indexs", 0));
+            sb.setDanmaku(DefaultConfig.safeJsonInt(obj, "danmaku", 1));
+            sb.setHeader(parseHeaderObject(obj, "header"));
             String extPreview = sb.getExt();
             LOG.i("echo-site:" + sb.getName() + " icon:" + sb.getIcon()
                     + " ext:" + (extPreview.length() > 160 ? extPreview.substring(0, 160) : extPreview));
@@ -189,6 +194,27 @@ final class ConfigParser {
         }
         return hosts;
     }
+
+    /** 站点级 header 对象(fongmi 的 sites[].header):只取标量值,缺失/非对象/值全非法时返回 null(表示没配) */
+    static Map<String, String> parseHeaderObject(JsonObject obj, String key) {
+        if (obj == null || !obj.has(key) || !obj.get(key).isJsonObject()) {
+            return null;
+        }
+        Map<String, String> header = new HashMap<>();
+        for (Map.Entry<String, JsonElement> entry : obj.getAsJsonObject(key).entrySet()) {
+            if (entry.getValue() == null || !entry.getValue().isJsonPrimitive()) continue;
+            String name = entry.getKey();
+            String value = entry.getValue().getAsString();
+            // OkHttp 对 header 名/值有字符集限制,越界会在构造请求时抛异常把整个源带崩:这里直接跳过
+            if (!HeaderGuard.isSendable(name, value)) {
+                LOG.i("echo-site-header-skip:" + name);
+                continue;
+            }
+            header.put(name, value);
+        }
+        return header.isEmpty() ? null : header;
+    }
+
 
     /**
      * clan:// 地址转真实地址。

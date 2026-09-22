@@ -173,12 +173,15 @@ private fun applyLiveSource(item: SubscribeSource) {
     KV.put(HawkConfig.LIVE_API_URL, item.url)
     // 多仓(2026-09-21):换到仓列表之外的地址即退出仓模式,否则「配置切换」会继续列上一仓的子源
     if (!HistoryHelper.isLiveApiLineHistory(item.url)) HistoryHelper.clearLiveApiLineList()
+    // 换了直播源就得让旧源的 hosts 映射立刻失效:不能等下次加载成功(加载失败则永久残留)
+    ApiConfig.get().clearLiveHosts()
     ApiConfig.get().invalidateLiveConfig()
 }
 
 private fun applyLiveFollowVod() {
     KV.put(HawkConfig.LIVE_API_URL, "")
     HistoryHelper.clearLiveApiLineList()
+    ApiConfig.get().clearLiveHosts()
     ApiConfig.get().invalidateLiveConfig()
 }
 

@@ -159,6 +159,45 @@ public class ConfigParserTest {
         assertEquals("a", sites.get(1).getKey());
     }
 
+    /** 站点级扩展字段:hide/indexs/danmaku 与 header 对象(type 0/1 的接口请求要带上) */
+    @Test
+    public void parseSites_readsHideIndexsDanmakuAndHeader() {
+        List<SourceBean> sites = ConfigParser.parseSites(json("{\"sites\":["
+                + "{\"key\":\"a\",\"type\":1,\"api\":\"http://a\",\"hide\":1,\"indexs\":1,\"danmaku\":0,"
+                + "\"header\":{\"User-Agent\":\"ua\",\"Referer\":\"http://a/\",\"num\":5}},"
+                + "{\"key\":\"b\",\"type\":1,\"api\":\"http://b\",\"header\":\"not-an-object\"}]}"));
+
+        SourceBean a = sites.get(0);
+        assertTrue(a.isHidden());
+        assertTrue(a.isIndexSource());
+        assertFalse(a.isDanmakuEnabled());
+        assertEquals(3, a.getHeader().size());
+        assertEquals("ua", a.getHeader().get("User-Agent"));
+        // 数字型 header 值也要取到字符串
+        assertEquals("5", a.getHeader().get("num"));
+
+        SourceBean b = sites.get(1);
+        assertFalse(b.isHidden());
+        assertFalse(b.isIndexSource());
+        assertTrue(b.isDanmakuEnabled());
+        // header 写成字符串时忽略该字段,不能让整份配置解析失败
+        assertTrue(b.getHeader().isEmpty());
+    }
+
+    /**
+     * 非法 header 名/值必须被丢掉:它们会让 OkHttp 在构造请求时抛 IllegalArgumentException,
+     * 而多数站点请求分支没有 try/catch,等于"一份配置让某个源直接把 App 带崩"。
+     */
+    @Test
+    public void parseSites_dropsIllegalHeaders() {
+        List<SourceBean> sites = ConfigParser.parseSites(json("{\"sites\":[{\"key\":\"a\",\"type\":1,\"api\":\"http://a\","
+                + "\"header\":{\"Referer\":\"http://a/\",\"中文名\":\"x\",\"X-Cn\":\"中文值\",\"\":\"v\"}}]}"));
+
+        Map<String, String> header = sites.get(0).getHeader();
+        assertEquals(1, header.size());
+        assertEquals("http://a/", header.get("Referer"));
+    }
+
     // ---------- 线路合集 ----------
 
     @Test
