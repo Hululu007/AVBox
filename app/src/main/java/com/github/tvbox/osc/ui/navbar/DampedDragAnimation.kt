@@ -1,6 +1,7 @@
 package com.github.tvbox.osc.ui.navbar
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.MutatorMutex
@@ -35,7 +36,8 @@ class DampedDragAnimation(
     private val enabled: () -> Boolean = { true },
 ) {
 
-    private val valueAnimationSpec = spring(1f, 1000f, visibilityThreshold)
+    // 偏离上游(原 spring(1f, 1000f, …) 阻尼比 1 = 临界阻尼,零回弹):降到 0.6 才有"弹簧"该有的回弹
+    private val valueAnimationSpec = spring(0.6f, 800f, visibilityThreshold)
     private val velocityAnimationSpec = spring(0.5f, 300f, visibilityThreshold * 10f)
     private val pressProgressAnimationSpec = spring(1f, 1000f, 0.001f)
     private val scaleXAnimationSpec = spring(0.6f, 250f, 0.001f)
@@ -123,12 +125,15 @@ class DampedDragAnimation(
         }
     }
 
-    fun animateToValue(value: Float) {
+    /** animationSpec 为 null 时走默认弹簧;点击切页传距离感知的 tween(见 FloatingNavBar.clickMoveSpec) */
+    fun animateToValue(value: Float, animationSpec: AnimationSpec<Float>? = null) {
         animationScope.launch {
             mutatorMutex.mutate {
                 press()
                 val coercedTargetValue = value.coerceIn(valueRange)
-                launch { valueAnimation.animateTo(coercedTargetValue, valueAnimationSpec) }
+                launch {
+                    valueAnimation.animateTo(coercedTargetValue, animationSpec ?: valueAnimationSpec)
+                }
                 if (velocity != 0f) {
                     launch { velocityAnimation.animateTo(0f, velocityAnimationSpec) }
                 }

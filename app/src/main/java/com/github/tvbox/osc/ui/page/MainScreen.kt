@@ -11,9 +11,7 @@ import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.scrollBy
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
@@ -30,7 +28,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -241,6 +238,12 @@ private fun MainContent() {
     val glassTabs = remember(tabLabels) {
         AppTab.entries.mapIndexed { index, tab -> GlassTabItem(tab.icon, tabLabels[index]) }
     }
+    // 直播是动作不是目的地:插在导航栏正中,进独立 Activity,不占 pager 页也不参与选中态
+    val liveActionLabel = stringResource(R.string.common_live)
+    val liveActionItem = remember(liveActionLabel) { GlassTabItem(R.drawable.ic_live_fab, liveActionLabel) }
+    val openLive: () -> Unit = remember(context) {
+        { context.startActivity(Intent(context, LivePlayActivity::class.java)) }
+    }
     CompositionLocalProvider(LocalSheetHost provides sheetHost) {
         Box(modifier = Modifier.fillMaxSize()) {
             Scaffold(
@@ -252,6 +255,20 @@ private fun MainContent() {
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         ) {
                             AppTab.entries.forEachIndexed { index, tab ->
+                                // 动作槽插在中间,外观就是普通未选中项(不占 pager 页,故恒 selected = false)
+                                if (index == NavMetrics.actionSlotFor(AppTab.entries.size)) {
+                                    NavigationBarItem(
+                                        selected = false,
+                                        onClick = openLive,
+                                        icon = {
+                                            Icon(
+                                                painterResource(liveActionItem.iconRes),
+                                                contentDescription = null,
+                                            )
+                                        },
+                                        label = { Text(liveActionItem.label) },
+                                    )
+                                }
                                 NavigationBarItem(
                                     selected = pagerState.currentPage == index,
                                     onClick = { selectTab(index) },
@@ -359,6 +376,8 @@ private fun MainContent() {
                         config = liquidGlassConfig,
                         interactive = { true },
                         isTabSwitching = { pagerState.currentPage != pagerState.targetPage },
+                        actionItem = liveActionItem,
+                        onActionClick = openLive,
                     )
                 }
             }
@@ -372,6 +391,19 @@ private fun MainContent() {
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ) {
                     AppTab.entries.forEachIndexed { index, tab ->
+                        if (index == NavMetrics.actionSlotFor(AppTab.entries.size)) {
+                            NavigationRailItem(
+                                selected = false,
+                                onClick = openLive,
+                                icon = {
+                                    Icon(
+                                        painterResource(liveActionItem.iconRes),
+                                        contentDescription = null,
+                                    )
+                                },
+                                label = { Text(liveActionItem.label) },
+                            )
+                        }
                         NavigationRailItem(
                             selected = pagerState.currentPage == index,
                             onClick = { selectTab(index) },

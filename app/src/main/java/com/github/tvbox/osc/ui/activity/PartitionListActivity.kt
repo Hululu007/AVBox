@@ -5,18 +5,14 @@ package com.github.tvbox.osc.ui.activity
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.os.Bundle
 import android.widget.Toast
 import com.github.tvbox.osc.ui.theme.enableTransparentEdgeToEdge
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -35,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -63,9 +60,11 @@ import com.github.tvbox.osc.ui.WindowSize
 import com.github.tvbox.osc.ui.page.PartitionListVM
 import com.github.tvbox.osc.ui.page.dispatchVodCardClick
 import com.github.tvbox.osc.ui.page.openVodCardOrDetail
+import com.github.tvbox.osc.ui.page.shouldPrefetchNextPage
 import com.github.tvbox.osc.ui.theme.AVBoxTheme
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import kotlinx.coroutines.flow.first
 
 class PartitionListActivity : BaseActivity() {
 
@@ -279,9 +278,10 @@ private fun VideoGrid(
         availableWidthDp = (maxWidth - 32.dp).value.toInt(),
         minColumns = 3,
     )
+    val gridState = rememberLazyGridState()
     LazyVerticalGrid(
         columns = GridCells.Fixed(gridColumns),
-        state = rememberLazyGridState(),
+        state = gridState,
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = topPadding + 28.dp, bottom = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -298,6 +298,16 @@ private fun VideoGrid(
             item(span = { GridItemSpan(maxLineSpan) }) {
                 LaunchedEffect(videos.size) { onLoadMore() }
             }
+        }
+    }
+    if (enableLoadMore) {
+        LaunchedEffect(gridState, videos.size) {
+            snapshotFlow { gridState.layoutInfo }
+                .first { info ->
+                    val last = info.visibleItemsInfo.lastOrNull()?.index ?: return@first false
+                    shouldPrefetchNextPage(last, info.totalItemsCount, gridColumns)
+                }
+            onLoadMore()
         }
     }
     }

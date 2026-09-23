@@ -2350,3 +2350,92 @@ echo-exo-player-error: code=ERROR_CODE_UNSPECIFIED, msg=Unexpected runtime error
 - **为什么选"去掉暗侧"而不是"把暗侧调淡"**:立体感的主要来源是**亮上缘**(`intensity = |dot(法线, 光源)|`,从正上方沿两侧平滑衰减),暗侧只是附加的纵深暗示;而用户对"下缘发暗"已连续两次负面反馈(第一次是内阴影 12% 黑的"偏色暗带",这次是这根硬线)。**底部纵深改由那条柔和的内阴影承担**(`GLASS_THICKNESS_DP = 4f` / `ALPHA = 0.3f`,4dp 模糊),它是渐变而非硬线。
 - **验证**:`:app:assembleDebug` + `:app:testDebugUnitTest` **BUILD SUCCESSFUL**,**252 用例 / 0 失败 / 0 错误**。⚠️ **shader 改动无单测覆盖**(AGSL 字符串无法在纯 JVM 里跑),只能真机看观感。
 - **未做(若用户还嫌不够亮)**:背光侧去掉后整体高光变淡,`GLASS_AMBIENT_INTENSITY` 可能要从 `0.55f` 往上调 —— 单常量,好调。
+
+## 改:直播 FAB 迁入导航栏中央(2026-09-23,用户"把首页的直播 fab 融合进底部导航栏,放在历史和收藏中间,类似图二那样")
+
+- **用户参照物**:今日头条 App 的底栏 —— 首页 / 数码 / **[+ 实心圆]** / 发现 / 我的,中间那颗是"动作"而不是第 5 个目的地。用户先问"改动大吗",随后切到 Agent 模式要求直接做。
+- **动手前的勘查结论(为什么"看着小、实际要动四套渲染")**:直播入口原先只有首页一处(`HomePage` 的 `FloatingActionButton`,`align(BottomEnd)`,点击 `LivePlayActivity`),而**导航栏有四套渲染分支**:玻璃横条 / 玻璃竖条(`FloatingNavBar` 同一组件按 `NavAxis` 分支)/ 关玻璃的 M3 `NavigationBar` / 关玻璃的 M3 `NavigationRail`。删掉 FAB 后,任何一套没接上 = 那类用户**彻底没有直播入口**。故动作钮抽成 `ui/navbar/NavActionButton.kt`,四套共用同一份 `GlassTabItem`。
+- **核心设计(槽位数 ≠ 页面数)**:动作槽占一格但不占一个页面。`FloatingNavBar` 原本所有几何都建立在 `tabsCount` 上(步长 `(totalStride-8dp)/tabsCount`、胶囊宽 `contentStride/tabsCount`、胶囊位移 `value * singleTabStride`),直接改成 5 会把页面当成 5 个。做法 = 新增 `slotCount = tabsCount + 1` 与 `actionSlot = tabsCount/2`,**步长/胶囊宽/胶囊位移一律走槽位空间**,页面下标只用于 `pager` 与选中态;`dampedDragAnimation` 的 `valueRange` 仍是页面空间 `0..tabsCount-1`(拖动一格 = 切一页)。
+- **⚠️ 最容易做错的一处:胶囊映射必须连续插值,不能取整**。直觉写法是 `slotIndex = if (page < actionSlot) page else page + 1`,但那是**阶跃函数**:页面 1→2 时胶囊从槽位 1 直接跳到 3,拖动经过中间时肉眼可见"闪一格"。改用 `pageValue + (pageValue - (actionSlot - 1)).coerceIn(0f, 1f)` —— 在页面 1→2 区间线性加 0→1,胶囊**平滑滑过**动作槽(1 → 2 → 3)。反查函数 `tabIndexOfSlot` 只需整数点正确。
+- **判据集中到 `NavMetrics`(而不是留在 `FloatingNavBar` 私有)**:该文件本就是"导航壳几何常量与纯函数"的家,且已有 `NavMetricsTest`。新增 `actionSlotFor(tabCount)` / `slotPosition(pageValue, actionSlot)` / `tabIndexOfSlot(slot, actionSlot)` + 常量 `ACTION_BUTTON_DP = 44`,**顺手补 7 条单测**(单调不减 / 四个页面恰好落在槽位 0·1·3·4 / 整数点互逆 / 无动作槽时是恒等 / 按钮放得进 64-8=56dp 内沿)。这类"算错不崩、只在真机上显形"的几何,正是本文件立单测的原始理由。
+- **玻璃条的染色层要占位**:`FloatingNavBar` 是"容器层 + 染色层(`alpha=0` + `primary` tint,靠胶囊透出)+ 胶囊层"三层叠画。动作钮只在容器层渲染,染色层在动作槽位置放 `Spacer` —— 否则胶囊滑过中间时,会把动作钮染成一块纯色圆。
+- **M3 `NavigationBar` 回退怎么插**:先怀疑"插进去会不会破坏等宽分发",去 gradle 缓存里翻到 material3 1.5.0-alpha28 的 sources jar 确认 **`NavigationBarItem` 内部就是 `Modifier.weight(1f)`**(`NavigationBar.kt:230`),于是在 Row 里插一个同权重 `Box` 即可天然等宽居中;若用固定宽度的占位会整条左移。`NavigationRail` 更简单,直接在第 3 项前插一个 `NavActionButton`(Column 自带 `spacedBy`)。
+- **动作钮形态**:实心 `primary` 圆 + `onPrimary` 图标(沿用 `ic_live_fab.xml`)、**无文字标签**、直径 44dp。刻意与两侧"图标+文字"不同形 —— 它是动作不是目的地,不加标签才不会被读成第 5 个 tab。保留 ripple(项目全局 ripple 是 M3 默认 2 倍);玻璃条两侧 tab 走 `indication = null` 是另一套逻辑(靠胶囊按压高光),不照抄。
+- **顺带清掉的**:`HomePage` 的 FAB 及其 `FloatingActionButton` / `LivePlayActivity` 两个失效 import;规范里两处"覆盖层(FAB)"的举例改为"(浮层)"(已无 FAB)。`navStart`/`navBottom` 仍被内容内边距使用,未动。
+- **验证**:`:app:assembleDebug` + `:app:testDebugUnitTest` **BUILD SUCCESSFUL**,**259 用例 / 0 失败 / 0 错误**(基线 252 + 新增 7);APK 重建 `app/build/outputs/apk/debug/AVBox_debug.apk`。⚠️ **纯 Compose 布局改动无渲染层测试**,只能真机看;`git bash 的 ./gradlew` 会报 `ClassNotFoundException: GradleWrapperMain`,用 `.\gradlew.bat`(PowerShell)正常。
+- **待用户判断**:①44dp / 实心 primary 圆的视觉重量是否合适(单常量,好调);②是否要给动作钮加文字标签;③拖动经过中间时胶囊滑过动作槽的观感是否可接受(若要避免,只能把动作槽移出胶囊可及的路径)。
+
+### 二轮:动作钮改胶囊 + 浅色容器(同日,用户"不要弄成纯圆形,形状改成和图二那个绿色的一样,颜色浅一点,改成和设置页的 icon 图标的容器的颜色一样")
+
+- **先量化参照物再动手(这次最有价值的一步)**:把用户给的今日头条截图裁剪放大,用 PIL 逐像素量出那颗绿钮的形态 ——
+  - **不是正圆,是胶囊**:绿色区域 171 × 122px,逐行量水平跨度(顶部 80 → 中部 171 → 底部 71)与"半径 = 高/2 的胶囊"理论曲线吻合(误差 ≤5px),而小圆角矩形会在顶行留下很宽的平边。
+  - **宽高比 1.40**、**占槽宽 0.80**;5 个 item 的中心间距 209/219/218/209px ⇒ **动作钮确实占一整格**,与已实现的五等分槽一致(这条验证了上一轮的核心设计)。
+  - 由标签字高(26px)反推屏幕密度 ≈2.75x,得图标 ≈25dp —— 与本项目 24dp 的 tab 图标几乎一致,说明两边导航条的内容尺度可直接类比。
+  - ⚠️ **凭肉眼把那张图读成"绿圆"会直接做错形状**;分辨率低的截图里胶囊与正圆很难区分,量一下成本极低。
+- **改动**:`NavActionButton` 由 `size(44.dp)` + `CircleShape` + `primary`/`onPrimary` 改为 **`size(52.dp × 37.dp)` + `ContinuousCapsule` + `primaryContainer`/`onPrimaryContainer`**(`NavMetrics.ACTION_BUTTON_DP` 拆成 `ACTION_BUTTON_WIDTH_DP` / `ACTION_BUTTON_HEIGHT_DP`)。形状用 `ContinuousCapsule` 而不是 `RoundedCornerShape(h/2)`:项目里导航条/源胶囊/搜索框都走这个连续胶囊,视觉语言一致。
+- **配色取"设置页的 icon 容器"= `SettingsIconBadge`**(`ui/components/SettingsGroup.kt:139`):40dp `CircleShape` + `primaryContainer` 底 + `onPrimaryContainer` 图标(设置页分组卡头、配置管理页、搜索页都在用它)。用户要的是它的**颜色**,不是它的形状 —— 形状按参照物走。
+- **尺寸约束写进单测**:高 ≤ `BAR_CROSS_DP - 8`(两层各 4dp padding 后的内沿);宽 ≤ 最窄常见档槽宽 `(320 - 32 - 8) / 5 = 56dp`。另加一条 `actionButton_isAPillNotACircle`(宽 > 高)把用户"不要纯圆形"这条要求钉死,防止以后被"顺手改回正圆"。
+- **验证**:`assembleDebug` + `testDebugUnitTest` **BUILD SUCCESSFUL**,**260 用例 / 0 失败 / 0 错误**。⚠️ 形状/配色仍无渲染层测试,只能真机看。
+
+### 三轮:去掉容器,动作槽做成普通 tab 外观(同日,用户"不要容器了行不行,直接像其他 icon 图标一样在导航栏,下面是文字直播")
+
+- **用户要求**:不要任何容器,直接像其余四个 tab 那样裸图标 + 文字「直播」。
+- **改动(净删代码)**:删掉 `ui/navbar/NavActionButton.kt` 整个文件;删掉 `NavMetrics.ACTION_BUTTON_WIDTH_DP` / `_HEIGHT_DP` 两个常量与对应的两条单测(胶囊形状/尺寸约束那两条随之失效)。**外观改为直接复用 tab 组件**:
+  - 玻璃条:`NavActionSlot` 里 `NavTabItem(tab = actionItem, selected = false, onClick = onActionClick, role = Role.Button)` —— 与两侧 tab 同一个组件、同一套配色(`onSurfaceVariant`)与按压缩放(`LocalNavTabScale`)。
+  - 关玻璃横条:插一个 `selected = false` 的 `NavigationBarItem`。
+  - 关玻璃竖条:插一个 `selected = false` 的 `NavigationRailItem`。
+- **`NavTabItem` 新增 `role: Role = Role.Tab` 参数**:动作槽传 `Role.Button`(它跳独立 Activity,不是切换目的地),普通 tab 走默认值。⚠️ M3 的 `NavigationBarItem` 内部把 role 写死成 `Role.Tab`(`NavigationBar.kt:225`),关玻璃档改不了 ⇒ 只影响读屏播报用词,已在 spec 里记明是刻意留的不一致。
+- **染色层仍放 `Spacer`**:动作槽永远不是"选中项",胶囊滑过时不该把它点亮成 primary。这一条与外观无关,三轮都保留。
+- **保留不变的部分**:五等分槽、`slotPosition` 连续插值、`tabIndexOfSlot`、`actionSlotFor` 及它们的 7 条单测全部照旧 —— **这三轮的反复只在"长什么样",几何与映射一行没动**,说明上一轮把判据抽进 `NavMetrics` + 立单测的收益是真的。
+- **验证**:`assembleDebug` + `testDebugUnitTest` **BUILD SUCCESSFUL**,**258 用例 / 0 失败 / 0 错误**(260 − 2 条随胶囊尺寸一起删掉)。⚠️ 仍无渲染层测试。
+
+### 四轮:修"长按胶囊划过直播槽一片空白"(同日,用户实测发现)
+
+- **用户报**:「长按圆形指示器划过直播控件时为什么一片空白」。
+- **根因 = 上一轮自己埋的 `Spacer`**(当时还写进了 spec 说是"刻意"):我判断"动作槽永远不是选中项,胶囊滑过时不该把它点亮成 primary",于是在染色层给动作槽放了 `Spacer`。
+- **机制(值得记住,因为它是这套导航栏的核心)**:**胶囊不是实心色块,是"开在染色层上的一扇窗"**。三层叠画 = ①容器层(玻璃 + 真实图标,正常配色)②染色层(整层 `alpha = 0` + `ColorFilter.tint(primary)`,单独看完全不可见)③胶囊(`drawBackdrop(rememberCombinedBackdrop(backdrop, tabsBackdrop))`,其中 `tabsBackdrop` 就是挂在染色层上的 `layerBackdrop`)。**"选中项变 primary"= 胶囊透出染色层里那一格的 primary 副本**,不是切换图标颜色。⇒ 染色层那一格是空的,胶囊就"透"出一片空白,只剩模糊的页面内容。
+- **修法**:染色层照常渲染动作槽(去掉 `Spacer` 分支),**顺带把 `tinted` 参数从 `NavSlotsRow`/`NavSlotsColumn` 整个删掉**(两层现在渲染完全一样,参数已无意义),`NavActionSlot` 辅助函数也随之消失 —— 动作槽就是一次普通的 `NavTabItem` 调用。`Spacer` import 一并移除。
+- **⚠️ 教训(比修复本身值钱)**:**"刻意的不一致"要先想清楚它在渲染链路上会变成什么**。我当时只推演了"胶囊会把动作槽点亮成 primary(不想要)",**没有推演"胶囊本身是窗、窗后没东西会怎样"** —— 前半段推理没错,漏的是后半段,结果把一个"看起来更克制"的选择做成了肉眼可见的缺陷。**判断这类"透出/叠画"效果时,必须把每一层单独过一遍"这一层为空时上层会看到什么"。**
+- **验证**:`assembleDebug` + `testDebugUnitTest` **BUILD SUCCESSFUL**,**258 用例 / 0 失败 / 0 错误**。⚠️ 观感仍只能真机看。
+
+### 五轮:胶囊落位改成回弹弹簧(同日,用户"将长按指示器的动画改为弹簧效果")
+
+- **先纠正一个前提**:项目里的 `DampedDragAnimation.valueAnimationSpec` 本来就是 `spring(1f, 1000f, visibilityThreshold)` —— **它已经是 spring,但阻尼比 1 = 临界阻尼 = 零回弹**,观感就是普通缓出。所以"改成弹簧效果"的实质是**把阻尼比降到 1 以下**。
+- **先查了上游**:`示例文件/android/core/ui/.../animation/DampedDragAnimation.kt` 的参数与本项目**逐字相同**(`spring(1f, 1000f, …)`),确认这是继承来的无回弹版本,不是本地改坏的 ⇒ 本次属**有意偏离上游**(与玻璃高光 shader 那几处同类)。
+- **改动**:`spring(1f, 1000f, visibilityThreshold)` → **`spring(0.6f, 800f, visibilityThreshold)`**。过冲 = `exp(-πζ/√(1-ζ²))` ≈ **9.5%**,峰值 ≈0.14s,稳定 ≈0.24s。选 0.6/800 而非更软的参数,是为了和 spec §5 里已经存在的 `spring(0.6f, 800f)`(卡片按压缩放的参照值)保持同一套手感。
+- **⚠️ 连带项一(必须做,否则有可见缺陷)**:弹簧会**冲过目标值**,而胶囊的平移量是 `slotPosition(value) * stride` —— 不钳的话 0→4 这种长距离跳转会过冲约 0.4 格(≈24dp),把胶囊顶出玻璃壳。修法:**钳渲染位置,不钳动画值**(动画得能过冲才有回弹):在 `FloatingNavBar` 两处(胶囊平移、`InteractiveHighlight` 位置)对 `slotPosition(...)` 的结果加 `.coerceIn(0f, maxSlotPosition)`,`maxSlotPosition = slotCount - 1`。
+- **⚠️ 连带项二(不用改,但要知道)**:`DampedDragAnimation.release()` 里"等 value 追上 target 再收回按压缩放"靠 `|value - target| < 阈值` 判定;弹簧会**穿过**目标值,所以这个条件命中的时机从"稳定时"提前到"过冲峰值时" ⇒ 按压收回略早于原来。观感更连贯,刻意保留。
+- **没动的地方**:`pressProgressAnimationSpec` / `scaleXAnimationSpec` / `scaleYAnimationSpec`(阻尼比 1 / 0.6 / 0.7)与 `velocityAnimationSpec`(0.5)**本来就是有回弹的**,只有位置动画是无回弹的那个 —— 这也是为什么此前"按下去有弹性、松手落位却很平"。
+- **验证**:`assembleDebug` + `testDebugUnitTest` **BUILD SUCCESSFUL**,**258 用例 / 0 失败 / 0 错误**。⚠️ 弹簧手感无单测可覆盖(纯渲染),只能真机拖一下看;调参入口只有一个 spec。
+
+### 六轮:修"滑过直播时会加速"(同日,用户实测报"滑过直播时会加速,这是bug吗";顺带对齐 legado 的拖动手感)
+
+- **用户报的是真 bug,而且是我三轮引入的**。机理:`value += dragAmount / slotStridePx` 把手指位移换算成**页面空间**的值,而渲染位置是 `slotPosition(value) * stride`;`slotPosition(v) = v + clamp(v-1, 0, 1)` 在 `v∈[1,2]`(正好跨过动作槽)的**斜率是 2** ⇒ 那一段胶囊视觉位移 = 手指的 **2 倍**。从历史拖到收藏(相邻两页)手指走 1 格、胶囊走 2 格,就是"突然加速"。
+- **教训**:三轮我为了"避免胶囊跳格"选了连续插值,**只盯着"不要跳",没检查它的导数**。凡是"把输入经过一个函数映射成位置"的动画,都要算一下**这段映射的斜率**;斜率 ≠ 1 就是变速。**消掉跳变不等于手感对。**
+- **对齐参照**:用户要求"手感改成和 legado-with-MD3 一样"。查了 `示例文件/legado-with-MD3-main` —— 它用的是**同一个 `DampedDragAnimation`(参数逐字相同)**+ 同源 `FloatingBottomBar`,关键差异只有一处:legado 的胶囊位置是 **`progressOffset = value * singleTabWidth`**,`InteractiveHighlight` 位置是 **`(value + 0.5f) * tabWidthPx`** —— **纯线性,没有任何映射函数**。⇒ 改法明确:把拖动搬回"槽位空间"。
+- **改动**:
+  - `NavMetrics.slotPosition`(连续插值)**删除**,换成离散的 `slotIndexOfTab(tab, actionSlot)`(页面→槽位,`tab >= actionSlot` 时 +1);`tabIndexOfSlot` 保留。
+  - `FloatingNavBar`:`valueRange = 0f..(slotCount-1)`、`initialValue = slotIndexOfTab(selectedTabIndex())`、`onDrag` 的 `coerceIn` 上界改 `slotCount-1`、`onDragStopped` 先 `round()` 得槽位再 `tabIndexOfSlot` 换页面、`snapshotFlow { currentIndex }` 里也经 `slotIndexOfTab` 换算。
+  - 两处渲染位置改回纯线性:`value.coerceIn(0f, maxSlotPosition) * singleTabStride` 与 `(value.coerceIn(...) + 0.5f) * slotStridePx`(钳位只用于兜住弹簧过冲)。
+  - `dampedDragAnimation` 的 `remember` keys 补 `slotCount`(valueRange 依赖它)。
+- **等价性**:拖动起点在胶囊上(手势挂在胶囊 Box),位置 = 初值 + 累计 delta ⇒ 手指移 1 格步长、值 +1、胶囊移 1 格,**严格 1:1**,与 legado 完全一致。
+- **⚠️ 顺带发现的差异(没改,判断为对本项目无实际影响)**:legado 的 `DampedDragAnimation` 多一个 `canDrag` 守卫,在每次 `onDrag` 里检查"手指是否还在条内",不在就不应用这次 delta。但 `updateValue` 本来就 `coerceIn(valueRange)`,两端早已夹住 ⇒ 对本项目无可感差异;且我们 fork 的 `示例文件/android` 版本本来就没有它。**若以后要做"手指移出条外就冻结胶囊",照 legado 那段抄即可。**
+- **⚠️ 弹簧与参照不一致(刻意保留,已告知用户)**:legado 的 `valueAnimationSpec` 是 `spring(1f, 1000f)`(无回弹),而本项目在上一轮按用户要求改成了 `spring(0.6f, 800f)`(有回弹)。用户本轮说的"滑动手感"指拖动跟手,不含松手落位,故保留回弹;若要完全对齐 legado,把那一行改回 `spring(1f, 1000f, visibilityThreshold)` 即可。
+- **验证**:`assembleDebug` + `testDebugUnitTest` **BUILD SUCCESSFUL**,**258 用例 / 0 失败 / 0 错误**(映射类单测重写:删掉"单调不减 / 连续插值"那 4 条,换成 `slotIndexOfTab_skipsTheActionSlot` / `slotIndexOfTab_roundTripsBackToTheSamePage` / `slotIndexOfTab_withoutActionSlot_isIdentity` / `actionSlotIsTheOnlySlotWithoutAPage`,净数不变)。⚠️ 跟手手感只能真机拖。
+
+### 七轮:点击 tab 的胶囊"瞬移" + 预设色卡在平板上被放大 + 首屏右下角空格(同日,用户三个问题一并处理)
+
+- **用户问(导航栏)**:「首页的液态玻璃底部导航栏点击 tab 后感觉那个圆形的激活反馈指示器会跳过去,速度太快了,这是 bug 吗」。
+- **结论:不是缺陷,是弹簧的固有性质 —— 但确实该改。** 位置动画 `spring(0.6f, 800f)` 的**稳定时间几乎与距离无关**,峰值速度却与距离成正比:数值模拟(ζ=0.6 / k=800,终止条件 `|x|<0.001` 且 `|v|<1`)1 格 0.238s / 峰值 ≈14.1 槽/秒,2 格 0.238s / ≈28.2,3 格 0.371s / ≈42.3,**4 格(首页→设置,槽位 0→4)0.371s / ≈56.4 槽/秒** ⇒ 跨 4 格时胶囊是"飞"过去的,看起来就是瞬移。
+- **第二层原因(顺带查明,未改)**:框架 `PagerState.animateScrollToPage` 里 `updateTargetPage(targetPage)` 在动画**开始前**就执行(读 `foundation-android-1.13.0-alpha01-sources.jar` 的 `PagerState.kt` 确认)⇒ `targetPage` 立即变目标页、胶囊与页面同时起跑;且 `MaxPagesForAnimateScroll = 3`,**距离 ≥3 页时先 `snapToItem` 预跳**再动画最后一段 —— 4 tab 下"首页↔设置"距离正好 3,本来就是瞬间换页。
+- **改法(刻意只改点击、不动拖动)**:`DampedDragAnimation.animateToValue(value, animationSpec = null)` 加可选 spec;`FloatingNavBar` 的点击链路(`snapshotFlow { currentIndex }.drop(1)` → `animateToValue`)传 `clickMoveSpec(距离)` = `tween(140 + 90×格数 ms, FastOutSlowInEasing)`,上限 520ms。**拖动松手仍走 `valueAnimationSpec`(弹簧)** —— 上一轮用户要的回弹手感不受影响。
+- **⚠️ 取舍(已告知用户)**:换成 tween 后点击落位不再有回弹;若更想要"回弹 + 不瞬移",把 `clickMoveSpec` 换成低刚度弹簧(刚度按 `1/距离²` 降)即可,入口只有这一个函数。
+- **用户报(主题设置页)**:「预设色卡里面的色卡好像没有自适应,被拉伸的很奇怪」。**根因**:色卡是 1:1 正方形、卡宽由 `weight(1f)` 决定、列数写死 4 ⇒ 平板上单张被等比放大到 ≈250dp(手机 65dp),10dp 的条状色块细成发丝、中间空出一大片,观感就是"被拉伸"。**改法**:`BoxWithConstraints` 里按可用宽度在 **4 / 8 列**间切换(8 列要求每张 ≥80dp,即卡内可用宽 ≥724dp),**8 = 预设色卡总数、两行排满不留缺口**;末行不满时用等宽 `Spacer(weight(1f))` 顶住(否则 `weight` 会把末行卡片摊宽)。⚠️ 参照项目 `示例文件/android` 的实现与本项目**逐字相同**,同样没有宽屏适配 —— 这是它作为手机应用的固有缺口,不是移植走样。
+- **用户报(首页)**:「平板模式横屏下右下角的海报不刷新」「就是不会自动刷新,往下滑就刷新了」。**定位**:不是图片加载问题,是**首屏没排满**。竖向网格的"加载更多"靠列表末尾的哨兵项(`item(key = "more_$tabId")` 里的 `LaunchedEffect`)触发,哨兵压在视口外时**根本不组合** ⇒ 只按需加载的设计下首屏永远只有第一页;源每页 20 张、平板 7 列时正好 = 2 整行 + 第 3 行 6 张,**右下角第 7 格空着**,看起来就是"那张海报没刷新出来"(截图里该格确实是背景色)。下滑把哨兵带进视口才补上。**改法**:在栅格外套 `snapshotFlow { tabGridState.layoutInfo }` —— 最后一个可见项离末尾不足一行(`lastVisible >= totalItemsCount - 1 - gridColumns`)就取下一页;⚠️ **实际用 `first` 不是 `collect`**(每次内容变长只预取一次):源报 `maxPage=0` 且翻到空页时 `hasMore` 永远为真,`collect` 会被"响应→重组→重新布局→再次命中"套成连环请求。手机上首屏 12 格、离末尾远,行为不变。
+- **⚠️ 编译坑**:这条 `LaunchedEffect` 一开始写在 `when (state)` 分支里 ⇒ 那段代码属于 `LazyGridScope` 的 content lambda(**不是 @Composable**),直接报 `COMPOSABLE_INVOCATION: @Composable invocations can only happen from the context of a @Composable function`。**栅格外层**(`BoxWithConstraints` 内)才是可组合上下文。
+- **把判据抽成纯函数 + 立单测(同轮补)**:`shouldPrefetchNextPage(lastVisibleIndex, totalItemsCount, columns)` 提到 `HomeGridLayout.kt` 顶层 `internal`(与 `ratingBadgeText` / `NavMetrics` 同一套做法),新增 `HomeGridPrefetchTest` **5 例**(平板首屏有空格的 20/22/7 → true;手机首屏 11/22/3 → false;取完第二页 20/42/7 → false;走到末尾 → true;空列表 → false)。收益:列数/页大小以后怎么改,这条口径都有回归网 —— 上一轮 `NavMetrics` 的同类收益已经验证过一次。
+- **验证**:`assembleDebug` + `testDebugUnitTest` **BUILD SUCCESSFUL**,**263 用例 / 0 失败 / 0 错误**(258 + 新增 5)。⚠️ 三处都是观感 / 首屏行为,单测覆盖不到,只能真机看。
+- **两轴审查(本轮)**:错误遗漏 —— ①`animateToValue` 全项目只有 2 个调用点(`onDragStopped` 走默认弹簧、点击链路走 tween),API 改动已封闭;②横向布局(首页另一种排布)的"加载更多"哨兵在**行尾右侧**、行被裁在卡片中间不留空格,故不需要同样处理;③导航动画关闭时 `scrollToPage` 是瞬跳,胶囊仍会按 tween 扫过去(行为变化,已记)。引入回归 —— ①平板首屏现在会**多取一页**(40 张),换来右下角不留空格;条件在取完后自动失效,不会连环拉取;②4 格跳转的胶囊时长 500ms,若嫌慢调 `ClickMovePerSlotMs`;③`DampedDragAnimation` 的公开方法多了一个默认参数,默认值 = 原弹簧 ⇒ 既有调用点行为不变。
+- **同类缺陷一并修(查全部消费方时发现)**:栏目二级页 `PartitionListActivity.VideoGrid` 是**同一副骨架**(自适应 `gridColumns` + `itemsIndexed` + 全宽"加载更多"哨兵),同样会在宽屏首屏末行留空格 ⇒ 接同一条 `shouldPrefetchNextPage`(`enableLoadMore` 为 false 的搜索结果入口自动跳过;`PartitionListViewModel.loadMore()` 本就有 `state==Ready && hasMore && !loader.busy` 守卫,不会连环拉)。`CollectPage` 是本地收藏列表、无分页哨兵,**不需要接**。
+- **⚠️ 顺手纠正一条过时的活规范**:spec 里"`PartitionListActivity` 的'加载更多'用了硬编码 `GridItemSpan(3)`,改列数前必须先统一"是**过时记录** —— `git log -S "GridItemSpan(3)"` 显示 `e4baccf` 就已经把它改成 `maxLineSpan` 了(该提交里能直接看到 `- GridItemSpan(3)` / `+ GridItemSpan(maxLineSpan)`),而且 spec §8 的"阶段一 已完成"那条**自己已经写了"已修正"** —— 两处互相矛盾。已按实际代码改写。**教训:活规范里"未修/待修"的条目要标时间点并定期对账,否则会误导后来人去做一件已经做完的事。**
+

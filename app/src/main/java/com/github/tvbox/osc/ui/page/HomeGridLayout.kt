@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -47,6 +46,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -69,6 +69,7 @@ import com.github.tvbox.osc.ui.components.SkeletonBox
 import com.github.tvbox.osc.ui.components.VodCard
 import com.github.tvbox.osc.ui.components.VodCardStyle
 import com.kyant.capsule.ContinuousCapsule
+import kotlinx.coroutines.flow.first
 
 internal val HomeGridTabRowHeight = 52.dp
 
@@ -88,6 +89,13 @@ private val HomeFilterChipEqualWidthMaxWidth = 600.dp
 private val HomeGridItemSpacing = 16.dp
 
 private val HomeGridContentTopPadding = 4.dp
+
+/** 末尾"加载更多"哨兵压在视口外时不会组合 ⇒ 首屏末行右侧会空一格,离末尾不足一行就先取下一页 */
+internal fun shouldPrefetchNextPage(
+    lastVisibleIndex: Int,
+    totalItemsCount: Int,
+    columns: Int,
+): Boolean = totalItemsCount > 0 && lastVisibleIndex >= totalItemsCount - 1 - columns
 
 @Composable
 fun HomeGridLayout(
@@ -234,6 +242,9 @@ fun HomeGridLayout(
                                 style = VodCardStyle.Stacked,
                             )
                         }
+                        // 首屏没排满时"加载更多"哨兵还压在视口外 ⇒ 它不组合、永远不触发,末行右侧会空一格
+                        // (列数越多越显眼,平板 7 列时首屏 20 张正好空右下角)。补一条:最后一个可见项
+                        // 离末尾不足一行就继续取下一页;取完末尾被推远,条件自然不再成立,不会连环拉取
                         item(key = "more_$tabId", span = { GridItemSpan(maxLineSpan) }) {
                             LaunchedEffect(videos.size) {
                                 if (tabPartition.hasMore) vm.loadMorePartition(tabPartition)
@@ -252,6 +263,18 @@ fun HomeGridLayout(
                             }
                         }
                     }
+                }
+            }
+            if (tabPartition?.state == HomeViewModel.PartitionState.Ready) {
+                LaunchedEffect(tabGridState, tabId, tabPartition.videos.size) {
+                    // 用 first 而不是 collect:每次内容变长只预取一次。源报 maxPage=0 且翻到空页时
+                    // hasMore 永远为真,collect 会被"响应→重组→重新布局→再触发"的回路套成连环请求
+                    snapshotFlow { tabGridState.layoutInfo }
+                        .first { info ->
+                            val last = info.visibleItemsInfo.lastOrNull()?.index ?: return@first false
+                            shouldPrefetchNextPage(last, info.totalItemsCount, gridColumns)
+                        }
+                    vm.loadMorePartition(tabPartition)
                 }
             }
             }

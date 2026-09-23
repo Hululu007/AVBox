@@ -67,6 +67,62 @@ class NavMetricsTest {
         assertTrue(NavMetrics.scrimOpaqueAtStart(NavAxis.Vertical))
     }
 
+    // ---------- 中央动作槽的槽位映射 ----------
+
+    @Test
+    fun actionSlotFor_isSymmetricAroundTheCentre() {
+        // 4 个页面 ⇒ 槽位 2,即"首页 历史 | 直播 | 收藏 设置",两侧各两个
+        assertEquals(2, NavMetrics.actionSlotFor(4))
+        assertEquals(2, NavMetrics.actionSlotFor(5))
+    }
+
+    @Test
+    fun slotIndexOfTab_skipsTheActionSlot() {
+        val action = NavMetrics.actionSlotFor(4)
+        // 页面 0/1 落在动作槽左侧,2/3 整体右移一格 ⇒ 胶囊只停 0/1/3/4,永不停在 2
+        assertEquals(0, NavMetrics.slotIndexOfTab(0, action))
+        assertEquals(1, NavMetrics.slotIndexOfTab(1, action))
+        assertEquals(3, NavMetrics.slotIndexOfTab(2, action))
+        assertEquals(4, NavMetrics.slotIndexOfTab(3, action))
+    }
+
+    @Test
+    fun slotIndexOfTab_roundTripsBackToTheSamePage() {
+        // 唯一需要成立的不变量:页面 → 槽位 → 页面 必须回到原页面
+        // (反向不成立:动作槽没有页面,槽位 2 与 3 都指向页面 2)
+        val action = NavMetrics.actionSlotFor(4)
+        for (page in 0..3) {
+            assertEquals(
+                "页面 $page 的往返必须闭合",
+                page,
+                NavMetrics.tabIndexOfSlot(NavMetrics.slotIndexOfTab(page, action), action),
+            )
+        }
+    }
+
+    @Test
+    fun slotIndexOfTab_withoutActionSlot_isIdentity() {
+        for (tab in 0..3) {
+            assertEquals(tab, NavMetrics.slotIndexOfTab(tab, null))
+        }
+    }
+
+    @Test
+    fun tabIndexOfSlot_withoutActionSlot_isIdentity() {
+        for (slot in 0..3) {
+            assertEquals(slot, NavMetrics.tabIndexOfSlot(slot, null))
+        }
+    }
+
+    @Test
+    fun actionSlotIsTheOnlySlotWithoutAPage() {
+        // 拖动落点全靠这两个函数的配合:除动作槽外,每个槽位都必须映射到某个页面
+        val action = NavMetrics.actionSlotFor(4)
+        val pages = (0..4).filter { it != action }.map { NavMetrics.tabIndexOfSlot(it, action) }
+        assertEquals(listOf(0, 1, 2, 3), pages.sorted())
+        assertEquals(4, pages.size)
+    }
+
     // ---------- 常量关系 ----------
 
     @Test

@@ -30,6 +30,22 @@ object NavMetrics {
     fun axisFor(widthClass: WindowWidthClass): NavAxis =
         if (widthClass == WindowWidthClass.Compact) NavAxis.Horizontal else NavAxis.Vertical
 
+    /** 中央动作槽的槽位下标:两侧各留一半页面,即"历史 | 直播 | 收藏" */
+    fun actionSlotFor(tabCount: Int): Int = tabCount / 2
+
+    /** 页面下标 → 槽位下标(动作槽插在中间,它右侧的页面整体右移一格);只用于"定位",不做插值 */
+    fun slotIndexOfTab(tab: Int, actionSlot: Int?): Int =
+        if (actionSlot != null && tab >= actionSlot) tab + 1 else tab
+
+    /**
+     * 槽位下标 → 页面下标。
+     *
+     * ⚠️ 动作槽没有页面,故**不是** [slotIndexOfTab] 的逆(槽位 2 与 3 都指向页面 2);
+     * 成立的不变量只有单向的"页面 → 槽位 → 页面"回到原页面。
+     */
+    fun tabIndexOfSlot(slot: Int, actionSlot: Int?): Int =
+        if (actionSlot != null && slot > actionSlot) slot - 1 else slot
+
     /**
      * 页面在主轴方向要让开的导航占位(dp)。
      *

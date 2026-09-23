@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -69,6 +70,14 @@ import com.materialkolor.PaletteStyle
 import kotlin.math.roundToInt
 
 private const val DisabledAlpha = 0.45f
+
+private val PresetSeedCardSpacing = 12.dp
+
+private val PresetSeedMinCardWidth = 80.dp
+
+private const val PresetSeedNarrowColumns = 4
+
+private const val PresetSeedWideColumns = 8
 
 @Composable
 fun ThemeSettingsScreen(onNavigateBack: () -> Unit) {
@@ -446,23 +455,37 @@ private fun PresetSeedsRow(
             color = MaterialTheme.colorScheme.onSurface,
         )
         Spacer(Modifier.height(12.dp))
-        PresetSeeds.chunked(4).forEachIndexed { rowIndex, rowItems ->
-            if (rowIndex > 0) Spacer(Modifier.height(12.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                rowItems.forEach { (nameRes, argb) ->
-                    key(argb, style) {
-                        PresetSeedCard(
-                            nameRes = nameRes,
-                            seedArgb = argb,
-                            selected = currentSeed == argb,
-                            style = style,
-                            enabled = enabled,
-                            onClick = { onSeedSelected(argb) },
-                            modifier = Modifier.weight(1f),
-                        )
+        // 色卡是 1:1 正方形:列数写死 4 会让卡片随窗口放大(平板单张 250dp、色条细如发丝),按宽度切 4/8 列
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val wideColumnsMinWidth = PresetSeedMinCardWidth * PresetSeedWideColumns +
+                PresetSeedCardSpacing * (PresetSeedWideColumns - 1)
+            val columns =
+                if (maxWidth >= wideColumnsMinWidth) PresetSeedWideColumns
+                else PresetSeedNarrowColumns
+            Column {
+                PresetSeeds.chunked(columns).forEachIndexed { rowIndex, rowItems ->
+                    if (rowIndex > 0) Spacer(Modifier.height(PresetSeedCardSpacing))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(PresetSeedCardSpacing),
+                    ) {
+                        rowItems.forEach { (nameRes, argb) ->
+                            key(argb, style) {
+                                PresetSeedCard(
+                                    nameRes = nameRes,
+                                    seedArgb = argb,
+                                    selected = currentSeed == argb,
+                                    style = style,
+                                    enabled = enabled,
+                                    onClick = { onSeedSelected(argb) },
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        }
+                        // 不满一行时用等宽占位顶住,否则末行的卡片会被 weight 摊宽
+                        repeat(columns - rowItems.size) {
+                            Spacer(Modifier.weight(1f))
+                        }
                     }
                 }
             }

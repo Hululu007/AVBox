@@ -3,11 +3,12 @@ package com.github.tvbox.osc.ui.navbar
 import android.os.Build
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.EaseOut
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -86,6 +87,18 @@ import kotlin.math.sign
 /** 悬浮导航栏的轴向:Compact 用底部横条,Medium/Expanded 用侧边竖条(见 spec §4.11) */
 enum class NavAxis { Horizontal, Vertical }
 
+private const val ClickMoveBaseMs = 100
+private const val ClickMovePerSlotMs = 60
+private const val ClickMoveMaxMs = 360
+
+/** 点击切页:弹簧的稳定时间与距离无关、峰值速度却成正比(4 格 ≈56 槽/秒)⇒ 长距离像"瞬移",改用速度恒定的 tween */
+private fun clickMoveSpec(distance: Float): AnimationSpec<Float> = tween(
+    durationMillis = (ClickMoveBaseMs + ClickMovePerSlotMs * distance)
+        .toInt()
+        .coerceAtMost(ClickMoveMaxMs),
+    easing = FastOutSlowInEasing,
+)
+
 data class GlassTabItem(
     val iconRes: Int,
     val label: String
@@ -150,9 +163,14 @@ fun FloatingNavBar(
     tabs: List<GlassTabItem>,
     config: LiquidGlassConfig,
     interactive: () -> Boolean = { true },
-    isTabSwitching: () -> Boolean = { false }
+    isTabSwitching: () -> Boolean = { false },
+    actionItem: GlassTabItem? = null,
+    onActionClick: () -> Unit = {},
 ) {
     val tabsCount = tabs.size
+    // 槽位数≠页面数:动作槽占一格但不占页面,步长与胶囊定位都走槽位空间
+    val actionSlot = actionItem?.let { NavMetrics.actionSlotFor(tabsCount) }
+    val slotCount = tabsCount + if (actionItem != null) 1 else 0
     val isLightTheme = !isSystemInDarkTheme()
     val isBlurEnabled = config.navbarEnabled
     val supportsLens = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
@@ -177,8 +195,10 @@ fun FloatingNavBar(
         val mainAxisConstraint = if (isHorizontal) constraints.maxWidth else constraints.maxHeight
         val totalStridePx =
             if (mainAxisConstraint == Constraints.Infinity) 0f else mainAxisConstraint.toFloat()
-        val tabStridePx =
-            if (totalStridePx > 0f) (totalStridePx - with(density) { 8f.dp.toPx() }) / tabsCount else 0f
+        val slotStridePx =
+            if (totalStridePx > 0f) (totalStridePx - with(density) { 8f.dp.toPx() }) / slotCount else 0f
+        // 弹簧会冲过目标值,位置必须钳到槽位区间(否则末端的回弹会把胶囊顶出玻璃壳)
+        val maxSlotPosition = (slotCount - 1).toFloat()
 
         val offsetAnimation = remember { Animatable(0f) }
         val panelOffset by remember(density, totalStridePx) {
@@ -199,31 +219,32 @@ fun FloatingNavBar(
         val currentOnTabSelected by rememberUpdatedState(onTabSelected)
         val currentInteractive by rememberUpdatedState(interactive)
 
-        val dampedDragAnimation = remember(animationScope, tabsCount, density, tabStridePx) {
+        val dampedDragAnimation = remember(animationScope, tabsCount, slotCount, density, slotStridePx) {
             DampedDragAnimation(
                 animationScope = animationScope,
-                initialValue = selectedTabIndex().toFloat(),
-                valueRange = 0f..maxOf(tabsCount - 1, 0).toFloat(),
+                initialValue = NavMetrics.slotIndexOfTab(selectedTabIndex(), actionSlot).toFloat(),
+                valueRange = 0f..maxOf(slotCount - 1, 0).toFloat(),
                 visibilityThreshold = 0.001f,
                 initialScale = 1f,
                 pressedScale = 78f / 56f,
                 onDragStarted = {},
                 onDragStopped = {
-                    val targetIndex = targetValue.fastRoundToInt().fastCoerceIn(0, tabsCount - 1)
-                    currentIndex = targetIndex
-                    animateToValue(targetIndex.toFloat())
-                    currentOnTabSelected(targetIndex)
+                    val slot = targetValue.fastRoundToInt().fastCoerceIn(0, slotCount - 1)
+                    val page = NavMetrics.tabIndexOfSlot(slot, actionSlot)
+                    currentIndex = page
+                    animateToValue(NavMetrics.slotIndexOfTab(page, actionSlot).toFloat())
+                    currentOnTabSelected(page)
                     animationScope.launch {
                         offsetAnimation.animateTo(0f, spring(1f, 300f, 0.5f))
                     }
                 },
                 onDrag = { _, dragAmount ->
-                    if (tabStridePx > 0f) {
+                    if (slotStridePx > 0f) {
                         val dragAlongAxis = if (isHorizontal) dragAmount.x else dragAmount.y
                         val direction = if (isHorizontal && !isLtr) -1f else 1f
                         updateValue(
-                            (targetValue + dragAlongAxis / tabStridePx * direction)
-                                .fastCoerceIn(0f, (tabsCount - 1).toFloat())
+                            (targetValue + dragAlongAxis / slotStridePx * direction)
+                                .fastCoerceIn(0f, (slotCount - 1).toFloat())
                         )
                         animationScope.launch {
                             offsetAnimation.snapTo(offsetAnimation.value + dragAlongAxis)
@@ -242,19 +263,26 @@ fun FloatingNavBar(
         LaunchedEffect(dampedDragAnimation) {
             snapshotFlow { currentIndex }
                 .drop(1)
-                .collectLatest { index ->
-                    dampedDragAnimation.animateToValue(index.toFloat())
+                .collectLatest { page ->
+                    val target = NavMetrics.slotIndexOfTab(page, actionSlot).toFloat()
+                    dampedDragAnimation.animateToValue(
+                        target,
+                        clickMoveSpec(abs(target - dampedDragAnimation.value)),
+                    )
                 }
         }
 
         val interactiveHighlight =
-            if (isBlurEnabled && supportsLens && tabStridePx > 0f) {
-                remember(animationScope, tabStridePx) {
+            if (isBlurEnabled && supportsLens && slotStridePx > 0f) {
+                remember(animationScope, slotStridePx) {
                     InteractiveHighlight(
                         animationScope = animationScope,
                         enabled = { currentInteractive() },
                         position = { size, _ ->
-                            val stride = (dampedDragAnimation.value + 0.5f) * tabStridePx + panelOffset
+                            // 位置 = value × 步长 的纯线性关系,胶囊才与手指 1:1;中间插值过会让它变速
+                            val stride =
+                                (dampedDragAnimation.value.coerceIn(0f, maxSlotPosition) + 0.5f) *
+                                    slotStridePx + panelOffset
                             if (isHorizontal) {
                                 Offset(
                                     if (isLtr) stride else size.width - stride,
@@ -345,10 +373,26 @@ fun FloatingNavBar(
                 .mainAxisFill(axis)
                 .padding(4.dp),
             horizontalContent = {
-                NavTabsRow(tabs, selectedTabIndex, onTabSelected, interactive)
+                NavSlotsRow(
+                    tabs = tabs,
+                    actionItem = actionItem,
+                    actionSlot = actionSlot,
+                    selectedTabIndex = selectedTabIndex,
+                    onTabSelected = onTabSelected,
+                    onActionClick = onActionClick,
+                    interactive = interactive,
+                )
             },
             verticalContent = {
-                NavTabsColumn(tabs, selectedTabIndex, onTabSelected, interactive)
+                NavSlotsColumn(
+                    tabs = tabs,
+                    actionItem = actionItem,
+                    actionSlot = actionSlot,
+                    selectedTabIndex = selectedTabIndex,
+                    onTabSelected = onTabSelected,
+                    onActionClick = onActionClick,
+                    interactive = interactive,
+                )
             },
         )
 
@@ -402,22 +446,39 @@ fun FloatingNavBar(
                     .mainAxisPadding(axis, 4.dp)
                     .graphicsLayer(colorFilter = ColorFilter.tint(accentColor)),
                 horizontalContent = {
-                    NavTabsRow(tabs, selectedTabIndex, onTabSelected, interactive)
+                    NavSlotsRow(
+                        tabs = tabs,
+                        actionItem = actionItem,
+                        actionSlot = actionSlot,
+                        selectedTabIndex = selectedTabIndex,
+                        onTabSelected = onTabSelected,
+                        onActionClick = onActionClick,
+                        interactive = interactive,
+                    )
                 },
                 verticalContent = {
-                    NavTabsColumn(tabs, selectedTabIndex, onTabSelected, interactive)
+                    NavSlotsColumn(
+                        tabs = tabs,
+                        actionItem = actionItem,
+                        actionSlot = actionSlot,
+                        selectedTabIndex = selectedTabIndex,
+                        onTabSelected = onTabSelected,
+                        onActionClick = onActionClick,
+                        interactive = interactive,
+                    )
                 },
             )
         }
 
-        if (tabStridePx > 0f) {
+        if (slotStridePx > 0f) {
         Box(
             Modifier
                 .mainAxisPadding(axis, 4.dp)
                 .graphicsLayer {
                     val contentStride = totalStridePx - with(density) { 8f.dp.toPx() }
-                    val singleTabStride = contentStride / tabsCount
-                    val progressOffset = dampedDragAnimation.value * singleTabStride
+                    val singleTabStride = contentStride / slotCount
+                    val progressOffset =
+                        dampedDragAnimation.value.coerceIn(0f, maxSlotPosition) * singleTabStride
                     val rtlFlipped = isHorizontal && !isLtr
                     setMainAxisTranslation(
                         axis,
@@ -483,7 +544,7 @@ fun FloatingNavBar(
                 .crossAxisSize(axis, 56.dp)
                 .mainAxisLength(
                     axis,
-                    with(density) { ((totalStridePx - 8f.dp.toPx()) / tabsCount).toDp() }
+                    with(density) { ((totalStridePx - 8f.dp.toPx()) / slotCount).toDp() }
                 )
         )
         }
@@ -491,42 +552,72 @@ fun FloatingNavBar(
 }
 
 @Composable
-private fun RowScope.NavTabsRow(
+private fun RowScope.NavSlotsRow(
     tabs: List<GlassTabItem>,
+    actionItem: GlassTabItem?,
+    actionSlot: Int?,
     selectedTabIndex: () -> Int,
     onTabSelected: (Int) -> Unit,
+    onActionClick: () -> Unit,
     interactive: () -> Boolean,
 ) {
     val currentIndex = selectedTabIndex()
     val enabled = interactive()
-    tabs.forEachIndexed { index, tab ->
-        NavTabItem(
-            tab = tab,
-            selected = index == currentIndex,
-            enabled = enabled,
-            onClick = { onTabSelected(index) },
-            modifier = Modifier.fillMaxHeight().weight(1f),
-        )
+    repeat(tabs.size + if (actionItem != null) 1 else 0) { slot ->
+        if (actionItem != null && slot == actionSlot) {
+            NavTabItem(
+                tab = actionItem,
+                selected = false,
+                enabled = enabled,
+                onClick = onActionClick,
+                role = Role.Button,
+                modifier = Modifier.fillMaxHeight().weight(1f),
+            )
+        } else {
+            val index = NavMetrics.tabIndexOfSlot(slot, actionSlot)
+            NavTabItem(
+                tab = tabs[index],
+                selected = index == currentIndex,
+                enabled = enabled,
+                onClick = { onTabSelected(index) },
+                modifier = Modifier.fillMaxHeight().weight(1f),
+            )
+        }
     }
 }
 
 @Composable
-private fun ColumnScope.NavTabsColumn(
+private fun ColumnScope.NavSlotsColumn(
     tabs: List<GlassTabItem>,
+    actionItem: GlassTabItem?,
+    actionSlot: Int?,
     selectedTabIndex: () -> Int,
     onTabSelected: (Int) -> Unit,
+    onActionClick: () -> Unit,
     interactive: () -> Boolean,
 ) {
     val currentIndex = selectedTabIndex()
     val enabled = interactive()
-    tabs.forEachIndexed { index, tab ->
-        NavTabItem(
-            tab = tab,
-            selected = index == currentIndex,
-            enabled = enabled,
-            onClick = { onTabSelected(index) },
-            modifier = Modifier.fillMaxWidth().weight(1f),
-        )
+    repeat(tabs.size + if (actionItem != null) 1 else 0) { slot ->
+        if (actionItem != null && slot == actionSlot) {
+            NavTabItem(
+                tab = actionItem,
+                selected = false,
+                enabled = enabled,
+                onClick = onActionClick,
+                role = Role.Button,
+                modifier = Modifier.fillMaxWidth().weight(1f),
+            )
+        } else {
+            val index = NavMetrics.tabIndexOfSlot(slot, actionSlot)
+            NavTabItem(
+                tab = tabs[index],
+                selected = index == currentIndex,
+                enabled = enabled,
+                onClick = { onTabSelected(index) },
+                modifier = Modifier.fillMaxWidth().weight(1f),
+            )
+        }
     }
 }
 
@@ -537,6 +628,7 @@ private fun NavTabItem(
     enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier,
+    role: Role = Role.Tab,
 ) {
     val scale = LocalNavTabScale.current
     val iconColor by animateColorAsState(
@@ -558,7 +650,7 @@ private fun NavTabItem(
                 enabled = enabled,
                 interactionSource = null,
                 indication = null,
-                role = Role.Tab,
+                role = role,
                 onClick = onClick
             )
             .graphicsLayer {
