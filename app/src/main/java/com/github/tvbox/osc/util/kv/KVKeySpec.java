@@ -126,8 +126,12 @@ public final class KVKeySpec implements KVDecoder.TypeRegistry {
         register(HawkConfig.DANMU_API_USE_DEFAULT, false);
         register(HawkConfig.LIQUID_GLASS_NAVBAR, false);
         register(HawkConfig.LIQUID_GLASS_CONTROLS, false);
+        register(HawkConfig.LIQUID_GLASS_DISPERSION, false);
 
         // ---- float ----
+        register(HawkConfig.LIQUID_GLASS_BLUR, 0f);
+        register(HawkConfig.LIQUID_GLASS_DISTORTION, 0f);
+        register(HawkConfig.LIQUID_GLASS_TRANSLUCENCY, 0f);
         register(HawkConfig.DANMU_SPEED, 0f);
         register(HawkConfig.DANMU_ALPHA, 0f);
         register(HawkConfig.DANMU_SIZE_SCALE, 0f);

@@ -10,6 +10,7 @@ import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,6 +49,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
@@ -151,6 +153,15 @@ private fun MainContent() {
                 }
             }
         }
+    }
+
+    // 冷启动后第一次切页,pager 滚动 → 页面测量 → 玻璃源层重录整条链路都是首次执行(ART 现场编译);
+    // 先滚 1px 再滚回来走完同一套路径,位移不到 0.3dp,肉眼看不到
+    LaunchedEffect(pagerState) {
+        withFrameNanos { }
+        withFrameNanos { }
+        pagerState.scrollBy(1f)
+        pagerState.scrollBy(-1f)
     }
 
     BackHandler {

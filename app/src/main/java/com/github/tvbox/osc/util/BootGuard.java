@@ -44,10 +44,15 @@ public final class BootGuard {
     /**
      * 判为与源无关的崩溃帧前缀:整条异常链都落在这里面才算"界面/平台问题"。
      * 刻意不含 {@code com.github.catvod.} —— 装载器与爬虫都在这条链上,判不准宁可算"有关"。
+     *
+     * <p>⚠️ {@code com.android.internal.} 是**必需的**:任何主线程未捕获异常的栈尾必然是
+     * {@code com.android.internal.os.RuntimeInit.run} → {@code ZygoteInit.main}。漏了它,
+     * 判据会对**每一次**主线程崩溃都返回 true,"界面崩溃不参与停用判定"这条保护等于从未生效
+     * —— 2026-09-23 实机事故:设置页一个既有的 CME 崩在启动期,把用户正常的源误禁了。
      */
     private static final String[] IGNORABLE_FRAME_PREFIXES = {
             "android.", "androidx.", "java.", "javax.", "kotlin.", "kotlinx.", "dalvik.", "libcore.",
-            "com.google.android.",
+            "com.google.android.", "com.android.internal.",
             "com.github.tvbox.osc.ui.", "com.github.tvbox.osc.base.",
     };
 

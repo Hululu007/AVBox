@@ -77,6 +77,7 @@ import com.github.tvbox.osc.bean.Movie
 import com.github.tvbox.osc.ui.components.AppTopBarScaffold
 import com.github.tvbox.osc.ui.components.LoadStateBox
 import com.github.tvbox.osc.ui.components.LoadState
+import com.github.tvbox.osc.ui.components.SearchField
 import com.github.tvbox.osc.ui.components.VodCard
 import com.github.tvbox.osc.ui.components.VodCardMenu
 import com.github.tvbox.osc.ui.components.glassTopBarSurface

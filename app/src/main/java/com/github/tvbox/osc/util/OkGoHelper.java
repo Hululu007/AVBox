@@ -111,7 +111,8 @@ public class OkGoHelper {
     // DNS 解析在 OkHttp 线程读,init/reloadDns 在主线程写
     public static volatile DnsOverHttps dnsOverHttps = null;
 
-    public static ArrayList<String> dnsHttpsList = new ArrayList<>();
+    // ⚠️ 配置解析在 IO 协程写、设置页在主线程 mapIndexed 遍历:必须整体替换引用,不能原地 clear/add
+    public static volatile List<String> dnsHttpsList = Collections.emptyList();
 
     public static boolean is_doh = false;
     // 配置解析可能在 IO 线程写、DNS 解析在 OkHttp 线程读,需 volatile 保证可见性
@@ -173,15 +174,16 @@ public class OkGoHelper {
     }
 
     public static void setDnsList() {
-        dnsHttpsList.clear();
+        List<String> list = new ArrayList<>();
         JsonArray jsonArray = getDohConfigArray();
-        dnsHttpsList.add("关闭"); // i18n: keep(DNS 选项索引锚点,显示由设置页映射资源)
+        list.add("关闭"); // i18n: keep(DNS 选项索引锚点,显示由设置页映射资源)
         for (int i = 0; i < jsonArray.size(); i++) {
             JsonObject dnsConfig = jsonArray.get(i).getAsJsonObject();
             String name = dnsConfig.has("name") ? dnsConfig.get("name").getAsString() : "Unknown Name";
-            dnsHttpsList.add(name);
+            list.add(name);
         }
-        if(KV.get(HawkConfig.DOH_URL, 0)+1>dnsHttpsList.size())KV.put(HawkConfig.DOH_URL, 0);
+        dnsHttpsList = list;
+        if(KV.get(HawkConfig.DOH_URL, 0)+1>list.size())KV.put(HawkConfig.DOH_URL, 0);
         refreshHosts();
     }
 
@@ -209,8 +211,8 @@ public class OkGoHelper {
         Integer dohSelector=KV.get(HawkConfig.DOH_URL, 0);
         JsonArray ips=null;
         try {
-            dnsHttpsList.clear();
-            dnsHttpsList.add("关闭"); // i18n: keep(DNS 选项索引锚点,显示由设置页映射资源)
+            List<String> list = new ArrayList<>();
+            list.add("关闭"); // i18n: keep(DNS 选项索引锚点,显示由设置页映射资源)
             JsonArray jsonArray = getDohConfigArray();
             if(dohSelector>jsonArray.size()) {
                 KV.put(HawkConfig.DOH_URL, 0);
@@ -219,9 +221,10 @@ public class OkGoHelper {
             for (int i = 0; i < jsonArray.size(); i++) {
                 JsonObject dnsConfig = jsonArray.get(i).getAsJsonObject();
                 String name = dnsConfig.has("name") ? dnsConfig.get("name").getAsString() : "Unknown Name";
-                dnsHttpsList.add(name);
+                list.add(name);
                 if(dohSelector==(i+1))ips = dnsConfig.has("ips") ? dnsConfig.getAsJsonArray("ips") : null;
             }
+            dnsHttpsList = list;
         } catch (Exception e) {
             e.printStackTrace();
         }

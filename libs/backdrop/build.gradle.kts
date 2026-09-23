@@ -1,7 +1,8 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 // 本地 fork 自 io.github.kyant0:backdrop 2.0.1(Apache-2.0,见 NOTICE),
-// 目的:高光/阴影/内阴影层"参数未变跳过 record"等内部性能优化;上游升级需手工合并。
+// 目的:高光/阴影/内阴影层"参数未变跳过 record"等内部性能优化 + HighlightStyle.Ambient 加 angle 参数
+// + AmbientHighlightShaderString 背光侧改全透明;上游升级需手工合并。
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)

@@ -72,7 +72,9 @@ interface HighlightStyle {
 
     @Immutable
     data class Ambient(
-        @param:FloatRange(from = 0.0, to = 1.0) val intensity: Float = 0.38f
+        @param:FloatRange(from = 0.0, to = 1.0) val intensity: Float = 0.38f,
+        // fork 新增(上游硬编码 45°):45° 给出的是"右下受光",要"上亮下暗"须传 -90
+        val angle: Float = 45f
     ) : HighlightStyle {
 
         override val color: Color = Color.White.copy(alpha = intensity)
@@ -90,7 +92,7 @@ interface HighlightStyle {
                 ).apply {
                     setFloatUniform("size", size.width, size.height)
                     setFloatUniform("cornerRadii", getCornerRadii(shape))
-                    setFloatUniform("angle", 45f * (PI / 180f).toFloat())
+                    setFloatUniform("angle", angle * (PI / 180f).toFloat())
                     setFloatUniform("falloff", 1f)
                 }
             } else {

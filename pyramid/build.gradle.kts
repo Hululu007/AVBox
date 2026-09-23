@@ -39,11 +39,17 @@ dependencies {
 chaquopy {
     defaultConfig {
         version = "3.10"
-        // 原配置写死了开发者本机的 Python 3.8;路径存在时沿用,否则由 Chaquopy 从 PATH 自动探测
-        val localBuildPython = "D:/Programs/Python/Python38/python.exe"
-        if (file(localBuildPython).exists()) {
-            buildPython(localBuildPython)
-        }
+        // 构建机的 Python 位置因机而异,不把某一台的绝对路径写进仓库:
+        // 优先 -PbuildPython / CHAQUOPY_BUILD_PYTHON,其次 Windows 标准安装位置,都没有则交给 Chaquopy 自行探测
+        val explicitBuildPython = (project.findProperty("buildPython") as String?)
+            ?: System.getenv("CHAQUOPY_BUILD_PYTHON")
+        val defaultBuildPython = File(
+            System.getProperty("user.home"),
+            "AppData/Local/Programs/Python/Python310/python.exe",
+        ).absolutePath
+        listOfNotNull(explicitBuildPython, defaultBuildPython)
+            .firstOrNull { file(it).exists() }
+            ?.let { buildPython(it) }
         pip {
             options("-i", "https://mirrors.aliyun.com/pypi/simple/")
             options("--find-links", file("wheels/chaquopy-prebuilt").absolutePath)

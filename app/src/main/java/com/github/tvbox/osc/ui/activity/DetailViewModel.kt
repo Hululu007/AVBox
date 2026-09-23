@@ -664,6 +664,10 @@ class DetailViewModel : ViewModel() {
 
     @Subscribe(threadMode = ThreadMode.MAIN)
     fun onRefreshEvent(event: RefreshEvent) {
+        if (event.type == RefreshEvent.TYPE_PLAYBACK_STARTED) {
+            onPlaybackStarted()
+            return
+        }
         if (event.type != RefreshEvent.TYPE_REFRESH) return
         val info = vodInfo ?: return
         when (val obj = event.obj) {
@@ -683,6 +687,15 @@ class DetailViewModel : ViewModel() {
         }
     }
 
+    /** 播放器真的播起来才落库;校验在播内容与本页一致(含集/线路:音乐页接管后改的是同一份 session) */
+    private fun onPlaybackStarted() {
+        val info = vodInfo ?: return
+        val playing = App.getInstance().vodInfo ?: return
+        if (playing.id != info.id || playing.sourceKey != info.sourceKey) return
+        if (playing.playFlag != info.playFlag || playing.playIndex != info.playIndex) return
+        insertVod()
+    }
+
     private fun syncPlayingVodInfo(playing: VodInfo) {
         val info = vodInfo ?: return
         val newFlag = playing.playFlag
@@ -698,27 +711,31 @@ class DetailViewModel : ViewModel() {
         info.seriesFlags.forEach { it.selected = it.name == newFlag }
         info.seriesMap?.values?.forEach { list -> list.forEach { it.selected = false } }
         newList[newIndex].selected = true
-        insertVod()
         bumpRevision()
         LOG.i("echo-detail sync -> $newFlag/$newIndex")
     }
 
     private fun insertVod() {
         val info = vodInfo ?: return
+        refreshPlayNote(info)
+        RoomDataManger.insertVodRecord(firstsourceKey, info)
+        EventBus.getDefault().post(RefreshEvent(RefreshEvent.TYPE_HISTORY_REFRESH))
+    }
+
+    /** 集名要随会话进播放器(字幕搜索默认词读它),不能只在落库时才刷 */
+    private fun refreshPlayNote(info: VodInfo) {
         try {
             info.playNote = info.seriesMap?.get(info.playFlag)?.get(info.playIndex)?.name ?: ""
         } catch (_: Throwable) {
             info.playNote = ""
         }
-        RoomDataManger.insertVodRecord(firstsourceKey, info)
-        EventBus.getDefault().post(RefreshEvent(RefreshEvent.TYPE_HISTORY_REFRESH))
     }
 
     fun preparePlaySession(): PlaybackSession? {
         val info = vodInfo ?: return null
         val list = info.seriesMap?.get(info.playFlag) ?: return null
         if (list.isEmpty()) return null
-        insertVod()
+        refreshPlayNote(info)
         val preview = previewVodInfo ?: VodInfo()
         preview.id = info.id
         preview.name = info.name

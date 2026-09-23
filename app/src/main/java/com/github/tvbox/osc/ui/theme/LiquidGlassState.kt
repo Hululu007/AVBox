@@ -10,8 +10,11 @@ object LiquidGlassState {
 
     const val DEFAULT_BLUR_DP = 20f
     const val DEFAULT_DISTORTION_DP = 30f
+    const val DEFAULT_TRANSLUCENCY = 0.5f
+    const val DEFAULT_DISPERSION = true
     val BLUR_RANGE: ClosedFloatingPointRange<Float> = 0f..40f
     val DISTORTION_RANGE: ClosedFloatingPointRange<Float> = 0f..30f
+    val TRANSLUCENCY_RANGE: ClosedFloatingPointRange<Float> = 0f..1f
 
     private var current by mutableStateOf(load())
 
@@ -22,6 +25,8 @@ object LiquidGlassState {
         controlsEnabled = KV.get(HawkConfig.LIQUID_GLASS_CONTROLS, true),
         blurDp = KV.get(HawkConfig.LIQUID_GLASS_BLUR, DEFAULT_BLUR_DP),
         distortionDp = KV.get(HawkConfig.LIQUID_GLASS_DISTORTION, DEFAULT_DISTORTION_DP),
+        translucency = KV.get(HawkConfig.LIQUID_GLASS_TRANSLUCENCY, DEFAULT_TRANSLUCENCY),
+        dispersion = KV.get(HawkConfig.LIQUID_GLASS_DISPERSION, DEFAULT_DISPERSION),
     )
 
     fun setNavbarEnabled(enabled: Boolean) {
@@ -44,8 +49,21 @@ object LiquidGlassState {
         current = current.copy(distortionDp = dp)
     }
 
+    fun setTranslucency(value: Float) {
+        KV.put(HawkConfig.LIQUID_GLASS_TRANSLUCENCY, value)
+        current = current.copy(translucency = value)
+    }
+
+    fun setDispersion(enabled: Boolean) {
+        KV.put(HawkConfig.LIQUID_GLASS_DISPERSION, enabled)
+        current = current.copy(dispersion = enabled)
+    }
+
+    /** 只重置效果参数,不动两个启用开关 */
     fun restoreDefaults() {
         setBlurDp(DEFAULT_BLUR_DP)
         setDistortionDp(DEFAULT_DISTORTION_DP)
+        setTranslucency(DEFAULT_TRANSLUCENCY)
+        setDispersion(DEFAULT_DISPERSION)
     }
 }

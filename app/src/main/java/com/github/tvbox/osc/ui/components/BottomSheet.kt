@@ -12,6 +12,7 @@ import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxSize
@@ -47,7 +48,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
@@ -351,7 +351,8 @@ private fun SheetOverlay(
         BottomSheetDefaults.ScrimColor
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val panelMaxHeight = maxHeight * SheetMaxHeightFraction
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -365,15 +366,13 @@ private fun SheetOverlay(
                     onClick = { dismissWithAnimation() },
                 ),
         )
-        // 面板容器:贴底(弹层)或居中(对话框);居中档额外让出键盘高度 ——
-        // 覆盖层在应用窗口内,没有 dialog window 帮忙把面板顶到键盘上方,得自己让。
+        // 遮罩恒满屏;键盘让位改挂在面板内容上(见下方 Column)⇒ 面板底边恒贴屏底,收起时不会露出下方页面
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .then(if (centered) Modifier.imePadding() else Modifier),
             contentAlignment = if (centered) Alignment.Center else Alignment.BottomCenter,
         ) {
-            val panelMaxHeight = (LocalConfiguration.current.screenHeightDp * SheetMaxHeightFraction).dp
             Surface(
                 modifier = Modifier
                     .then(modifier)
@@ -407,7 +406,10 @@ private fun SheetOverlay(
                     LocalSheetDismiss provides { dismissWithAnimation() },
                     LocalSheetDismissThen provides { action -> dismissWithAnimation(action) },
                 ) {
-                    Column {
+                    // 贴底弹层:键盘高度留在面板内部,面板底边不动 ⇒ 收起键盘时不会在底部漏出下方页面
+                    Column(
+                        modifier = if (centered) Modifier else Modifier.imePadding(),
+                    ) {
                         // 居中对话框没有把手、也不吃下滑关闭手势(内容要能正常滚/选文字),
                         // 标题由调用方画在内容里(见 AVBoxAlertDialog)。
                         if (!centered) {

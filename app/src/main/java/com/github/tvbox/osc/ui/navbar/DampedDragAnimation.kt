@@ -2,6 +2,7 @@ package com.github.tvbox.osc.ui.navbar
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.MutatorMutex
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
@@ -11,10 +12,15 @@ import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.unit.IntSize
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.android.awaitFrame
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+
+/** 按压链路的预热幅度与时长:0.01 的按压进度换算到形变不足 1px,视觉上等于没动(高光预热共用) */
+internal const val PRESS_WARMUP_PROGRESS = 0.01f
+internal const val PRESS_WARMUP_MS = 32
 
 class DampedDragAnimation(
     private val animationScope: CoroutineScope,
@@ -92,6 +98,20 @@ class DampedDragAnimation(
             launch { pressProgressAnimation.animateTo(0f, pressProgressAnimationSpec) }
             launch { scaleXAnimation.animateTo(initialScale, scaleXAnimationSpec) }
             launch { scaleYAnimation.animateTo(initialScale, scaleYAnimationSpec) }
+        }
+    }
+
+    // 预热按压链路:幅度只到 PRESS_WARMUP_PROGRESS(形变不足 1px,视觉等于没动),目的是让冷启动后第一次按压不必现编现用
+    fun warmUp() {
+        animationScope.launch {
+            val warmupScale = initialScale + (pressedScale - initialScale) * PRESS_WARMUP_PROGRESS
+            launch { pressProgressAnimation.animateTo(PRESS_WARMUP_PROGRESS, tween(PRESS_WARMUP_MS)) }
+            launch { scaleXAnimation.animateTo(warmupScale, tween(PRESS_WARMUP_MS)) }
+            launch { scaleYAnimation.animateTo(warmupScale, tween(PRESS_WARMUP_MS)) }
+            delay(PRESS_WARMUP_MS.toLong())
+            launch { pressProgressAnimation.animateTo(0f, tween(PRESS_WARMUP_MS)) }
+            launch { scaleXAnimation.animateTo(initialScale, tween(PRESS_WARMUP_MS)) }
+            launch { scaleYAnimation.animateTo(initialScale, tween(PRESS_WARMUP_MS)) }
         }
     }
 

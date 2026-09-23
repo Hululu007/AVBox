@@ -168,19 +168,64 @@ public class BootGuardTest {
 
     // ---------- ⑤ 崩溃栈过滤:界面/平台崩溃不算到源头上 ----------
 
-    /** 纯界面栈(Compose + 消息循环 + 应用界面层)判为与源无关,否则界面 bug 崩一次就停用源 */
+    /**
+     * 纯界面栈判为与源无关,否则界面 bug 崩一次就停用源。
+     *
+     * <p>⚠️ 这条栈必须按**真实主线程崩溃**的形态写全 —— 栈尾一定要带
+     * {@code com.android.internal.os.RuntimeInit} / {@code ZygoteInit}。
+     * 2026-09-23 实机事故就是栽在这里:原用例的假栈以 {@code java.lang.Thread.run} 收尾,
+     * 而 {@code IGNORABLE_FRAME_PREFIXES} 漏了 {@code com.android.internal.},于是单测绿着、
+     * 线上却对**每一次**主线程崩溃都判成"与源有关"(设置页一个既有的 CME 崩在启动期,把正常源误禁)。
+     * 下面的栈取自该次真机 `logcat -b crash`。
+     */
     @Test
     public void uiCrashIsNotSourceRelated() {
         RuntimeException crash = new RuntimeException("ui bug");
         crash.setStackTrace(new StackTraceElement[]{
-                frame("androidx.compose.runtime.Recomposer", "run"),
-                frame("kotlinx.coroutines.DispatchedTask", "run"),
-                frame("kotlin.coroutines.jvm.internal.ContinuationImpl", "resumeWith"),
-                frame("android.os.Handler", "handleCallback"),
-                frame("com.github.tvbox.osc.ui.page.MainScreenKt", "MainContent"),
-                frame("java.lang.Thread", "run"),
+                frame("java.util.ArrayList$Itr", "checkForComodification"),
+                frame("com.github.tvbox.osc.ui.page.SettingsPageKt", "SettingsPage$lambda$6$0$1$3"),
+                frame("androidx.compose.runtime.internal.ComposableLambdaImpl", "invoke"),
+                frame("com.github.tvbox.osc.ui.components.SettingsGroupKt", "SettingsCard"),
+                frame("androidx.compose.runtime.Recomposer", "performRecompose"),
+                frame("androidx.compose.ui.platform.AndroidUiFrameClock$withFrameNanos$2$callback$1", "doFrame"),
+                frame("android.view.Choreographer$CallbackRecord", "run"),
+                frame("android.os.Handler", "dispatchMessage"),
+                frame("android.os.Looper", "loop"),
+                frame("android.app.ActivityThread", "main"),
+                frame("java.lang.reflect.Method", "invoke"),
+                frame("com.android.internal.os.RuntimeInit$MethodAndArgsCaller", "run"),
+                frame("com.android.internal.os.ZygoteInit", "main"),
         });
         assertFalse(BootGuard.looksSourceRelated(crash));
+    }
+
+    /**
+     * 回归锁:框架崩溃尾巴({@code com.android.internal.})单独出现时也不能算"与源有关"。
+     *
+     * <p>这是上一条的最小复现 —— 去掉它,任何主线程崩溃都会被判成源的问题。
+     */
+    @Test
+    public void frameworkCrashTailIsNotSourceRelated() {
+        RuntimeException crash = new RuntimeException("ui bug");
+        crash.setStackTrace(new StackTraceElement[]{
+                frame("androidx.compose.runtime.Recomposer", "run"),
+                frame("com.android.internal.os.RuntimeInit", "main"),
+                frame("com.android.internal.os.ZygoteInit", "main"),
+        });
+        assertFalse(BootGuard.looksSourceRelated(crash));
+    }
+
+    /** 反向锁:界面帧里混进一帧爬虫,仍必须判成"与源有关"(忽略表放宽后不能把这条一起放过) */
+    @Test
+    public void uiStackWithSpiderFrameIsStillSourceRelated() {
+        RuntimeException crash = new RuntimeException("spider boom");
+        crash.setStackTrace(new StackTraceElement[]{
+                frame("androidx.compose.runtime.Recomposer", "run"),
+                frame("com.github.tvbox.osc.ui.page.SettingsPageKt", "SettingsPage"),
+                frame("com.github.catvod.spider.GoProxy", "<clinit>"),
+                frame("com.android.internal.os.RuntimeInit", "main"),
+        });
+        assertTrue(BootGuard.looksSourceRelated(crash));
     }
 
     /** 爬虫帧出现即算"有关";jar 装载器也在链上(它就是源的入口) */

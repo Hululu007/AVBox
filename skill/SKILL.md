@@ -42,6 +42,7 @@ description: 项目规则、通用原则、通用代码规范、交付验证与�
 # 交付验证与审查收敛
 
 - **验证不得攒到最后**：每完成一组改动（或一轮审查修复）立即跑 `.\gradlew :app:assembleDebug` 与 `.\gradlew :app:testDebugUnitTest`；改配置解析 / 规则 / 字段取值的必须补单测锁口径（范例：`ConfigParserTest`、`HeaderGuardTest`）。纯人眼推理会把"会崩 / 会失效"级问题拖到很后面才暴露。
+- **跑构建的三个坑（2026-09-23 实测，别再重复踩）**：①**不要用 `| Select-String … | Select-Object -First N` 过滤 gradle 输出** —— 管道会在拿到 `BUILD SUCCESSFUL/FAILED` 之前被截断，命令以非零码结束，极易误判成"构建失败"（本次为此白跑一轮）。要过滤就 `> log 2>&1` 落盘后再读。②**该日志是 UTF-16**，Git Bash 的 `grep` / `tail` 对它零命中（表现为"明明有输出却搜不到"），只能走 PowerShell 的 `Get-Content`。③Git Bash 里 `./gradlew` 报 `ClassNotFoundException: GradleWrapperMain`（jar 完好，脚本路径问题），用 PowerShell 的 `.\gradlew.bat`。判读结果以 `BUILD SUCCESSFUL` 与 `app/build/test-results/testDebugUnitTest/*.xml` 的用例计数为准，别只看退出码。
 - **审查有终止线，不以"零发现"为目标**：换个角度总能找到东西，无限轮没有收益。可以收尾 = 连续一轮没有 阻断 / 高 / 中 级发现，且剩余发现全部属于"既有问题"或"口味差异"。每轮发现按「严重度」×「本次引入 / 既有 / 口味差异」两轴记账，严重度单调下降即可停。
 - **改动前两项自查**：①照抄既有写法时必须连带抄它的防御与归一化，漏抄等于把既有缺陷一起复制进来；②改动全局字段 / 新增数据源 / 触碰"第 0 项""唯一"这类隐式约定时，先列出它打破的不变量与全部消费方。实例与修复过程见 `history/features.md` 的 2026-09-23 条目。
 

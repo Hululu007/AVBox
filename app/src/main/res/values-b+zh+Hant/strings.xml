@@ -91,6 +91,8 @@
 
     <!-- 首頁 -->
     <string name="home_subscription_source">訂閱源</string>
+    <string name="home_site_search_hint">搜尋站點名稱或地址</string>
+    <string name="home_site_search_empty">沒有符合的站點</string>
     <string name="home_no_source">尚未設定訂閱介面</string>
     <string name="home_load_timeout">首頁載入逾時，請檢查網路後重試</string>
     <string name="home_recommend">推薦</string>
@@ -287,6 +289,8 @@
     <string name="theme_app_controls">應用程式控制項</string>
     <string name="theme_blur">模糊效果</string>
     <string name="theme_distortion">扭曲效果</string>
+    <string name="theme_translucency">通透度</string>
+    <string name="theme_dispersion">邊緣色散</string>
     <string name="theme_custom_color">自訂顏色</string>
     <string name="theme_custom_theme">自訂主題</string>
     <string name="theme_mode">主題模式</string>

@@ -155,6 +155,8 @@ public class HawkConfig {
     public static final String LIQUID_GLASS_CONTROLS = "liquid_glass_controls"; //应用控件(顶栏等)是否玻璃
     public static final String LIQUID_GLASS_BLUR = "liquid_glass_blur"; //模糊强度 dp(0~40,默认 20)
     public static final String LIQUID_GLASS_DISTORTION = "liquid_glass_distortion"; //折射强度 dp(0~30,默认 30)
+    public static final String LIQUID_GLASS_TRANSLUCENCY = "liquid_glass_translucency"; //通透度(0~1,默认 0.5)
+    public static final String LIQUID_GLASS_DISPERSION = "liquid_glass_dispersion"; //色散彩虹边开关(默认开,7 次采样偏贵)
     // 迅雷下载库的伪造设备标识(2026-09-15 由独立 SharedPreferences `rand_thunder_id` 迁入 KV,该 SP 与其 xml 已废弃)
     public static final String THUNDER_IMEI = "thunder_imei";
     public static final String THUNDER_MAC = "thunder_mac";

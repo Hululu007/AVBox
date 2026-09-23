@@ -27,13 +27,8 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
@@ -52,7 +47,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -66,9 +60,7 @@ import coil3.compose.AsyncImage
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.bean.Movie
 import com.github.tvbox.osc.ui.components.PressableCard
-import com.github.tvbox.osc.ui.components.glassTopBarSurface
 import com.github.tvbox.osc.ui.theme.cardContainer
-import com.kyant.capsule.ContinuousCapsule
 import com.github.tvbox.osc.util.SearchSettings
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -93,74 +85,6 @@ internal fun HistoryChip(
                 .combinedClickable(onClick = onClick, onLongClick = onLongClick)
                 .padding(horizontal = 12.dp, vertical = 6.dp),
         )
-    }
-}
-
-@Composable
-internal fun SearchField(
-    query: String,
-    onQueryChange: (String) -> Unit,
-    onSearch: () -> Unit,
-    modifier: Modifier = Modifier,
-    trailing: (@Composable () -> Unit)? = null,
-) {
-    Row(
-        modifier = modifier
-            .glassTopBarSurface(ContinuousCapsule, MaterialTheme.colorScheme.cardContainer)
-            .padding(horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = Icons.Filled.Search,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        BasicTextField(
-            value = query,
-            onValueChange = onQueryChange,
-            modifier = Modifier.weight(1f),
-            singleLine = true,
-            textStyle = MaterialTheme.typography.bodyMedium.copy(
-                color = MaterialTheme.colorScheme.onSurface,
-            ),
-            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { onSearch() }),
-            decorationBox = { inner ->
-                Box(
-                    modifier = Modifier.height(40.dp),
-                    contentAlignment = Alignment.CenterStart,
-                ) {
-                    if (query.isEmpty()) {
-                        Text(
-                            text = stringResource(R.string.search_field_hint),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    inner()
-                }
-            },
-        )
-        if (query.isNotEmpty()) {
-            Icon(
-                imageVector = Icons.Filled.Close,
-                contentDescription = stringResource(R.string.common_clear),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(50))
-                    .clickable { onQueryChange("") }
-                    .padding(4.dp)
-                    .size(18.dp),
-            )
-        }
-        if (trailing != null) {
-            Spacer(modifier = Modifier.width(4.dp))
-            trailing()
-        }
     }
 }
 

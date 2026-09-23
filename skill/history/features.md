@@ -2120,3 +2120,233 @@ echo-exo-player-error: code=ERROR_CODE_UNSPECIFIED, msg=Unexpected runtime error
 - **未决(已落 spec §6.13 / §7)**:白名单只覆盖平台 + `ui`/`base`,栈里带 `util` / `viewmodel` / 播放器包装帧的界面 bug 仍可能被判"与源有关"。收口 = 放宽到全部 `com.github.tvbox.osc.`(代价:播放内核包装崩溃不再算源的问题),属独立决策。
 - **顺带发现(既有,非本次引入)**:`.codebuddy/skills/android/` 与 `skill/` 两份文档不同步(`SKILL.md`、`avbox-mobile-ui-spec.md`、`history/features.md` 三处 DIFF),而 skill 加载器读的是前者(缺「交付验证与审查收敛」、§6.12/§6.13)⇒ 后续会话可能按旧规则动手。本次只改 `skill/`(文档地图与检索约定指向的那份)。同步与否待用户定。
 - **验证**:`:app:testDebugUnitTest` **238 用例 / 0 失败**(其中 `BootGuardTest` 20 = 基线 15 + 新增 5)+ `:app:assembleDebug` 绿;`read_lints` 无诊断。**未真机验证** —— 需造一次界面栈崩溃确认不禁源、一次爬虫崩溃确认照旧禁源(logcat 关键字 `boot-guard:`)。**测试空白(说明,非遗漏)**:计数清零与标记文件读写依赖 KV/文件,纯 JVM 单测覆盖不到。
+
+## 观看历史改为"真在播才落库"(2026-09-23,用户"这不合理吧,正确的方式应该怎么做";静态审查两轮修 2 处)
+
+- **需求(用户)**:先问"保存历史是看过了才保存,还是只要点开加载好就保存" —— 核查确认是**点开就保存**(详情页数据加载成功即落库),用户判定不合理;给出上游做法后选定"收紧为真在播才落库"。
+- **原实现的三处提前落库(全部早于取流成功)**:`DetailViewModel.preparePlaySession()`(详情页加载完自动起播的会话登记)、`syncPlayingVodInfo()`(被 `PlaybackController.play()` 开头的 `TYPE_REFRESH(vod())` 触发,即"请求播放"),以及 `is Int` / `is JSONObject` 两个用户动作分支。后果:误点进详情页即留痕;`updateTime` 每次重写 ⇒ 只看一眼也把旧剧顶到历史最前;历史条目与进度条对不上(进度只在真播放时写,于是出现"有条目无进度"的空壳);线路全挂也留痕。
+- **落地**:新增 `RefreshEvent.TYPE_PLAYBACK_STARTED`(=22,不复用已废弃编号);`PlaybackProgress` 兼作落库信号源 —— 位置真的推进过(判据见下方"实机反馈修正")、非直播、本会话本集未发过才 post 一次,`token = sourceKey|vodId#playFlag#playIndex`(带集与线路,切集/换线重发以更新"看到第几集"),`flush()` 收尾清标记(历史被删后重看仍能重新入库);`DetailViewModel.onPlaybackStarted()` 收信号后落库并校验在播内容与本页一致(id + sourceKey + playFlag + playIndex);`preparePlaySession()` 与 `syncPlayingVodInfo()` 里的 `insertVod()` 删除。判据复用进度写入的同一前提(时长 > 0),历史条目与进度条从此一一对应。
+- **判据为什么放播放层**:会话只是"登记要播什么",取流可能失败、也可能没起播就退出;上游 fongmi 本身是 `saveVisit`(浏览)/`save`(观看)分离的模型,原实现等于把 saveVisit 塞进了 save 的口子。
+- **连带面(改动前自查的隐式约定)**:①`insertVodRecord` 仍是观看历史的唯一落库点(无痕模式拦截在此,未动);②历史消费方仅 `HistoryPage`(列表)与 `DetailViewModel.onDetailResult`(续播恢复)⇒ 收紧后"没看过就没有记录",续播从第 1 集开始,符合直觉;③`App.vodInfo` 是全局单值、只在 `preparePlaySession()` 设置,信号靠它做归属判定 ⇒ 校验四元组而非仅 id;④`insertVod()` 顺带刷新 `info.playNote`(字幕搜索默认词),移走时必须补回。
+- **审查修出的自引入回归(2 处:1 中 1 中)**:①`insertVod()` 从 `preparePlaySession()` 移走后,它顺带刷新 `info.playNote` 的副作用一起丢了 ⇒ 首次播放 `preview.playNote` 为空,`PlayContainer.openSubtitleSearchSheet()` 的字幕搜索默认关键词变空串(标题/通知不受影响,`publishTitle()` 走 `currentSeries().name`)。修法 = 提取 `refreshPlayNote(info)`,`preparePlaySession()` 与 `insertVod()` 都调(try/catch 防御一并保留)。②归属校验只比 id/sourceKey 时,音乐页接管影视内容后改的是**同一份 session**(`controller.vod() === session.vod() === App.vodInfo`,内容 id 不变)⇒ 详情页的迟到写入会把记录覆盖回交接那一集;校验加上 `playFlag`/`playIndex`。
+- **实机反馈修正(用户"修复好像没有效果啊,只要加载完开始出现转圈圈下方是网络然后就会保存记录,哪怕这个视频显示加载失败")**:首版判据是"位置 > 0",而**起播的起始位置本身就来自上次进度** —— `player/src/main/java/xyz/doikki/videoplayer/player/VideoView.java:222` 读 `mProgressManager.getSavedProgress(...)`、`:321` `mMediaPlayer.setStartPosition(mCurrentPosition)`(另有 `onPrepared()` 里 `!isStartPositionApplied()` 的回退 `seekTo`)交给内核 ⇒ 缓冲期拿到的位置就是上次看过的非 0 值(取流失败时 `STATE_IDLE` 的 `flush()` 也带着它),"没播成也进历史"。最终判据 = **只累计平滑推进**:`stepAdvanceMs(position, last)` 只接受 `1..MAX_STEP_MS(10s)` 的步进(回拖 ≤0、seek/起始位置落位造成的跳变一律不计入),同一会话累计过 `MIN_ADVANCE_MS(1s)` 才发信号;换集/换线重置采样,`flush()` 收尾清采样与已发标记。采样点仍只有 `onProgress`(内核进度定时器,节流前)与 `flush`(暂停/播完/释放,兼作定时器早停时的兜底采样)。**副作用(可接受)**:真实播放不足 1s 即退出不留痕(符合"看过"语义);`MIN_ADVANCE_MS` 是唯一旋钮,调大即更保守。
+- **第二轮审查(用户"审查一下是否有错误遗漏和引入新回归")修 2 处**:①**中·本次引入** —— 中间版本用的"首样本立基线、之后位置相对基线推进 ≥1s"仍会被**跳变**骗过:若起始位置"请求了但内核还没落位",首个采样是 0、下一采样直接跳到上次看过的位置(如 90 分钟),这个 seek 跳变会被算成"推进"⇒ 改为按**逐次步进**累计,跳变不计入(即上一条的最终判据),并补 `stepAdvanceMs_ignoresJumpAndRewind` 锁口径;②**低·本次引入** —— `shouldMarkWatched` 的 `isLive` 参数在唯一调用点恒为 `false`(直播已在 `markWatched` 开头提前 return),属误导性参数 ⇒ 去掉该参数,直播守卫留在 `markWatched`(纯 JVM 覆盖不到,单测注释已注明)。
+- **已知代价与残留(说明,非缺陷)**:①详情页预览会自动起播 ⇒ "点开详情页且真的播过 1 秒"仍会留痕(这是"真在播"判据的定义使然;要更保守只需调大 `MIN_ADVANCE_MS`)。②`flush()` 清标记 ⇒ 暂停/继续、退后台回前台会多写一次记录(有界,用户动作驱动)。③信号被接收方丢弃时标记已消费,最坏情况是写入推迟到该集暂停/播完/退出,数据最终一致。④跳变只"不计入"、不清零已累计量(语义 = 累计真实观看推进量)。⑤既有问题(非本次引入,未动):`is Int` 分支全仓无发送方(死代码);若直播上报非 0 时长,`PlaybackProgress` 仍会把进度写到上一部点播的 key 上(本次的 `isLiveMode` 守卫只挡落库信号,不挡进度写入);`preview.playNote` 在播放器内切集时不更新(只在 preparePlaySession 时机刷新)。
+- **顺带修复(构建脚本,与本功能无关)**:`pyramid/build.gradle.kts` 的 `buildPython` 原写死 `D:/Programs/Python/Python38/python.exe`(别的机器路径)⇒ 本机 chaquopy 报 "Couldn't find Python 3.10"。改为「`-PbuildPython` / `CHAQUOPY_BUILD_PYTHON` 优先 → Windows 标准安装位置(`user.home` 相对,不写死盘符/用户名)兜底 → 都没有则交给 Chaquopy 自行探测」。
+- **验证**:静态审查两轮 + 实机反馈后一轮,共修 5 处(2 中 3 低)。`:app:assembleDebug` + `:app:testDebugUnitTest` **BUILD SUCCESSFUL**(不带 `-PbuildPython` 也通过,验证了构建脚本的默认分支),单测 **243 用例 / 0 失败 / 0 跳过**(基线 238 + `PlaybackProgressTest` 5 例:平滑步进计数 / 停滞不计 / 跳变与回拖不计 / 累计阈值 / 每集只发一次),`compileDebugKotlin`、`compileDebugUnitTestKotlin`、`assembleDebug`、`testDebugUnitTest` 均为**实执行**(非 UP-TO-DATE)⇒ 改动确实过了编译器与打包。待验清单:点开详情页秒退不留痕、**续播进入详情页但取流失败不留痕/不刷新记录**、正常看几秒留痕且进度条同步、切集后历史集数更新、音乐页交接后切歌不回退、无痕模式下不落库、字幕搜索默认词非空。
+- **未做**:音乐页 `syncHistory()` 仍是"点歌即写"(用户显式动作,且它是纯音频页唯一写入口 —— 详情页可能已 finish 而无人接收信号),未纳入本次收紧。
+
+## 排查:冷启动后第一次点底栏 tab 掉帧(2026-09-23,真机实测定位,未改代码)
+
+- **现象(用户报)**:冷启动进应用后第一次点液态玻璃底栏 tab 掉帧;概率性;只在开启侧滑动画时出现。
+- **复现与量化(V2425A,1260×2800 @120Hz)**:`dumpsys gfxinfo framestats` 抓到 —— 冷启动后第一次点,burst 前 ~15 帧每帧丢 1-2 个 vsync(≈200ms 顿挫);同进程第二次点同一动作只剩前 3 帧丢(整段仅丢 4 个)。**稳态 8.3ms/帧不掉帧** ⇒ 玻璃本身不是"一直太重"。
+- **三条被实测否掉/降级的假设**:①**色散折射着色器首编译**(初判主因)—— 冷/热差异是"~10 帧平台期 + 组合/主绘/GPU 三相位同时均匀抬高 ~10ms",不是单帧尖峰 ⇒ 降级为"候选之一,无独立证据";②**JIT 阻塞主线程** —— 主线程 `Lock contention on Jit code cache` 在点击窗口内出现 159 次,但**实际等待总耗时仅 ~0.5ms** ⇒ 否掉;③**玻璃稳态超预算** —— 稳态 8.3ms/帧 ⇒ 否掉。
+- **实测到的真正成因**:①ART 把首次执行的动画链路现编现用 —— `Compiling baseline` 在点击窗口内 90ms(冷启动阶段累计 1.58s),代码处于解释/未优化态时每帧在三个相位各多花 ~3-4ms;②**触屏触发刷新率提升**:`ViewRootImpl#setFrameRateCategory high hint, reason touch` ⇒ 面板从 60Hz 跳到 120Hz,预算当场 16.7ms→8.33ms,而这一刻正好是冷态动画;③burst 期间主线程跑在 CPU4 的 **614-1017MHz**(芯片上限 3.1GHz),同样的活要多花约 3 倍时间(触摸那一帧在 CPU1@2.9GHz)。
+- **结论**:不是逻辑 bug,也不是库缺陷。库的真实份额是**余量不足** —— 120Hz 下单帧 GPU 4.8-7.2ms + `eglSwapBuffers` 4.0-4.5ms 已吃掉 8.33ms 预算的大头,留给"首次执行"的余量几乎为零(60Hz 面板上这个现象会不可见)。
+- **待决修法**:①`isTabSwitching()` 期间再降一档效果(现仅保留 `blur()`,blurDp 默认 20dp→70px 半径,很贵),把 GPU 从 ~7ms 压到 ~4ms 即可让前 10 帧落进预算,且只发生在 300ms 过渡里、视觉几乎无感;②冷启动空闲帧跑一次 1px 的 pager `scrollBy`(不可见)预热 pager 滚动 + 源层重录 + 玻璃层 GPU 程序(按压路径无法不可见地预热);③不修。
+- **抓取方法论(踩过的坑,复用前必看)**:①`dumpsys gfxinfo framestats` 表头是**新版 24 列**(`Flags,FrameTimelineVsyncId,IntendedVsync,Vsync,InputEventId,HandleInputStart,AnimationStart,PerformTraversalsStart,DrawStart,FrameDeadline,FrameStartTime,FrameInterval,WorkloadTarget,SyncQueued,SyncStart,IssueDrawCommandsStart,SwapBuffers,FrameCompleted,…`),按老版 14 列解析会得到满屏"456 秒"的假数据;②判丢帧要用**相邻帧 `IntendedVsync` 间隔 ÷ `FrameInterval`**;`FrameCompleted - IntendedVsync` 是流水线延迟(稳态也有 15-20ms),拿它判 jank 会全错;③gfxinfo 自带的 `Janky frames` 会被抬高的 deadline 洗掉(热态那次只报 1/101)⇒ **不可作判据**;④atrace 文本解析:comm 名可含空格(`Jit thread pool`),正则要用 `(.*?)-\d+`,别用 `(\S+)`;ART 的 JIT 切片名是 `Compiling baseline`/`Compiling optimized`,**不是** `JitCompile`;⑤`/proc/uptime` ≠ `SystemClock.uptimeMillis()`(差的是深睡时间),换算墙钟别拿它当基准。
+
+## 实施 B:冷启动导航动画不可见预热(2026-09-23,已装机,真机 A/B 验证有效)
+
+- **动机**:上一条排查的成因①(ART 把首次执行的动画链路现编现用)。目标 = 把这份成本从"用户第一次点击"挪到冷启动后的空闲帧,且**不产生任何可见变化**。
+- **改动 4 处(纯新增 50 行,无删除)**:①`DampedDragAnimation` 新增 `warmUp()` + 文件级 `internal const PRESS_WARMUP_PROGRESS = 0.01f` / `PRESS_WARMUP_MS = 32`;②`InteractiveHighlight` 新增 `warmUp()`(复用上面两个常量,避免两份魔法数);③`FloatingNavBar` 在 `interactiveHighlight` 定义之后加 `LaunchedEffect(dampedDragAnimation, interactiveHighlight) { withFrameNanos×2 → dampedDragAnimation.warmUp(); interactiveHighlight?.warmUp() }`;④`MainScreen` 加 `LaunchedEffect(pagerState) { withFrameNanos×2 → pagerState.scrollBy(1f); scrollBy(-1f) }`(预热 pager 滚动 → 页面测量 → 玻璃源层重录那条链路)。
+- **为什么用"极小幅度"而不是"藏起来真按一下"**:把导航栏 alpha 置 0 再真按会让整条导航栏闪 1-2 帧,等于制造一个新的可见变化。改用 0.01 的按压进度:换算到形变是栏 scale 1.00014、指示层 1.0039、色散折射 0.35px —— 全部不足 1px,但弹簧/缩放/高光/色散着色器都真的执行了一次。
+- **验证(同协议各 3 样本)**:`input swipe X Y X Y 120` 同坐标按住 120ms 可稳定复现底栏点击,配合 `force-stop → am start → sleep 9 → gfxinfo reset → swipe → dump framestats` 全自动跑多轮。tab 坐标(1260×2800,density 3.5):首页 x=210 / 历史 x=449 / 收藏 x=729 / 设置 x=1029,y=2583。
+  - 前 19 帧丢 vsync:无 B 20/21/20(均值 20.3)→ 有 B **13/12/13(均值 12.7)**,约 **-37%**
+  - 整段丢 vsync:无 B 22/23/22 → 有 B **13/12/13**,约 **-43%**
+  - 前 12 帧均值:组合+测量 8.6-9.0 → 7.7-8.0ms;主绘 9.3-9.9 → 7.8-8.4ms;GPU 8.1-8.5 → 6.7-6.9ms
+  - 尾段:无 B 仍零星丢帧,有 B 全 0(干净收敛到 90Hz)
+  - `:app:assembleDebug` + `:app:testDebugUnitTest` → BUILD SUCCESSFUL,243 用例 / 0 失败(与基线一致);已 `adb install -r` 装机。
+- **判据坑(务必记住)**:`FrameInterval` **逐帧变化**(同一次动画里 120Hz 与 90Hz 混着),判丢帧必须用**该帧自己的 FrameInterval**;拿第一帧的 8.33ms 当全局预算会把 90Hz 的正常帧全判成丢帧 —— 我先用错判据算过一轮,数字全废。
+- **中途的一次错误结论(如实记录)**:在自动化协议建立前,我用"单样本 + 缓冲区含冷启动帧"的数据得出过"B 比基线更差",当场纠正。**跨条件比较必须同协议 + 多样本**,设备侧波动足以把结论带反。
+- **未根治 + 未做**:B 之后仍有约 12-13 个丢帧 —— 与成因②(触屏把面板抬到 120Hz、预算腰斩)和③(burst 期间主线程只有 614-1017MHz)一致,这两条不在应用可控范围。**A(过渡期降模糊半径)未做**,因为它会改观感,等用户拍板。**未提交**。
+
+## 首页订阅源 sheet 打开即定位到当前选中源(2026-09-23,用户"能否让首页左上角订阅源胶囊的 bottomsheet 弹窗一打开就出现在当前选中的站点上,就像选集 bottomsheet 弹窗那样")
+
+- **原实现为什么"停不下来"**:源列表是**单个 `LazyColumn` item** 里的 `SettingsGroup { sources.forEachIndexed { … } }` —— 一个 item 内部没有可定位的落点,`scrollToItem` 对它无效;想给这一 item 套 `verticalScroll` 也会被 LazyColumn 的无限高度约束掐死。⇒ 必须先把源改成**逐项 lazy item**。
+- **落地(只改 `ui/page/HomePage.kt` 一处)**:`rememberLazyListState()` + `selectedIndex = sources.indexOfFirst { it.key == currentSource?.key }`;`LaunchedEffect(Unit) { if (selectedIndex > 0) listState.scrollToItem(selectedIndex) }` —— **无动画、一次到位**,与选集 sheet(`gridState.scrollToItem(playIndex)`)/ 音乐页队列 sheet(`queueListState.scrollToItem(queueIndex)`)同款。键用 `Unit` 而不是 `selectedIndex`:每次弹出都是新组合(`if (showSourceSheet)` + `SheetHost` 的 `key(req.id)`),所以"开一次定位一次";若键成 `selectedIndex`,用户换源时列表会在眼皮底下跳。
+- **视觉零改动,但两处间距必须手工接住**(逐项化会带走 `SettingsGroup` 的 `spacedBy(2.dp)` 与 LazyColumn 的 `verticalArrangement = spacedBy(20.dp)`):①源之间 2dp ⇒ 每个源项 `padding(bottom = 2.dp)`(末项 0dp);②"源列表 / 配置接口"组之间 20dp ⇒ 配置项改 `SettingsGroup(modifier = padding(top = 20.dp))`。**不能**把 `verticalArrangement` 加回 LazyColumn:源之间的 2dp 会被一起放大到 20dp。
+- **顺带的收益**:源列表从"一次性组合全部行"变成懒组合(配置里 100+ 站点不罕见)。
+- **刻意没做**:①不动 `SettingsCardPosition` 的 FIRST/MIDDLE/LAST 圆角逻辑;②不传 `key`(源 key 万一重复,LazyColumn 会直接抛 `IllegalArgumentException` 崩掉弹窗;sheet 生命周期短、打开期间列表不增删,位置标识足够);③空源 / 单源下 `selectedIndex` 为 -1 / 0,自然不滚动。
+- **验证**:`compileDebugKotlin`、`assembleDebug`、`testDebugUnitTest` 全部 **BUILD SUCCESSFUL**(纯 UI 改动,无单测覆盖)。**待真机验证**:选中项在中间 / 末尾时打开即定位;选中项是第 0 项时不跳动;空源与单源不异常;打开过程中下拉手势仍只挂在把手 / 标题区(内容自带滚动容器,`isScrollable = false` 未变)。
+- **顺带发现的文档漂移(未改,待用户确认)**:`avbox-mobile-ui-spec.md` §4.1「源级策略的由来与切换」仍写着订阅源 sheet 每行右侧有「搜索 / 详情」标记(`CardPolicyPill`),但该功能在 `6ad3deb`(2026-09-21)已被删除,HEAD 全仓无 `SourceCardPolicy` / `source_card_policy` ⇒ 规范该段(含 §4.1 卡片点击分发的第 3 条"源级策略")与实际代码不符。
+
+## 首页订阅源 sheet 加站点查找(2026-09-23,用户"有些订阅源有几十个站点,打开弹窗后一个一个找很麻烦,如果能直接搜索就好了")
+
+- **需求与定稿(用户三选)**:①搜索框**始终显示**(不做"站点数 ≥ N 才出现");②匹配**站点名 + 接口地址**;③范围**只做首页订阅源弹窗**(抽公共组件但不改配置管理页 / 换仓 sheet)。UI 方案先出图给用户过目(两张状态:打开即定位 / 输入关键词过滤)再动手。
+- **落地 4 处**:
+  1. `util/SiteSearch.kt`(新增):`filter(sources, query)` —— `query.trim()` 为空则原样返回(同一实例),否则 `name.contains(q, true) || key.contains(q, true)`。**保持原顺序**(不按相关度重排,否则选中项位置乱跳)。`SourceBean.getKey()/getName()` 经 `safeString` 恒非 null,过滤侧不需要判空。
+  2. `ui/components/SheetSearchField.kt`(新增):单行就地过滤输入框(全圆角 / `surfaceBright` + `outlineVariant` 描边 → 聚焦 `primary` / 48dp / 前置放大镜 / 有内容时右侧 40dp 清空钮 / `ImeAction.Search` 只收键盘)。**不自动聚焦**(弹窗首要用途是选源,一开就弹键盘更烦)。
+  3. `ui/components/BottomSheet.kt`:`SheetOverlay` 面板容器的 `imePadding()` 由"仅居中对话框"改为**两档都挂** —— 底部弹层此前没有输入框所以没暴露;这次必须加,否则键盘盖住列表。**不需要自己算"屏高 − 键盘高"**:`imePadding` 收窄子级约束,面板自然顶不到屏幕上沿。⚠️ 连带行为 = 底部弹层可用高度随键盘收缩,固定项(输入框)先占位、滚动区吃剩余空间。
+  4. `ui/page/HomePage.kt`:搜索框放**内容区顶部**(不放 `headerContent` —— 那里挂着下滑关闭手势,会与输入手势抢触摸);列表改用 `filtered`;无命中 = `LoadStateBox` 空态(160dp + `ic_empty_record`,照抄配置管理页的 `errorText = ""` / `retryText = ""` 写法);「配置接口」入口不参与过滤。
+- **与"打开即定位当前源"的协作**:`LaunchedEffect(query.isEmpty())` + 守卫 —— 打开(空词)定位当前源、打字期间**不动列表**(跟着跳没法用)、清空后回到定位。空词时 `filtered === sources`,选中下标不变。
+- **文案**:`home_site_search_hint`("搜索站点名称或地址" —— 把匹配范围写进 hint,省得用户猜能不能搜地址)、`home_site_search_empty`("没有匹配的站点"),入 `values` / `values-en` / `values-b+zh+Hant` 三份;**`values-zh-rHK` 是差异层,港台用词相同故不加**。清空钮复用已有的 `common_clear`。
+- **单测**:`SiteSearchTest`(4 例:名/地址双命中、忽略大小写与首尾空格、空词原样返回、保持顺序 + 无命中)。
+- **验证**:`:app:assembleDebug` + `:app:testDebugUnitTest` **BUILD SUCCESSFUL**,单测 **247 用例 / 0 失败 / 0 错误**(基线 243 + 新增 4);并校验了 APK 内容(dex 含 `SiteSearch`、`resources.arsc` 含新文案)。**未真机验证**(用户明确要求不要操控其设备)。
+- **待真机确认**:①键盘弹起后面板是否稳在键盘之上、列表能否正常滚到底;②输入时列表不跳、清空后回到当前源;③无命中时"配置接口"入口仍可点;④点搜索框以外的内容区能否正常拖动关闭(下滑手势只在把手/标题区);⑤英文/繁体下 hint 不截断。
+- **本轮两轴审查(用户要求每轮改动后自查)**:
+  - **错误遗漏 / 本次引入(低-中,已修)**:引导态(未配订阅接口)下首页胶囊仍可点,而 `sources` 为空 ⇒ 弹窗在**没输入关键词**时也显示"没有匹配的站点",语义错。修法 = 空词分支改用 `config_empty_subscribe`("暂无订阅"),非空词才用 `home_site_search_empty`(一行 `stringResource(if …)`,与详情页 `detail_order_asc/desc` 同一写法)。触发路径已核对:`ApiConfig.sourceBeanList` 初始为空 ⇒ `getSwitchSourceBeanList()` 返回空表。
+  - **既有问题(未改,非本次引入)**:①站点行标题 `bean.name ?: bean.key` 的 `?:` 是死代码 —— `SourceBean.getName()` 走 `safeString` 恒非 null ⇒ 无名站点显示**空白行**;搜索按地址能搜到它,但那一行是空的(本次改动让它更容易被撞见)。②`SheetSearchField` 在 `sources` 为空时仍显示(用户明确选了"始终显示",未改)。
+  - **口味差异**:清空钮出现/消失会让输入区宽度跳一下(40dp);搜索框没有独立语义节点(hint 是与它并列的 `Text`)。
+  - **确认无回归**:①`imePadding` 两档化对无输入框的弹层无感(无键盘时 inset 为 0);②过滤后 FIRST/LAST 圆角按下标重算,单条 = SINGLE;③`query` 每次弹出重新 `remember`(新组合)⇒ 不残留上次关键词;④打字期间 `LaunchedEffect(query.isEmpty())` 不触发滚动;⑤空词时 `filtered === sources`,选中下标与"打开即定位"行为不变。
+- **刻意没做**:拼音首字母搜索(项目无拼音库,加依赖或搬工具类都超出最小改动);相关度排序;配置管理页订阅源列表与「换仓」sheet 的子源列表(同一痛点,`SheetSearchField` 已可复用,留待用户点头)。
+
+## 订阅源 sheet 搜索框改为"搜索页同款"(2026-09-23,用户"这个搜索框控件的设计风格改成和搜索页一样的效果,跟随液态玻璃或者surface")
+
+- **动机**:首版的 `SheetSearchField` 是自绘输入框(`surfaceBright` 底 + `outlineVariant`/聚焦 `primary` 描边、48dp、40dp 清空钮),与搜索页顶栏那枚胶囊搜索框不是一套观感。
+- **做法(不是"再抄一遍样式",而是共用同一个组件)**:把 `SearchScreens.kt` 里的 `internal fun SearchField` **提到 `ui/components/SearchField.kt`**(`fun`,加一个 `hint` 参数,默认 `search_field_hint`),删除自绘的 `SheetSearchField.kt`,两处调用同一份实现 —— 从根上消除"两处样式漂移"。连带:搜索页调用点(`SearchActivity`)补 import,`SearchScreens.kt` 清掉 8 个因此失效的 import(`BasicTextField`/`KeyboardActions`/`KeyboardOptions`/`Icons.filled.Close`/`Search`/`SolidColor`/`glassTopBarSurface`/`ContinuousCapsule`),行为零改动。
+- **视觉差异(相对首版)**:形状 `RoundedCornerShape(percent = 50)` → `ContinuousCapsule`;去掉描边;高 48dp → **40dp**(内层 `Box(height(40.dp))`);前置图标 18dp → **24dp**;清空钮 40dp 触摸区 → 18dp 图标 + 4dp padding(与搜索页一致,**低于 48dp 规范**,但用户要求"和搜索页一样",故照抄)。`cardContainer` 实测就是 `surfaceBright`(见 `ui/theme/Color.kt`),所以底色本来就没差,差的是描边/高度/玻璃感知。
+- **⚠️ 弹层里"跟随液态玻璃"只能跟随到一半(如实记录)**:`glassTopBarSurface` = `glassSurface(LocalTopBarGlassBackdrop.current, …)`,而该 CompositionLocal **只由 `AppTopBarScaffold` 在 TopAppBar 范围内提供**;弹层被 `SheetHost` 提到窗口根渲染 ⇒ 在订阅源 sheet 里它恒为 `null` ⇒ `glassEnabled = false` ⇒ 走 `.clip(shape).background(cardContainer)` 实底。**搜索页顶栏那枚是真玻璃,弹层这枚是实底 surface**。要弹层也真玻璃有两条路(均未做):①给 `SheetOverlay` 单独铺 `LayerBackdrop`(要解决"采样谁",且 §6.10 明确同一 `LayerBackdrop` 不能挂两个 `layerBackdrop` 节点);②改用 `Modifier.glassSurface(shape, color)`(`emptyBackdrop()` 非 null ⇒ 跟随玻璃开关,但采样为空,效果 = 45% `surfaceBright` + 高光/内外阴影;项目已有先例 = 配置管理页选文件按钮 `ConfigManagePage.kt:924`)。
+- **验证**:`:app:assembleDebug` + `:app:testDebugUnitTest` **BUILD SUCCESSFUL**,**247 用例 / 0 失败**(与改前一致);APK 内容校验:dex 内 `SearchField` 14 处、`SheetSearchField` **0 处**,`resources.arsc` 含新文案。**未真机验证**(观感类改动,只能上眼)。
+- **搬迁等价性是比对过的(不是"看着一样")**:`git show HEAD:…SearchScreens.kt` 取出旧函数与新文件 `diff`,只出现 3 处预期差异 —— `internal fun` → `fun`、新增 `hint: String = stringResource(R.string.search_field_hint)`、`text = stringResource(…)` → `text = hint`;其余逐字节一致 ⇒ 搜索页行为零改动。
+- **本轮自查又修 1 处(低,本次引入)**:共用组件时**调用方漏了 `fillMaxWidth()`**(旧的自绘组件把 `fillMaxWidth()` 写在内部,换组件后就丢了)。`BasicTextField` 的 `weight(1f)` 会让 Row 撑满、肉眼看不出来,但那是依赖隐式行为 ⇒ 已补上与搜索页一致的 `Modifier.fillMaxWidth().padding(…)`。
+
+## 修:订阅源 sheet 收起键盘时"闪一下"(2026-09-23,用户"收起键盘的时候弹窗往下收缩时会闪烁一下,很奇怪的感觉")
+
+- **成因(上一版自己引入的)**:为了让搜索框不被键盘盖住,给 `SheetOverlay` 的**面板容器**挂了 `imePadding()` —— 而那层容器**同时包着遮罩与面板**。键盘弹起时容器内缩,遮罩跟着缩到键盘之上(键盘遮住的那块**没有遮罩**);键盘收起时遮罩要在**一帧内**长回整屏,而键盘自己是用 250ms 滑走的 ⇒ 遮罩区域的变化与键盘的揭示不同源,观感就是"闪一下"。**这是把遮罩和面板挂在同一层 inset 上的必然结果,不是偶发。**
+- **修法(2 处)**:
+  1. 遮罩移出 `imePadding` 那层 —— 外层改 `BoxWithConstraints(fillMaxSize)` 里先铺**恒满屏**的遮罩,键盘只顶内层的面板(面板行为与上一版一致:仍被顶到键盘之上)。
+  2. 面板高度上限由 `LocalConfiguration.current.screenHeightDp` 改为 `BoxWithConstraints` 的 `maxHeight`(实际布局高度):`LocalConfiguration` 会在窗口尺寸变化时**整帧换值**,与键盘 inset 不同源,是同一类"跳一下"的隐患(顺带在多窗口/折叠屏上更正确)。
+- **验证**:`:app:assembleDebug` + `:app:testDebugUnitTest` **BUILD SUCCESSFUL**,**247 用例 / 0 失败**。**待真机复测**(观感类改动,按约定不自行操控用户设备)。
+- **若仍闪:下一步方案(已想清,未做)** = 彻底切断面板与键盘 inset 的耦合 —— 面板不再被 `imePadding` 顶起,改为「聚焦搜索框时把面板撑到固定高(保证输入框落在键盘之上)+ 列表底部按键盘高度加 `contentPadding`(保证最后几行能滚出来)」,键盘只是**盖住**列表、面板一动不动 ⇒ 收起键盘时**零位移**,任何"闪/跳"都无从产生。代价:要给共用的 `SearchField` 加一个 focus 回调,并引入"键盘高度预留"常量(可用「聚焦期间见过的最大键盘高度」闩住,收起时不缩回)。这也是搜索页的行为(键盘只盖住结果、顶栏不动)。
+- **诊断信息(留给复测)**:若改后仍闪,需要区分「遮罩闪(整屏一起暗一下)」与「面板跳(弹窗瞬间位移/变高)」,以及「短源列表(面板矮,会被键盘完全盖住)是否比长列表更明显」——前者指向遮罩/图层,后者指向面板的 inset 耦合。
+- **第一轮修法(遮罩移出 inset 层)**:当时用户回「正常了」,但**后续复测发现 bug 仍在**,并给出了关键观察 ——「弹窗收回时底部会闪出下方的首页背景(影视海报 + 底部导航栏)」。⇒ 第一轮判断**不完整**:遮罩那层确实是缺陷(该留),但真因不止于此。
+- **真因(由用户观察定位)**:`imePadding` 挂在**包着遮罩 + 面板的那层容器**上 ⇒ 面板是被"顶上去"的,它的**底边 = 屏高 − 键盘高**;键盘一收,底边往下追,中间就漏出下方页面(底栏那块最显眼)。判据是"**哪条边会动**",不是"遮罩颜色对不对" —— 第一次只盯遮罩,漏掉了"面板是被顶起而非贴底"这个更基础的事实。
+- **最终修法(1 行,结构上根治)**:键盘让位从**外层容器**挪到**面板内部** —— 贴底弹层的 `Column` 挂 `imePadding()`,容器只给居中对话框挂。于是**面板底边恒贴屏底、只有顶边随键盘升降**,漏底在结构上不可能发生;即使 inset 动画与键盘滑走不同步,最坏也只是露出一条**面板自身底色**(不是下方页面)。代价:键盘弹起时面板整体变高(列表可见高度略减,`0.9 × 屏高` 上限照旧)。
+- **验证**:`:app:assembleDebug` + `:app:testDebugUnitTest` **BUILD SUCCESSFUL**,**247 用例 / 0 失败**;待用户复测(观感类,不自行操控其设备)。
+
+## 补:订阅源 sheet 搜索框跟随液态玻璃开关(2026-09-23,用户"搜索框怎么没有液态玻璃效果,要跟随设置页的液态玻璃应用控件开关啊")
+
+- **原因**:`glassTopBarSurface` 读 `LocalTopBarGlassBackdrop`,而该 local **只由 `AppTopBarScaffold` 在 TopAppBar 范围内提供**;弹层被 `SheetHost` 提到窗口根渲染 ⇒ 恒为 null ⇒ 退化成 `.background(cardContainer)` 实底,与玻璃开关无关。
+- **先试过、又否掉的方案(记下来省得再走一遍)**:给 `SheetOverlay` 铺一块 `LayerBackdrop`(面板当底,照 `AppTopBarScaffold` 的 `onDraw = { drawRect(panelColor); drawContent() }`)并把 local 提供给面板内容。**否掉的理由**:①面板**不透明**,玻璃能采样的只有一块纯色 ⇒ 视觉与"空底"一致,却多付一层 `LayerBackdrop` 每帧录制;②玻璃控件就在被录制的那棵子树里(面板 Column 内)⇒ 玻璃会采到**自己**,项目里另两处先例(`AppTopBarScaffold` 录的是顶栏**下方**的页面内容、`MusicPlayerScreen` 录的是封面)都刻意把玻璃排除在录制范围外;③实现时还因多插一层 `Box` 与 `Column` 撞出重复花括号(编译报 `Expecting '}'`),白跑一轮构建。
+- **最终做法(3 行,改在共用的 `SearchField` 里)**:有顶栏 backdrop ⇒ `glassTopBarSurface`;取不到 ⇒ **`glassSurface`(空底玻璃)** —— 仍跟随「液态玻璃应用控件」开关,只是没有可折射的内容可采样(效果 = 45% `surfaceBright` + 高光边 + 内外阴影,面板色透过半透明填充可见)。先例 = 配置管理页选文件按钮(`ConfigManagePage.kt:924`)用的就是这一路。搜索页顶栏行为**零改动**(它仍有 backdrop,走原分支)。
+- **验证**:`:app:assembleDebug` + `:app:testDebugUnitTest` **BUILD SUCCESSFUL**,**247 用例 / 0 失败**。**待真机看观感**(我按约定不碰设备;若觉得"空底玻璃"太透或太淡,可换成给面板铺 backdrop 那条路 —— 代价见上)。
+
+## 液态玻璃效果扩充:厚度感 / 边缘色散 / 通透度(2026-09-23,用户"123都加上")
+
+- **背景**:用户问"液态玻璃库除了模糊和扭曲是不是还支持其他效果,比如 iOS 27 样式的液体玻璃"。逐文件读完 `libs/backdrop` 后确认能力面远大于现状 —— 四层共 24 个可调入口,项目只接了 12 个;其中两个最标志性的 iOS 光学特征几乎躺着:**色散**只在底栏选中指示层开了、**厚度纵深**全仓零使用。用户看完对照表后要求把先前提的三条建议**全部实施**。
+- **能力盘点(供后续复用,不必再读一遍库)**:库的公开 API 共 **30 个**(含重载),可独立改动的**取值参数 42 个**。分层:
+  - **①采样源 `Backdrop`(5 种实现,结构性选择)**:`rememberLayerBackdrop`/`rememberCombinedBackdrop`(2/3/vararg 三重载)/`emptyBackdrop`(**已用**)、`rememberCanvasBackdrop`、**`rememberBackdrop`**(把一个 backdrop 包一层 `onDraw` 再当 backdrop 用;⚠️ 第一轮盘点漏了这个,2026-09-23 补) —— 后两者未用。
+  - **②`effects { }` 链(8 入口 / 13 取值)**:`blur`(radius、edgeTreatment)、`lens`(refractionHeight、refractionAmount、depthEffect、chromaticAberration)、`colorControls`(brightness、contrast、saturation)、`opacity`(alpha)(**已用**);`colorFilter`、`effect(RenderEffect)`、`runtimeShaderEffect(自定义 AGSL)`(未用)。`vibrancy()` 是 `colorControls(saturation=1.5f)` 的预设,不重复计。
+  - **③装饰层(3 类型 + 3 样式 / 21 取值)**:`Highlight`(width、blurRadius、alpha、style)、`HighlightStyle.Default`(color、blendMode、angle、falloff)、`HighlightStyle.Ambient`(intensity)、`HighlightStyle.Plain`(color、blendMode)、`Shadow`(radius、offset、color、alpha、blendMode)、`InnerShadow`(同上 5 项)。**项目只用了 8 项**(Highlight.alpha/style、Shadow.radius/color/alpha、InnerShadow.radius/offset/alpha)——**这是最大的未开发区域**。
+  - **④绘制相位与导出(6 取值)**:`onDrawSurface`、`layerBlock`(**已用**);`onDrawBehind`、`onDrawBackdrop`、`onDrawFront`、`exportedBackdrop`(未用)。⚠️ `ui/components/Skeleton.kt` 的 `onDrawBehind` 是 `drawWithCache` 的,不是库的参数,别误算成"已用"。
+  - **⑤形状与采样范围(2 取值)**:`shape`、`layerBackdrop(recordBounds)`(均**已用**)。
+  - **结构性选择(不计入 42)**:采样源 5 选 1;Modifier 入口 `drawBackdrop` / `drawPlainBackdrop` 2 选 1。
+  - **项目设置页暴露 7 个**(2 开关 + 5 参数),代码里实际用到 **21 / 42**。
+  - 另有平台查询 `isRenderEffectSupported`/`isRuntimeShaderSupported` 与工具 `lerp(InnerShadow)`。
+- **iOS 27 的事实核查(WebSearch,9/15 正式版)**:iOS 27 **没有换材质模型**,是"纠错式迭代" —— 上一代透明度过高、文字可读性差被批,故新增 **Liquid Glass 全局透明度无级调节滑块**(覆盖控制中心/文件夹/状态栏,深色模式自动降透明度)。⇒ "iOS 27 样式" ≈ iOS 26 光学栈 + 一个全局透明度滑杆 + 更保守的可读性标定。本库对应能力 = `opacity()` / `colorControls()`,但**产品形态**(那个滑杆)项目侧此前没接线。
+- **改动一 · 厚度感(常开)**:两处主体玻璃的 `lens()` 加 `depthEffect = true` —— `GlassTopBar.glassSurface` 与 `FloatingNavBar` 底栏主胶囊。shader 里把 SDF 梯度与"指向中心"的单位向量按 `depthEffect` 混合,边缘呈凸起透镜感;只多几条 ALU,零风险。**未加**的两处:底栏选中态指示层(`tabsBackdrop` 源层)与第三层指示器 —— 它们是薄片 Clear 语义,且指示层本来就自带色散。
+- **改动二 · 边缘色散(新增开关,默认关)**:新增 KV `LIQUID_GLASS_DISPERSION` + 设置开关「边缘色散」,映射到两处主体的 `lens(chromaticAberration = config.dispersion)`。**为什么默认关**:色散走 `RoundedRectRefractionWithDispersionShaderString`,采 7 段光谱 = **7 倍纹理采样**,而主体玻璃是**常驻**渲染(不像指示层只在按压时出现),默认开启会直接吃掉先前实测已经很紧的 120Hz 余量。⚠️ 它与普通折射是**两个不同的 shader key**,开启后首次绘制要现场编译(先前排查"冷启动首次点 tab 掉帧"时,色散 shader 的首次编译时机就是候选之一)。
+- **改动三 · 通透度(新增滑杆,默认 0.5)**:对齐 iOS 27 的全局透明度滑杆。`LiquidGlassConfig` 新增派生量 `containerAlphaScale = 1.25f - translucency * 0.5f`,乘在玻璃底色 alpha 上(`FloatingNavBar` 的 `surfaceContainer@0.4`、`GlassTopBar` 的 `surfaceBright@0.45`);**0.5 ⇒ 系数 1.0,与加此项前逐像素一致**,这是"默认零视觉变化"的锚点。同时新增 `contentBrightness`/`contentContrast` 派生量,用 `colorControls(brightness, contrast, saturation = 1.5f)` 做可读性补偿(越透越压暗采样内容 + 提对比)。
+  - ⚠️ **`colorControls(saturation = 1.5f)` 与 `vibrancy()` 数学等价** —— `vibrancy()` 内部就是 `colorFilter(VibrantColorFilter)`、而 `VibrantColorFilter = colorControlsColorFilter(saturation = 1.5f)`,同一个函数同一组参数 ⇒ 同一个 ColorMatrix。所以这是"**换实现不换观感**",且**不新增离屏层**(仍是一层 `ColorFilterEffect`),顺带让 `padding` 行为不变(`blur()` 的 `padding = radius` 依赖 `renderEffect != null`,两条路径都会置非 null)。唯一差别是 `ColorMatrixColorFilter` 实例不再被缓存复用,而它只在 effects 重算时构造,不在每帧路径上。
+  - 底栏**选中态指示层**也一并换掉了 `vibrancy()`,因为它与主体共用同一个 `containerColor` 变量 —— 只改主体会让两者在非默认通透度下脱节。
+- **顺手修的一处既有隐患(低,非本次引入)**:`KVKeySpec` 里 `LIQUID_GLASS_BLUR` / `LIQUID_GLASS_DISTORTION` 登记在 **int 区**(`register(..., 0)`),但它们按 `Float` 读。读 `KVDecoder.decode` 确认:第 99-104 行 `wanted` 取自**调用侧默认值**,`resolveType` 在 `wanted != null` 时直接 `TypeToken.get(wanted)`、**根本不查登记表** ⇒ 该登记项对这些键是**死数据**,功能上无害但会误导(若有人日后用不带默认值的 `KV.get(key)` 读,登记表就会把它当 Integer 返回)。已把三个 Float 键一并挪到 float 区(`register(..., 0f)`)。
+- **新增单测 `app/src/test/java/.../ui/theme/LiquidGlassConfigTest.kt`(3 例)**:锁 `LiquidGlassConfig` 的三个派生量 —— ①**默认通透度必须是恒等点**(`containerAlphaScale == 1f` / `contentBrightness == 0f` / `contentContrast == 1f`),这是"默认零视觉变化"唯一可执行的保证(改系数时若打破它,必须显式改这个测试而不是悄悄漂移);②`containerAlphaScale` 随通透度单调、两端 1.25 / 0.75;③越透越压暗采样内容 + 提对比。测试直接构造 `LiquidGlassConfig` 而不碰 `LiquidGlassState`(后者 `load()` 会读 KV,单测环境无 `KV.init` 会抛 `IllegalStateException`)—— 引用 `LiquidGlassState.DEFAULT_TRANSLUCENCY` 是安全的,`const val` 会被内联、不触发 object 初始化(已实测通过)。
+- **验证**:`:app:compileDebugKotlin` / `:app:assembleDebug` + `:app:testDebugUnitTest` 全 **BUILD SUCCESSFUL**,**250 用例 / 0 失败 / 0 错误**(基线 247 + 新增 3,无回归);APK 产出 `app/build/outputs/apk/debug/AVBox_debug.apk`(84.4 MB);已校验 `packaged_res` 内 `theme_translucency` / `theme_dispersion` 两条新文案进包(仅 3 个语言文件有 `theme_blur`,已全部同步;`values-zh-rHK` 是差异层,港台用词相同故不加)。
+- **未验证 / 待真机**:①厚度感的观感(边缘凸起是否自然、是否与高光边打架);②色散开启后的观感与**帧率代价**(7 倍采样,须实测 120Hz 下是否掉帧);③通透度全量程的观感与"越透越压暗采样内容"的补偿量是否合适(当前系数是估的,`0.06` / `0.24` 两个幅度没有实测依据);④默认值下是否真与改动前逐像素一致(数学上等价,但未经截图比对)。**按约定不自行操控用户设备**。
+- **行为变化需知**:头部「重置」由"只重置模糊/扭曲"变为**重置后四项效果参数**(模糊/扭曲/通透度/色散),仍**不动**「底部导航」「应用控件」两个启用开关。
+
+## 修:液态玻璃"没有立体感"(2026-09-23,用户"感觉没有 ios27 那种 3d 的立体感")
+
+- **背景**:上一轮加了 `depthEffect = true` 后用户实机反馈仍无立体感。回读库源码定位到**两条独立成因**,都不是 `depthEffect` 能解决的 —— 它只改折射**方向**,不改**明暗**;而人眼读"厚度"主要靠明暗。
+- **成因一(主因)· 内阴影实际不可见**:`InnerShadow` 的 `color` 默认 `Black@0.15`、`alpha` 是**乘在 color 之上的图层不透明度**(`shadowLayer.alpha = shadow.alpha`),项目传的 `alpha = 0.1f` ⇒ 实际不透明度只有 `0.15 × 0.1 = 1.5%`,等于没画。**这是个容易看漏的乘算关系,不是简单的"调小了"。**
+- **成因二 · 内阴影方向反了(读成"凹进去")**:`InnerShadowNode` 的画法是「用 color 填满形状 → `canvas.translate(offset)` 后 `BlendMode.Clear` 掉平移过的同一形状」,剩下的月牙落在**平移的反方向**。默认 `offset = DpOffset(0, +radius)`(下移)⇒ 月牙留在**上缘**。而外层 `Shadow` 是往下投的(元素悬浮)⇒ 上缘暗 + 下方投影 = **内凹**观感。悬浮的玻璃应是「上缘受光、下缘厚而暗」,故 `offset` 改 `-radius` 把厚度带翻到下缘。
+- **成因三 · 折射带过宽(没有"透镜环")**:`lens(refractionHeight, refractionAmount)` 原来两个参数传同一个值 ⇒ 在 64dp 高的底栏上衰减深度 = 30dp = **整条栏的 47%**,变形铺满整条栏、只剩"整体糊"。新增常量 `REFRACTION_DEPTH_RATIO = 0.4f`,只缩**衰减深度**、保留**位移量**(位移仍由「扭曲效果」滑杆控制)⇒ 同样的位移被压进边缘窄带,透镜环清晰。
+- **改动(3 个文件)**:
+  - `ui/theme/LiquidGlassConfig.kt` 新增两个可调常量:`REFRACTION_DEPTH_RATIO = 0.4f`、`GLASS_THICKNESS_DP = 5f`(注释各 1 行)。
+  - `GlassTopBar.kt` / `FloatingNavBar.kt` 主体:`lens(refraction * REFRACTION_DEPTH_RATIO, refraction, ...)`;`innerShadow` 由 `InnerShadow(radius = 4.dp, alpha = 0.1f)` 改为 `InnerShadow(radius = GLASS_THICKNESS_DP.dp, offset = DpOffset(0.dp, -GLASS_THICKNESS_DP.dp), alpha = 0.8f)`(实际不透明度 0.12)。
+  - 顺带对齐同一组件内另外两处:`FloatingNavBar` 的 `tabsBackdrop` 源层(它的 lens 也加 ratio)与第三层指示器(按压态内阴影 `offset` 同样翻到下缘)—— 否则按压时指示器的暗带在上、主体在下,同屏自相矛盾。
+- **未动**:外层 `Shadow`(2026-09-16 曾因 24dp 投影过大被用户投诉"控件区域一层半透明灰",已收紧到 8dp,不再放大);`Highlight`(库的 `DefaultHighlightShaderString` 用 `pow(abs(d), falloff)`,`abs()` 使上下缘强度恒等 ⇒ **无论 `angle` 取何值都做不出"只亮上缘"**,这是库的限制,见下条"后续可做")。
+- **后续可做(本轮未做,已想清)**:①**方向性高光** —— 需改本地 fork,给 `HighlightStyle.Ambient` 加 `angle` 参数(`AmbientHighlightShaderString` 已有 `step(0.0, d)` 的受光/背光二分,但 `angle` 在 Kotlin 侧被硬编码成 45°,且它给出的"亮侧"是右下、不是上方);②**中心厚/边缘薄的非线性厚度映射** —— 现在 `containerColor` 是纯色平铺,可换成 `Brush.verticalGradient`(需 `remember` 避免每帧建 Brush);③`refractionDepthRatio` / `glassThickness` 若用户想自己调,可提成滑杆。
+- **验证**:`:app:compileDebugKotlin` / `:app:assembleDebug` + `:app:testDebugUnitTest` 全 **BUILD SUCCESSFUL**,**250 用例 / 0 失败 / 0 错误**(无回归);APK 重建 84.4 MB。**观感待用户实机判断**(我不自行操控设备);`0.4` / `5dp` / `alpha 0.8` 三个值是估的,无实测依据。
+
+## 修:内阴影过重导致下缘"偏色暗带"(2026-09-23,用户"下半部分有很明显的偏色阴影,感觉不协调" + 附作者 B 站演示截图)
+
+- **反馈**:上一轮加了立体感后,用户实机截图显示顶栏控件下缘出现一条**明显偏色的暗带**;同时给出库作者 Kyant 的 B 站演示(`安卓液态大玻璃 / iOS 27 样式玻璃新参数`,2026-06-12),说"像这种玻璃就很舒服"。
+- **根因(上一轮自己引入)**:我把 `InnerShadow.alpha` 从 0.1 提到 0.8 ⇒ 实际黑度 `0.15 × 0.8 = 12%`。黑色压在**半透明玻璃底**(`surfaceBright@0.45`,Material 默认配色下带紫调)上时,不是"变暗"而是**把玻璃自身的色相压了出来** ⇒ 读成"偏色暗带"。**判据不是"暗度够不够",而是"会不会把玻璃底色调出来"** —— 这个量必须克制。
+- **修法**:内阴影降到 `GLASS_THICKNESS_DP = 4f` + 新增常量 `GLASS_THICKNESS_ALPHA = 0.3f`(实际约 4.5% 黑,较上一轮 -62%)。折射带收窄(`REFRACTION_DEPTH_RATIO = 0.4f`)与 `depthEffect` 保留 —— 立体感的另一部分来自它们,用户也认可"已经有立体感了"。
+- **作者 demo 的参数档(重要参考,已同步 spec §5)**:演示里六个滑杆 = 模糊不透明度 66% / 调色强度 100% / 阴影强度 74% / **环境光强度 29%** / **折射强度 50%** / **色散强度 0%**。
+  - **环境光强度 = `HighlightStyle.Ambient.intensity`** —— 项目当前用 `Highlight.Default`,**没启用 Ambient**;作者 demo 用的是它。⚠️ 但 `Ambient` 在 2.0.1 里 `angle` 被**硬编码 45°**,其 shader 的 `step(0.0, d)` 给出的是"**右下亮 / 左上暗**"(不是 iOS 的"上亮下暗"),且 `Ambient` 的 `intensity` 只改 `color`、而 shader 会覆盖 color ⇒ **开 shader 时 intensity 可能不生效**。要真正对齐 demo 需改本地 fork 给 `Ambient` 加 `angle` 参数 —— **本轮未做**。
+  - **色散强度 0%** —— 作者自己演示里色散也是关的,与项目"默认关"的选择一致(印证了性能判断)。
+  - **折射强度 50%** —— 作者只开到一半;而项目 `DEFAULT_DISTORTION_DP = 30f` 恰是滑杆量程上限(0~30)⇒ 默认即 100%。**已提示用户可把「扭曲效果」拉一半试试**(改默认值对已装机用户无效,他们的 KV 里存着旧值)。
+- **验证**:`:app:assembleDebug` + `:app:testDebugUnitTest` **BUILD SUCCESSFUL**,**250 用例 / 0 失败 / 0 错误**;APK 重建 84.4 MB。**观感待用户实机判断**;`0.3` 是估的,若"立体感变弱"优先回调它。
+
+## 补:接入「模糊不透明度」= 库的 `opacity()`(2026-09-23,用户"那个模糊不透明度呢")
+
+- **起因**:上一轮用户给了作者 demo 截图,六个滑杆里的「模糊不透明度 66%」当时没展开。用户追问后确认它对应的是**第一轮能力盘点里标为"未使用"的 `opacity(alpha)`**。
+- **⚠️ 关键区分(容易混,已写进 spec §5)**:
+  - **通透度**(上一轮做的)= 调**玻璃底板** `containerColor` 的不透明度 ⇒ 底板越淡,透出来的**模糊内容**越多。
+  - **模糊不透明度**(本次做的)= `opacity(alpha)` 调**采样到的背景内容本身**的不透明度 ⇒ 它越低,玻璃越薄,**未模糊的原背景**按 `1 - alpha` 透出来。
+  - 两者都让玻璃"更透",但**透出来的是不同的东西**。
+- **实现**:KV `LIQUID_GLASS_BLUR_OPACITY`(float,默认 1)+ `LiquidGlassConfig.blurOpacity` + 设置页滑杆「模糊不透明度」(0~100%,显示百分比)。调用点三处(`GlassTopBar.glassSurface`、`FloatingNavBar` 主体与 `tabsBackdrop` 源层),都写成 **`if (config.blurOpacity < 1f) opacity(config.blurOpacity)`** —— ⚠️ **`opacity()` 没有 alpha==1 的短路**,无条件调用会在默认路径上白加一层离屏 `ColorFilterEffect`,所以必须由调用点守。`1f` 是恒等点,已加单测 `defaultBlurOpacity_isIdentity` 锁住。
+- **效果链位置**:放在 `effects` 块**最前面**(`opacity` → `colorControls` → `blur` → `lens`)。理由是 `blur()` 的 `padding = radius` 依赖 `renderEffect != null`,放最前可确保这个前提不依赖 `colorControls` 的行为;视觉上与放最后等价(alpha 是均匀标量,与线性的 blur 可交换)。
+- **⚠️ 已知副作用(需实测确认)**:调低会产生**"双重影像"** —— 玻璃节点上原本盖着 100% 的模糊内容(把下面的原图完全挡住),降到 66% 后剩下 34% 是**未模糊的原图**,与模糊层叠加。观感可能是"更薄更透的真玻璃"(作者 demo 大概就是这效果),也可能像渲染重影。**这正是它和「通透度」最需要用实机区分的点。**
+- **验证**:`:app:assembleDebug` + `:app:testDebugUnitTest` **BUILD SUCCESSFUL**,**251 用例 / 0 失败 / 0 错误**(基线 250 + 新增 1);APK 重建 84.4 MB。默认 100% 时**逐像素等于加此项之前**。
+
+## 玻璃三改:撤除模糊不透明度 / 色散默认开 / 方向性高光做立体感(2026-09-23,用户"将模糊不透明度范围滑块删掉吧,默认开启边缘色散,再增强一下液态玻璃控件和导航栏的立体感")
+
+### ① 整项撤除「模糊不透明度」
+
+- **上一轮刚接的 `opacity()` 功能按用户要求整项删掉**,不是只藏滑杆:滑杆 + `LiquidGlassConfig.blurOpacity` 字段 + KV `LIQUID_GLASS_BLUR_OPACITY`(含 `KVKeySpec` 登记)+ `HawkConfig` 常量 + 三处 `if (blurOpacity < 1f) opacity(...)` 调用点 + `effects.opacity` import + 单测 `defaultBlurOpacity_isIdentity` + 三语言 `theme_blur_opacity` 文案,**全部清除**。
+- 推断原因 = 上一轮预告的**"双重影像"**(调低后未模糊的原图透出来)。**不要再按作者 demo 的「模糊不透明度 66%」去实现**(spec §5 已注明)。
+
+### ② 边缘色散改为默认开
+
+- `LiquidGlassState.DEFAULT_DISPERSION` 由 `false` 改 `true`(KV `LIQUID_GLASS_DISPERSION` 仍在,开关保留)。用户已装的机器只要**没手动关过**该开关,键不存在 ⇒ `KV.get(key, true)` 直接返回新默认值,无需重装或迁移。
+- ⚠️ **保留的性能警告**:色散是 7 倍纹理采样且主体常驻渲染,是全项目最贵的一处效果。先前实测底栏在 120Hz 下余量本就紧(稳态 8.3ms/帧),**若报掉帧优先关它做 A/B**。
+
+### ③ 立体感:改用方向性高光(本轮唯一动 fork 的改动)
+
+- **思路**:上一轮靠"加深下缘内阴影"做立体感翻车了(偏色暗带)。这轮换成**加光而不是加暗** —— 用 `HighlightStyle.Ambient` 做**亮上缘 + 暗下缘**的方向性高光。关键优势:下缘暗部是 **0.5dp 细线**(Highlight 的 stroke 宽度),不是上一轮那种 4dp 模糊宽暗带 ⇒ 结构上不会重犯"偏色暗带"。
+- **fork 改动(第 4 处偏离)**:`HighlightStyle.Ambient` 新增 `angle: Float = 45f`,把原本硬编码在 `createShader` 里的 `45f` 提成参数。**默认 45f 与上游逐字节一致**(不传即行为不变)。上游 `Ambient` 的 shader 本来就有 `step(0.0, d)` 的受光/背光二分,但 45° 给出的是"右下受光",要"上亮下暗"必须传 `-90`。
+- **为什么不能靠 `Highlight.Default`**:`DefaultHighlightShaderString` 用 `pow(abs(d), falloff)`,**`abs()` 让上下缘强度恒等** ⇒ 调 `angle`/`falloff` 都出不来方向性;而且 45° 时四条直边恰好同为 `|d| = 0.707`,就是那条"均匀白描边"。
+- **顺带确认的一件事**:`internal/Paint.setRuntimeShader` 设的是 `frameworkPaint.shader`,**Skia 下 paint 的 alpha 会调制 shader 输出** ⇒ `Ambient.intensity` 是生效的(此前不确定,已验证)。
+- **实现**:新增常量 `GLASS_AMBIENT_INTENSITY = 0.55f` / `GLASS_LIGHT_ANGLE = -90f`;`GlassTopBar.kt` 里定义 `internal val GlassHighlight`(`Highlight.Ambient.copy(style = HighlightStyle.Ambient(intensity, angle))`),**底栏四层玻璃全部改用它**(主体 / `tabsBackdrop` 源层 / 选中指示层,原来都是 `Highlight.Default`),顶栏控件同样。抽成共享 val 而不是各写一遍,避免将来调参漏改。
+- **验证**:`:app:assembleDebug` + `:app:testDebugUnitTest` **BUILD SUCCESSFUL**,**250 用例 / 0 失败 / 0 错误**(撤掉 blurOpacity 那条后回到基线);APK 重建 84.4 MB。**观感待用户实机判断**;`0.55` / `-90` 两个值是估的,优先调它们。
+
+## 修:冷启动崩溃 `ConcurrentModificationException`(2026-09-23,用户"刚刚发生崩溃了";**既有 bug,非本轮玻璃改动引入**)
+
+- **现象**:装机后 3 秒(11:13:17)冷启动崩在 main。`logcat -b crash` 原文:
+  ```
+  java.util.ConcurrentModificationException
+      at java.util.ArrayList$Itr.checkForComodification(ArrayList.java:1111)
+      at com.github.tvbox.osc.ui.page.SettingsPageKt.SettingsPage$lambda$6$0$1$3(SettingsPage.kt:720)
+  ```
+- **⚠️ 踩到的第一个坑:栈里的行号是假的**。`SettingsPage.kt` 只有 **502 行**,根本没有 720 行,一度怀疑装的包和工作区源码不一致。核对栈里另外两个行号(`SettingsPage.kt:296` → `SettingsGroup(...)`、`:340` → `SettingsCard(...)`)与当前文件**逐行吻合** ⇒ 包里就是这份源码。**真相 = Kotlin 内联 `mapIndexed` 的 lambda 行号被误归因**(真实位置 = `SettingsPage.kt:348`)。**教训:Compose/内联 lambda 的栈行号超出文件总行数时,不要据此怀疑构建产物,改按"哪一行在遍历集合"去反查。**
+- **根因链(跨线程数据竞争)**:
+  ```
+  AppBootstrap:36  scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)   ← 后台
+    └─ startInit → awaitLoadConfig → ApiConfig.loadConfig → parseJson:905
+         └─ OkGoHelper.setDnsList() → dnsHttpsList.clear() + add()           ← 原地改写
+  主线程: SettingsPage:348 → OkGoHelper.dnsHttpsList.mapIndexed { }          ← 同时遍历
+  ```
+  `OkGoHelper.dnsHttpsList` 是 `public static ArrayList<String>`,**写方是启动期 IO 协程、读方是主线程 Compose 重组**。冷启动会组合全部 4 个 tab(`MainScreen` 的 `beyondViewportPageCount = 3`),所以设置页在**启动时**就被组合 —— 不是"进设置页才崩"。
+- **归属判定**:`OkGoHelper.java` 与 `SettingsPage.kt` 在 git 里**均未修改**(`git status` 无输出),`示例文件/上游项目` 里是同一份写法 ⇒ **继承自上游的既有 bug**,与本轮玻璃改动无关(本轮只改了渲染,不碰这条链路)。触发是概率性的,安装后的冷启动刚好撞上窗口。
+- **修法(只改 `OkGoHelper.java` 一个文件)**:`dnsHttpsList` 改 `public static volatile List<String> = Collections.emptyList()`,`setDnsList()` 与 `initDnsOverHttps()` 都改成**先在局部 `ArrayList` 建好、最后一次性赋值**(atomic swap)。读者永远看不到半成品列表 ⇒ **无需加锁**;顺带修掉一个隐患:原写法 `clear()` 在 try 内,异常中断会留下"只剩 `关闭` 一项"的半清理状态,新写法异常时保留旧列表。
+- **同类排查(已扫)**:`OkGoHelper` / `ApiConfig` 里的静态可变集合只有 `dnsHttpsList`(已修)、`myHosts`(已是 `volatile`)、`setProxyList`(已是 `synchronized`);`SettingsPage` 读 OkGoHelper 的地方只有那两处 DOH 行 ⇒ **无同类遗留**。口径已写进 spec §6.2。
+- **验证**:`:app:assembleDebug` + `:app:testDebugUnitTest` **BUILD SUCCESSFUL**,**250 用例 / 0 失败 / 0 错误**;APK 重建 84.4 MB。`logcat -b crash` 复查无新增崩溃(仍只有 11:13:17 那一条)。**真机待验**:连续冷启动多次不再崩。
+
+## 修:BootGuard 误禁正常源(2026-09-23,用户"崩溃明显不是源的问题,应用还把正常能用的源给我禁用了,明显是误禁";**既有 bug**)
+
+- **现象**:上一次崩溃(设置页的 CME)被 `BootGuard` 判成"与源有关",崩在装载后 10s 内 ⇒ 一次即停用 ⇒ 用户**正常的源被误禁**(`API_URL` 被清空 + 源地址进黑名单)。
+- **根因(判据恒真,保护从未生效)**:`BootGuard.IGNORABLE_FRAME_PREFIXES` 里有 `android.` / `androidx.` / `java.` / `kotlin.` / `com.google.android.` / `com.github.tvbox.osc.ui.` / `.base.`,**唯独漏了 `com.android.internal.`**。而任何**主线程**未捕获异常的栈尾必然是:
+  ```
+  at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:675)
+  at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:1002)
+  ```
+  这两个类不以任何已列前缀开头 ⇒ `isIgnorableFrame` 返回 false ⇒ `looksSourceRelated` 对**每一次主线程崩溃**都返回 `true`。**「界面崩溃不参与停用判定」这条保护等于从未生效过。**
+- **⚠️ 单测为什么没拦住(最有价值的一条教训)**:`BootGuardTest.uiCrashIsNotSourceRelated` 早就存在,但它用的是一条**理想化的假栈** —— 结尾写的是 `java.lang.Thread.run`(在 `java.` 白名单里),而真实主线程崩溃栈的结尾是 `com.android.internal.os.*`。**假栈把 bug 的触发条件绕过去了 ⇒ 单测长期绿着、线上判据恒真。** 写"崩溃栈过滤"这类用例时,**假栈必须按真实崩溃的形态写全**(本次直接抄了真机 `logcat -b crash` 的帧序列)。
+- **修法**:白名单加 `com.android.internal.`(框架内部包,任何应用/爬虫代码都不会在这里;只影响栈尾,不影响真正的 culprit 帧)。同时把 `uiCrashIsNotSourceRelated` 的假栈换成真机帧序列,并新增两条:
+  - `frameworkCrashTailIsNotSourceRelated` —— 最小复现(只留 `com.android.internal.os.*` 尾巴)
+  - `uiStackWithSpiderFrameIsStillSourceRelated` —— **反向锁**:白名单放宽后,界面帧里混进一帧爬虫仍必须判"有关"(防止放宽过头把真坏源放过)
+- **反向验证(做了)**:临时删掉 `com.android.internal.` 重跑 ⇒ 上述 2 条**立刻转红**;恢复后 252 用例全绿。**这条"去掉修复是否转红"的自证步骤值得固定下来** —— 本次正是它证明了新用例真的能抓 bug,而不是又一条"绿着却无效"的测试。
+- **用户侧恢复(源没丢)**:`disableRecordedSource()` 只清 `API_URL`(当前源指针)+ `API_LINE_LIST`/`API_LINE_SOURCE`(仓列表)+ 把地址记进 `BOOT_DISABLED_SOURCES`;**订阅列表 `API_HISTORY` 不动**。恢复路径 = 配置管理页 → 被禁源会带 `disabled` 标记 → 点它弹二次确认(`dialog_source_disabled_confirm` =「仍要启用」)→ `ConfigManagePage.enableAndSwitch()` 调 `BootGuard.enableSource(url)` 移出黑名单并切换。黑名单**不**过滤源选择列表(只在 `ApiConfig.firstUsableApiLine` 换仓改写、与 `LivePlayViewModel` 切直播源两处生效),所以源一定还能选中。
+- **验证**:`:app:assembleDebug` + `:app:testDebugUnitTest` **BUILD SUCCESSFUL**,**252 用例 / 0 失败 / 0 错误**(基线 250 + 新增 2)。**真机待验**:恢复被误禁的源后连续冷启动不再被禁。
+
+## 修:方向性高光的下缘暗线太生硬(2026-09-23,用户"液态玻璃下缘那条暗线太丑了很生硬")
+
+- **成因(上一轮自己引入)**:`HighlightStyle.Ambient` 的 shader 用 `step(0.0, d)` 把轮廓分成受光/背光两侧,而**背光侧被输出成 `alpha = intensity` 的纯黑**(`half4(t, t, t, 1.0) * intensity`,t=0 时 rgb 全 0、alpha 仍是 intensity)。配合 `angle = -90°`(正上方受光),背光侧正好落在**下缘**;而 Highlight 只有 **0.5dp 宽 + 0.25dp 模糊** ⇒ 就是一根又细又硬的暗线。**调 `intensity` / `angle` 都消不掉它** —— 那是 shader 输出形态决定的,只能改 shader。
+- **修法(fork 第 5 处偏离)**:`AmbientHighlightShaderString` 的 `half4(t, t, t, 1.0)` → **`half4(t, t, t, t)`**,即 **alpha 也跟着 `t` 走**。效果:①背光侧 `(0,0,0,0)` **全透明**,暗线消失;②过渡区从"rgb 变灰、alpha 不变"变成"**白色降透明度**",比上游更干净(上游过渡区其实是一段灰带)。
+- **为什么选"去掉暗侧"而不是"把暗侧调淡"**:立体感的主要来源是**亮上缘**(`intensity = |dot(法线, 光源)|`,从正上方沿两侧平滑衰减),暗侧只是附加的纵深暗示;而用户对"下缘发暗"已连续两次负面反馈(第一次是内阴影 12% 黑的"偏色暗带",这次是这根硬线)。**底部纵深改由那条柔和的内阴影承担**(`GLASS_THICKNESS_DP = 4f` / `ALPHA = 0.3f`,4dp 模糊),它是渐变而非硬线。
+- **验证**:`:app:assembleDebug` + `:app:testDebugUnitTest` **BUILD SUCCESSFUL**,**252 用例 / 0 失败 / 0 错误**。⚠️ **shader 改动无单测覆盖**(AGSL 字符串无法在纯 JVM 里跑),只能真机看观感。
+- **未做(若用户还嫌不够亮)**:背光侧去掉后整体高光变淡,`GLASS_AMBIENT_INTENSITY` 可能要从 `0.55f` 往上调 —— 单常量,好调。

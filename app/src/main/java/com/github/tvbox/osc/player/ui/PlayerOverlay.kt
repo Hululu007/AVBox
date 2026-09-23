@@ -269,7 +269,7 @@ internal fun PlayerMenuButton(
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
     textColor: Color = Color.White,
-    @DimenRes textSizeId: Int = R.dimen.ts_19,
+    @DimenRes textSizeId: Int = R.dimen.ts_20,
 ) {
     var pressed by remember { mutableStateOf(false) }
     val buttonModifier = modifier

@@ -200,5 +200,8 @@ half4 main(float2 coord) {
     float d = dot(grad, normal);
     float intensity = pow(abs(d), falloff);
     float t = step(0.0, d);
-    return half4(t, t, t, 1.0) * intensity;
+    // fork 改动(上游是 half4(t,t,t,1.0)):背光侧改全透明 —— 上游那版把背光侧输出成 alpha=intensity 的
+    // 纯黑,Highlight 只有 0.5dp 宽 + 0.25dp 模糊,落在下缘就是一根又细又硬的暗线。
+    // 改成 alpha 也跟着 t 走,背光侧消失、过渡区从"变灰"变成"降透明度",只留受光侧的白边。
+    return half4(t, t, t, t) * intensity;
 }"""

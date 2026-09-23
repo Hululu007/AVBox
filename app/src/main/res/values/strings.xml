@@ -91,6 +91,8 @@
 
     <!-- 首页 -->
     <string name="home_subscription_source">订阅源</string>
+    <string name="home_site_search_hint">搜索站点名称或地址</string>
+    <string name="home_site_search_empty">没有匹配的站点</string>
     <string name="home_no_source">尚未配置订阅接口</string>
     <string name="home_load_timeout">首页加载超时，请检查网络后重试</string>
     <string name="home_recommend">推荐</string>
@@ -287,6 +289,8 @@
     <string name="theme_app_controls">应用控件</string>
     <string name="theme_blur">模糊效果</string>
     <string name="theme_distortion">扭曲效果</string>
+    <string name="theme_translucency">通透度</string>
+    <string name="theme_dispersion">边缘色散</string>
     <string name="theme_custom_color">自定义颜色</string>
     <string name="theme_custom_theme">自定义主题</string>
     <string name="theme_mode">主题模式</string>

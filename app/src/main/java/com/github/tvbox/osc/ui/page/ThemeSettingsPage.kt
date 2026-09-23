@@ -78,6 +78,7 @@ fun ThemeSettingsScreen(onNavigateBack: () -> Unit) {
     val glassConfig = LiquidGlassState.config
     var blurValue by remember(glassConfig.blurDp) { mutableStateOf(glassConfig.blurDp) }
     var distortionValue by remember(glassConfig.distortionDp) { mutableStateOf(glassConfig.distortionDp) }
+    var translucencyValue by remember(glassConfig.translucency) { mutableStateOf(glassConfig.translucency) }
 
     val listState = rememberScrollState()
 
@@ -195,13 +196,30 @@ fun ThemeSettingsScreen(onNavigateBack: () -> Unit) {
                         onValueChangeFinished = { LiquidGlassState.setBlurDp(blurValue) },
                     )
                 }
-                SettingsCard(SettingsCardPosition.LAST) {
+                SettingsCard(SettingsCardPosition.MIDDLE) {
                     GlassSliderRow(
                         title = stringResource(R.string.theme_distortion),
                         value = distortionValue,
                         valueRange = LiquidGlassState.DISTORTION_RANGE,
                         onValueChange = { distortionValue = it },
                         onValueChangeFinished = { LiquidGlassState.setDistortionDp(distortionValue) },
+                    )
+                }
+                SettingsCard(SettingsCardPosition.MIDDLE) {
+                    GlassSliderRow(
+                        title = stringResource(R.string.theme_translucency),
+                        value = translucencyValue,
+                        valueRange = LiquidGlassState.TRANSLUCENCY_RANGE,
+                        onValueChange = { translucencyValue = it },
+                        onValueChangeFinished = { LiquidGlassState.setTranslucency(translucencyValue) },
+                        valueText = "${(translucencyValue * 100f).roundToInt()}%",
+                    )
+                }
+                SettingsCard(SettingsCardPosition.LAST) {
+                    SettingsSwitchRow(
+                        title = stringResource(R.string.theme_dispersion),
+                        checked = glassConfig.dispersion,
+                        onCheckedChange = { LiquidGlassState.setDispersion(it) },
                     )
                 }
             }
@@ -277,6 +295,7 @@ private fun GlassSliderRow(
     valueRange: ClosedFloatingPointRange<Float>,
     onValueChange: (Float) -> Unit,
     onValueChangeFinished: () -> Unit,
+    valueText: String = value.roundToInt().toString(),
 ) {
     Column(
         modifier = Modifier
@@ -297,7 +316,7 @@ private fun GlassSliderRow(
                 contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             ) {
                 Text(
-                    text = value.roundToInt().toString(),
+                    text = valueText,
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                 )

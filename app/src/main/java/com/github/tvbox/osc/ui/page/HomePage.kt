@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.offset
@@ -68,6 +69,7 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -90,6 +92,7 @@ import com.github.tvbox.osc.ui.components.AppTopBarScaffold
 import com.github.tvbox.osc.ui.components.LoadStateBox
 import com.github.tvbox.osc.ui.components.LocalSheetDismiss
 import com.github.tvbox.osc.ui.components.PressableCard
+import com.github.tvbox.osc.ui.components.SearchField
 import com.github.tvbox.osc.ui.components.SearchSettingsSheet
 import com.github.tvbox.osc.ui.components.SettingsCard
 import com.github.tvbox.osc.ui.components.SettingsCardPosition
@@ -102,6 +105,7 @@ import com.github.tvbox.osc.ui.components.glassTopBarSurface
 import com.github.tvbox.osc.ui.components.rememberVodCardMenuState
 import com.github.tvbox.osc.ui.theme.cardContainer
 import com.github.tvbox.osc.util.HomeSettings
+import com.github.tvbox.osc.util.SiteSearch
 import com.kyant.capsule.ContinuousCapsule
 
 private val HomeSourceCapsuleMaxWidth = 240.dp
@@ -383,43 +387,74 @@ fun HomePage(vm: HomeViewModel, contentPadding: PaddingValues = PaddingValues(0.
             isScrollable = false,
         ) {
             val dismissAnimated = LocalSheetDismiss.current
+            val keyboard = LocalSoftwareKeyboardController.current
+            var query by remember { mutableStateOf("") }
+            val filtered = remember(sources, query) { SiteSearch.filter(sources, query) }
+            val listState = rememberLazyListState()
+            val selectedIndex = filtered.indexOfFirst { it.key == currentSource?.key }
+            LaunchedEffect(query.isEmpty()) {
+                if (query.isEmpty() && selectedIndex > 0) listState.scrollToItem(selectedIndex)
+            }
+            SearchField(
+                query = query,
+                onQueryChange = { query = it },
+                onSearch = { keyboard?.hide() },
+                hint = stringResource(R.string.home_site_search_hint),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+            )
             LazyColumn(
+                state = listState,
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 420.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp),
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
             ) {
-                item {
-                    SettingsGroup(title = null) {
-                        sources.forEachIndexed { index, bean ->
-                            val selected = bean.key == currentSource?.key
-                            val position = when {
-                                sources.size == 1 -> SettingsCardPosition.SINGLE
-                                index == 0 -> SettingsCardPosition.FIRST
-                                index == sources.size - 1 -> SettingsCardPosition.LAST
-                                else -> SettingsCardPosition.MIDDLE
-                            }
-                            SettingsCard(
-                                position = position,
-                                color = MaterialTheme.colorScheme.surfaceBright,
-                            ) {
-                                SettingsOptionRow(
-                                    title = bean.name ?: bean.key,
-                                    selected = selected,
-                                    onClick = {
-                                        if (!selected) {
-                                            vm.switchSource(bean)
-                                        }
-                                        dismissAnimated()
-                                    },
-                                )
-                            }
-                        }
+                if (filtered.isEmpty()) {
+                    item {
+                        LoadStateBox(
+                            state = LoadState.Empty,
+                            // 空词下为空 = 没配订阅,不是"没搜到"
+                            emptyText = stringResource(
+                                if (query.isEmpty()) R.string.config_empty_subscribe else R.string.home_site_search_empty,
+                            ),
+                            errorText = "",
+                            retryText = "",
+                            emptyIconRes = R.drawable.ic_empty_record,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(160.dp),
+                        )
+                    }
+                }
+                // 源之间 2dp 只能随项带:统一 verticalArrangement 会连带放大"源列表 / 配置接口"的组间距
+                itemsIndexed(filtered) { index, bean ->
+                    val selected = bean.key == currentSource?.key
+                    SettingsCard(
+                        position = when {
+                            filtered.size == 1 -> SettingsCardPosition.SINGLE
+                            index == 0 -> SettingsCardPosition.FIRST
+                            index == filtered.size - 1 -> SettingsCardPosition.LAST
+                            else -> SettingsCardPosition.MIDDLE
+                        },
+                        modifier = Modifier.padding(bottom = if (index == filtered.lastIndex) 0.dp else 2.dp),
+                        color = MaterialTheme.colorScheme.surfaceBright,
+                    ) {
+                        SettingsOptionRow(
+                            title = bean.name ?: bean.key,
+                            selected = selected,
+                            onClick = {
+                                if (!selected) {
+                                    vm.switchSource(bean)
+                                }
+                                dismissAnimated()
+                            },
+                        )
                     }
                 }
                 item {
-                    SettingsGroup(title = null) {
+                    SettingsGroup(title = null, modifier = Modifier.padding(top = 20.dp)) {
                         SettingsCard(
                             position = SettingsCardPosition.SINGLE,
                             color = MaterialTheme.colorScheme.surfaceBright,

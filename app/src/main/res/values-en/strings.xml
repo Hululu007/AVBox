@@ -91,6 +91,8 @@
 
     <!-- Home -->
     <string name="home_subscription_source">Subscriptions</string>
+    <string name="home_site_search_hint">Search site name or URL</string>
+    <string name="home_site_search_empty">No matching sites</string>
     <string name="home_no_source">No subscription configured</string>
     <string name="home_load_timeout">Home page timed out. Check your network and try again</string>
     <string name="home_recommend">Recommended</string>
@@ -287,6 +289,8 @@
     <string name="theme_app_controls">App Controls</string>
     <string name="theme_blur">Blur</string>
     <string name="theme_distortion">Distortion</string>
+    <string name="theme_translucency">Translucency</string>
+    <string name="theme_dispersion">Edge Dispersion</string>
     <string name="theme_custom_color">Custom Color</string>
     <string name="theme_custom_theme">Custom Theme</string>
     <string name="theme_mode">Theme Mode</string>

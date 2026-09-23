@@ -1,15 +1,13 @@
 package com.github.tvbox.osc.util
 
 import com.github.tvbox.osc.base.App
+import com.github.tvbox.osc.event.RefreshEvent
+import com.github.tvbox.osc.player.PlaybackService
+import org.greenrobot.eventbus.EventBus
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
-/**
- * "本集播放进度"快照(历史页进度条用)。
- *
- * 播放位置只按播放地址存在进度缓存里,而历史记录落库时集数表被剔除 ⇒ 历史页反查不到"这一集看了多少";
- * 改由播放层在进度回调里按「源 + 内容 id」记一份百分比,暂停/播完时强制落一次。
- */
+/** "本集播放进度"快照(历史页进度条)+ 观看历史的落库信号源 */
 object PlaybackProgress {
 
     private const val KEY = "playback_progress"
@@ -18,11 +16,23 @@ object PlaybackProgress {
 
     private const val MIN_INTERVAL_MS = 5_000L
 
+    private const val MIN_ADVANCE_MS = 1_000
+
+    private const val MAX_STEP_MS = 10_000
+
     private var lastKey = ""
 
     private var lastSavedAt = 0L
 
     private var lastSavedPercent = -1
+
+    private var sampleToken = ""
+
+    private var lastPosition = -1
+
+    private var advancedMs = 0
+
+    private var watchedToken = ""
 
     private val writer: ExecutorService by lazy {
         Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "playback-progress") }
@@ -40,6 +50,8 @@ object PlaybackProgress {
     fun onProgress(positionMs: Int, durationMs: Int) {
         val percent = calcPercent(positionMs, durationMs) ?: return
         val id = currentKey() ?: return
+        // 节流会吞采样,判据必须拿到全部采样
+        markWatched(positionMs)
         val now = System.currentTimeMillis()
         if (id == lastKey && (percent == lastSavedPercent || now - lastSavedAt < MIN_INTERVAL_MS)) return
         lastKey = id
@@ -48,16 +60,43 @@ object PlaybackProgress {
         writer.execute { write(id, percent) }
     }
 
-    /** @return true 表示写入了新值,调用方据此决定是否通知历史页刷新 */
     fun flush(positionMs: Int, durationMs: Int): Boolean {
         val percent = calcPercent(positionMs, durationMs) ?: return false
         val id = currentKey() ?: return false
+        markWatched(positionMs)
+        watchedToken = ""
+        sampleToken = ""
+        advancedMs = 0
         if (id == lastKey && percent == lastSavedPercent) return false
         if (!write(id, percent)) return false
         lastKey = id
         lastSavedAt = System.currentTimeMillis()
         lastSavedPercent = percent
         return true
+    }
+
+    /** 只认平滑推进:回拖与 seek 跳变(起播起始位置来自上次进度)都不算"在播" */
+    fun stepAdvanceMs(positionMs: Int, lastPositionMs: Int): Int =
+        (positionMs - lastPositionMs).takeIf { it in 1..MAX_STEP_MS } ?: 0
+
+    fun shouldMarkWatched(advancedMs: Int, token: String, lastToken: String): Boolean =
+        token != lastToken && advancedMs >= MIN_ADVANCE_MS
+
+    private fun markWatched(positionMs: Int) {
+        val vod = App.getInstance().vodInfo ?: return
+        if (PlaybackService.peek()?.isLiveMode() == true) return
+        val token = key(vod.sourceKey, vod.id) + "#" + vod.playFlag + "#" + vod.playIndex
+        if (token != sampleToken) {
+            sampleToken = token
+            lastPosition = positionMs
+            advancedMs = 0
+            return
+        }
+        advancedMs += stepAdvanceMs(positionMs, lastPosition)
+        lastPosition = positionMs
+        if (!shouldMarkWatched(advancedMs, token, watchedToken)) return
+        watchedToken = token
+        EventBus.getDefault().post(RefreshEvent(RefreshEvent.TYPE_PLAYBACK_STARTED))
     }
 
     private fun calcPercent(positionMs: Int, durationMs: Int): Int? {
