@@ -2489,3 +2489,12 @@ echo-exo-player-error: code=ERROR_CODE_UNSPECIFIED, msg=Unexpected runtime error
   - ⇒ 结论:**排除是对的**(真正理由 = "用户显式指定的版本 + 全押在 expressive API 上 + 自研组件依赖 M3 默认值",不是 ModalBottomSheet)。
   - **✅ 已按方案 A 修掉「排过头」的问题(2026-09-24,用户"改吧")**:原写法 `versions: [">=1.5.0-alpha.24", "<1.5.0"]` 因为多条是**「或」**关系,实际把 **stable 也一起排除**了(等于永久忽略)。现改为**单条 Maven/Gradle 区间** `versions: ["[1.5.0-alpha.24,1.5.0)"]` —— 区间内部是**「与」**语义 ⇒ 只忽略 `[1.5.0-alpha.24, 1.5.0)`,`1.5.0` stable 发布后**自动放行**,不用手动解禁。⚠️ 注意 YAML 里这个字符串以 `[` 开头,**必须加引号**(已加);已用 PyYAML 校验为「单元素 list、内容为字符串」✓。
 
+### 工作流跟示例对齐:加 `concurrency` 串行化 + `gh pr merge` 重试(2026-09-24 00:29,用户"改成示例文件里的dependabot-auto-merge.yml")
+
+- **背景**:用户更新了 `示例文件/dependabot-auto-merge.yml`(mtime 00:26),新增两处改进 —— ①**`concurrency: {group: dependabot-auto-merge, cancel-in-progress: false}`** 全局串行化(注释原话:"避免多个 Dependabot PR 并发调用 auto-merge API 导致竞态失败");②**`Enable auto-merge` 加 3 次重试**(每次间隔 10s,全失败 `exit 1`)应对并发/rebase 的瞬时失败。⇒ 这也回答了我上一轮问的"要不要加并发约束"。
+- **落地**:`.github/workflows/dependabot-auto-merge.yml` 按示例重写,**只保留两处本仓库必须的差异**(已写进文件注释):
+  1. **删掉 `working-directory: android`** —— 本仓库 **Gradle 根就是仓库根**(`settings.gradle.kts` 在根),**没有 `android/` 子目录** ⇒ 照抄会让该 step 直接报 "directory does not exist" 而失败。
+  2. **编译命令加 `-x :pyramid:installDebugPythonRequirements`** —— 否则 `compileDebugKotlin` 会去跑 Chaquopy 的 pip 安装(要联网 + Python 3.10),那步失败会把整条验证**误报**成"依赖更新有问题"。
+- **验证**:`diff` 确认与示例**只差上述两处**(+ 一行注释);PyYAML 解析通过(`concurrency` 正确读为 dict、5 个 step 名称齐全)。
+- **未提交**(等用户指示;上一批 CI 文件已于 00:26 提交推送为 `604a7d3`)。
+

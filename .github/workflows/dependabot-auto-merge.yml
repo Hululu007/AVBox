@@ -1,9 +1,15 @@
 name: Dependabot Auto-Merge
-
 # 当 Dependabot 打开或更新 PR 时触发
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+
+# ===== 新增：串行化执行 =====
+# 同一时间只允许一个 auto-merge workflow 运行，后续触发的会排队等待
+# 避免多个 Dependabot PR 并发调用 auto-merge API 导致竞态失败
+concurrency:
+  group: dependabot-auto-merge
+  cancel-in-progress: false
 
 jobs:
   auto-merge:
@@ -14,14 +20,12 @@ jobs:
     permissions:
       contents: write         # 合并 PR 所需
       pull-requests: write    # 批准 & 合并 PR 所需
-
     steps:
-      # 1. 检出代码(浅克隆,仅用于构建验证)
+      # 1. 检出代码（浅克隆，仅用于构建验证）
       - name: Checkout
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-
       # 2. 设置 JDK
       - name: Set up JDK 21
         uses: actions/setup-java@v6
@@ -29,18 +33,16 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
           cache: gradle
-
-      # 3. 验证 Kotlin 编译是否通过(跳过资源打包/DEX/APK 签名,节省 CI 时间)
-      # 只编译 Kotlin 源码,不生成 APK,速度快 3-5 倍;同样能查出依赖更新导致的
-      # API 变更、类缺失、方法签名不兼容。
-      # ⚠️ 必须 -x 掉 Chaquopy 的 Python 依赖安装:那一步要联网装 pip 包(与本次验证目标无关),
-      # 且失败会让整条验证误报。Kotlin 编译本身不依赖它。
+      # 3. 验证 Kotlin 编译是否通过（跳过资源打包/DEX/APK 签名，节省 CI 时间）
+      # ⚠️ 本仓库与示例有两处必须不同：①Gradle 根就是仓库根，没有 android/ 子目录 ⇒ 不能写 working-directory；
+      #    ②必须 -x 掉 Chaquopy 的 Python 依赖安装（那步要联网装 pip 包，失败会被误报成"依赖更新有问题"）。
       - name: Validate Kotlin compilation
         run: |
           chmod +x gradlew
+          # 仅编译 Kotlin 源码，不生成 APK，速度快 3-5 倍
+          # 同样能检测出依赖更新导致的 API 变更、类缺失、方法签名不兼容等问题
           ./gradlew compileDebugKotlin -x :pyramid:installDebugPythonRequirements --no-daemon -q
         continue-on-error: false
-
       # 4. 自动批准 PR
       - name: Auto-approve PR
         if: success()
@@ -48,11 +50,21 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PR_APPROVE_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
-
-      # 5. 启用自动合并(Auto-merge),让 GitHub 在所有检查通过后自动 squash 合并
+      # 5. 启用自动合并（Auto-merge），让 GitHub 在所有检查通过后自动 squash 合并
+      # ===== 修改：添加重试机制，应对并发/rebase 导致的瞬时失败 =====
       - name: Enable auto-merge
         if: success()
-        run: gh pr merge --auto --squash "$PR_URL"
+        run: |
+          for attempt in 1 2 3; do
+            if gh pr merge --auto --squash "$PR_URL"; then
+              echo "Auto-merge enabled on attempt $attempt"
+              exit 0
+            fi
+            echo "Attempt $attempt failed, waiting 10s before retry..."
+            sleep 10
+          done
+          echo "All 3 attempts to enable auto-merge failed"
+          exit 1
         env:
           GH_TOKEN: ${{ secrets.PR_APPROVE_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
