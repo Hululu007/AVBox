@@ -5,6 +5,7 @@ import com.kyant.backdrop.BackdropEffectScope
 import com.kyant.backdrop.RuntimeShader
 import com.kyant.backdrop.internal.RuntimeShaderEffect
 import com.kyant.backdrop.internal.chain
+import com.kyant.backdrop.internal.effectCacheOrNull
 import com.kyant.backdrop.isRenderEffectSupported
 import com.kyant.backdrop.isRuntimeShaderSupported
 import org.intellij.lang.annotations.Language
@@ -13,7 +14,8 @@ import kotlin.contracts.ExperimentalContracts
 fun BackdropEffectScope.effect(effect: RenderEffect) {
     if (!isRenderEffectSupported()) return
 
-    renderEffect = renderEffect.chain(effect)
+    renderEffect = effectCacheOrNull()?.chain(renderEffect, effect)
+        ?: renderEffect.chain(effect)
 }
 
 @OptIn(ExperimentalContracts::class)
@@ -30,5 +32,6 @@ fun BackdropEffectScope.runtimeShaderEffect(
             runtimeShader = obtainRuntimeShader(key, shaderString).apply(block),
             uniformShaderName = uniformShaderName
         )
-    renderEffect = renderEffect.chain(effect)
+    renderEffect = effectCacheOrNull()?.chain(renderEffect, effect)
+        ?: renderEffect.chain(effect)
 }

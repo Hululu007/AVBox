@@ -1,7 +1,6 @@
 package com.github.tvbox.osc.ui.navbar
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.MutatorMutex
@@ -30,14 +29,14 @@ class DampedDragAnimation(
     val visibilityThreshold: Float,
     val initialScale: Float,
     val pressedScale: Float,
+    val canDrag: (Offset) -> Boolean = { true },
     val onDragStarted: DampedDragAnimation.(position: Offset) -> Unit,
     val onDragStopped: DampedDragAnimation.() -> Unit,
     val onDrag: DampedDragAnimation.(size: IntSize, dragAmount: Offset) -> Unit,
     private val enabled: () -> Boolean = { true },
 ) {
 
-    // 偏离上游(原 spring(1f, 1000f, …) 阻尼比 1 = 临界阻尼,零回弹):降到 0.6 才有"弹簧"该有的回弹
-    private val valueAnimationSpec = spring(0.6f, 800f, visibilityThreshold)
+    private val valueAnimationSpec = spring(1f, 1000f, visibilityThreshold)
     private val velocityAnimationSpec = spring(0.5f, 300f, visibilityThreshold * 10f)
     private val pressProgressAnimationSpec = spring(1f, 1000f, 0.001f)
     private val scaleXAnimationSpec = spring(0.6f, 250f, 0.001f)
@@ -75,7 +74,11 @@ class DampedDragAnimation(
                 release()
             }
         ) { change, dragAmount ->
-            onDrag(size, dragAmount)
+            val isInside = canDrag(change.position)
+            val wasInside = canDrag(change.previousPosition)
+            if (isInside && wasInside) {
+                onDrag(size, dragAmount)
+            }
         }
     }
 
@@ -120,20 +123,20 @@ class DampedDragAnimation(
     fun updateValue(value: Float) {
         val coercedTargetValue = value.coerceIn(valueRange)
         animationScope.launch {
-            valueAnimation.snapTo(coercedTargetValue)
-            updateVelocity()
+            launch {
+                valueAnimation.animateTo(coercedTargetValue, valueAnimationSpec) {
+                    updateVelocity()
+                }
+            }
         }
     }
 
-    /** animationSpec 为 null 时走默认弹簧;点击切页传距离感知的 tween(见 FloatingNavBar.clickMoveSpec) */
-    fun animateToValue(value: Float, animationSpec: AnimationSpec<Float>? = null) {
+    fun animateToValue(value: Float) {
         animationScope.launch {
             mutatorMutex.mutate {
                 press()
                 val coercedTargetValue = value.coerceIn(valueRange)
-                launch {
-                    valueAnimation.animateTo(coercedTargetValue, animationSpec ?: valueAnimationSpec)
-                }
+                launch { valueAnimation.animateTo(coercedTargetValue, valueAnimationSpec) }
                 if (velocity != 0f) {
                     launch { velocityAnimation.animateTo(0f, velocityAnimationSpec) }
                 }

@@ -2498,3 +2498,17 @@ echo-exo-player-error: code=ERROR_CODE_UNSPECIFIED, msg=Unexpected runtime error
 - **验证**:`diff` 确认与示例**只差上述两处**(+ 一行注释);PyYAML 解析通过(`concurrency` 正确读为 dict、5 个 step 名称齐全)。
 - **未提交**(等用户指示;上一批 CI 文件已于 00:26 提交推送为 `604a7d3`)。
 
+## 修:液态玻璃导航栏「拖动切页多次后全进程掉帧」(2026-09-24,用户"把液态玻璃导航栏关掉之后变成surface导航栏,怎么切换tab都不会触发卡顿了")
+
+- **现象与定案**:开启液态玻璃时,长按指示器拖动切页若干次后**全进程任何动画都掉帧**(会"转移"到当下在播的动画上,例如首页订阅源 sheet 的弹出动画),退出应用重进恢复。禁用「导航动画」(关 pager 侧滑)仍复现 ⇒ 与 pager 动画无关;**关掉「底部导航」玻璃开关退回 surface 导航后完全不卡**(用户实测)⇒ 根因在玻璃导航栏的渲染链路上。⚠️ 期间曾把"关闭导航动画"误读成"关闭玻璃",一度错判为"与玻璃无关"。
+- **根因**:`effects{}` 里读到的任何 State 变化都会让整条 renderEffect 链重算,按压/拖动期间 `pressProgress` 逐帧变化 ⇒ **每帧**新建一串 native `RenderEffect`(colorControls 的 ColorMatrixColorFilter + blur + lens 的 RuntimeShaderEffect + 逐层 chain)并逐帧 `setRenderEffect`,RenderThread 侧管线反复重建;`InnerShadow(radius = 8.dp * progress)` 另加每帧 `BlurEffect`。native churn 累积表现成全局掉帧,而窗口重建(切后台)会把这类资源释放掉 ⇒ "退出重进就好"。
+- **改动(库层 3 + app 层 2,观感零变化)**:
+  1. 新增 `libs/backdrop/.../internal/RenderEffectCache.kt`:`BackdropEffectScopeImpl` 持有一份,`apply()` 前 `begin()` 按调用序对齐槽位;blur(半径/TileMode)、colorFilter、chain(内外引用)在"输入未变"时复用上次实例。
+  2. ⚠️ **runtimeShader 型 effect 必须带"uniform 值签名"才可复用** —— Skia 的 RuntimeShader filter 在**创建时快照 uniform**(与 `RuntimeShaderBrush` 那种"绘制时实时读"的路径不同);`lens()` 的签名覆盖 `size.width/height`、`padding`、`cornerRadii`、`refractionHeight/refractionAmount/depthEffect/chromaticAberration`。
+  3. colorFilter 的"值"取不到(`ColorMatrixColorFilter.colorMatrix` 是 private)⇒ 签名由调用侧传:`colorControls`/`opacity` 传参数值,通用 `colorFilter()` 入口传 null 退化为身份比较(不劣于改前)。
+  4. `FloatingNavBar` 按压折射强度改**量化驱动**(`GLASS_PRESS_LENS_STEPS = 4` + `Float.quantizePressProgress()`):折射只在跨档时换 effect ⇒ 从"每帧重建"降到"每次按压约 3 次";4 档在 300ms 弹簧里每档 ~75ms,观感等同连续(常量可调,设 1 等于去掉渐变)。
+  5. `DrawBackdropNode.updateEffects()` 加"引用未变不写 RenderNode"(`onAttach`/`onDetach` 复位该记录);`InteractiveHighlight` 的 `ShaderBrush` 提为字段(每帧新建会让画笔缓存失效)。
+- **未改(如实记录)**:①`FloatingNavBar` 第三层 `InnerShadow(radius = 8.dp * progress)` 仍逐帧新建 `BlurEffect` 并写 layer(不在 effects 链里,只影响该层;要消除需把"厚度渐入"改成固定半径 + alpha 变化,观感有差,待用户拍板);②`DampedDragAnimation`/`InteractiveHighlight` 每个 move 事件 4 次 `launch` 的协程风暴未动。
+- **验证**:`:app:assembleDebug` **BUILD SUCCESSFUL**(APK `app/build/outputs/apk/debug/AVBox_debug.apk`,82.7 MB);`:app:testDebugUnitTest` **263 用例 / 0 失败**;IDE 诊断零新增。**未装机**。
+- **待真机确认**:①长按拖动切页 20 次后是否仍累积掉帧;②按压/释放时折射的 4 档递进有无台阶感(`GLASS_PRESS_LENS_STEPS` 可调);③静态观感与改前一致(blur/colorControls 复用后理论上逐像素相同)。
+

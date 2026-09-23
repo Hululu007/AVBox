@@ -26,8 +26,8 @@ class LiquidGlassConfigTest {
 
     @Test
     fun translucency_scalesContainerAlphaMonotonically() {
-        assertEquals(1.25f, at(0f).containerAlphaScale, 0f)
-        assertEquals(0.75f, at(1f).containerAlphaScale, 0f)
+        assertEquals(2f, at(0f).containerAlphaScale, 0f)
+        assertEquals(0f, at(1f).containerAlphaScale, 0f)
         assertTrue(at(0.75f).containerAlphaScale < at(0.25f).containerAlphaScale)
     }
 

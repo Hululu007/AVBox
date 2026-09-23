@@ -71,6 +71,7 @@ fun AppTopBarScaffold(
         { drawRect(containerColor); drawContent() }
     }
     val glassBackdrop = rememberLayerBackdrop(onDraw = glassOnDraw)
+    val pauseGlassRecording = LocalGlassPauseRecording.current
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -116,7 +117,7 @@ fun AppTopBarScaffold(
                     .fillMaxSize()
                     .then(
                         if (glassEnabled) {
-                            Modifier.layerBackdrop(glassBackdrop, glassBounds)
+                            Modifier.layerBackdrop(glassBackdrop, glassBounds, pauseGlassRecording)
                         } else {
                             Modifier
                         }

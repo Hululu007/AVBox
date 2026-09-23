@@ -6,24 +6,31 @@ import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.ColorMatrixColorFilter
 import com.kyant.backdrop.BackdropEffectScope
 import com.kyant.backdrop.internal.ColorFilterEffect
+import com.kyant.backdrop.internal.effectCacheOrNull
 import com.kyant.backdrop.isRenderEffectSupported
 
 fun BackdropEffectScope.colorFilter(colorFilter: ColorFilter) {
     if (!isRenderEffectSupported()) return
 
-    renderEffect = ColorFilterEffect(renderEffect, colorFilter)
+    renderEffect = effectCacheOrNull()?.colorFilter(renderEffect, colorFilter, signature = null)
+        ?: ColorFilterEffect(renderEffect, colorFilter)
 }
 
 fun BackdropEffectScope.opacity(@FloatRange(from = 0.0, to = 1.0) alpha: Float) {
-    val colorMatrix = ColorMatrix(
-        floatArrayOf(
-            1f, 0f, 0f, 0f, 0f,
-            0f, 1f, 0f, 0f, 0f,
-            0f, 0f, 1f, 0f, 0f,
-            0f, 0f, 0f, alpha, 0f
+    if (!isRenderEffectSupported()) return
+
+    val filter = ColorMatrixColorFilter(
+        ColorMatrix(
+            floatArrayOf(
+                1f, 0f, 0f, 0f, 0f,
+                0f, 1f, 0f, 0f, 0f,
+                0f, 0f, 1f, 0f, 0f,
+                0f, 0f, 0f, alpha, 0f
+            )
         )
     )
-    colorFilter(ColorMatrixColorFilter(colorMatrix))
+    renderEffect = effectCacheOrNull()?.colorFilter(renderEffect, filter, "opacity:$alpha")
+        ?: ColorFilterEffect(renderEffect, filter)
 }
 
 fun BackdropEffectScope.colorControls(
@@ -35,7 +42,12 @@ fun BackdropEffectScope.colorControls(
         return
     }
 
-    colorFilter(colorControlsColorFilter(brightness, contrast, saturation))
+    if (!isRenderEffectSupported()) return
+
+    val filter = colorControlsColorFilter(brightness, contrast, saturation)
+    renderEffect =
+        effectCacheOrNull()?.colorFilter(renderEffect, filter, "colorControls:$brightness:$contrast:$saturation")
+            ?: ColorFilterEffect(renderEffect, filter)
 }
 
 private val VibrantColorFilter = colorControlsColorFilter(saturation = 1.5f)

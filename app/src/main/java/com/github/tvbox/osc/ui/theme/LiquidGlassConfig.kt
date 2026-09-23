@@ -23,12 +23,11 @@ data class LiquidGlassConfig(
     val translucency: Float,
     val dispersion: Boolean,
 ) {
-    /** 通透度 → 底色不透明度系数(0.5 为基准 1,越透越小) */
-    val containerAlphaScale: Float get() = 1.25f - translucency * 0.5f
+    val containerAlphaScale: Float get() = 2f - translucency * 2f
 
     /** 通透度 → 采样内容亮度补偿(底色越淡越压暗,保住压在玻璃上的文字) */
-    val contentBrightness: Float get() = (0.5f - translucency) * 0.06f
+    val contentBrightness: Float get() = (0.5f - translucency) * 0.24f
 
     /** 通透度 → 采样内容对比度补偿 */
-    val contentContrast: Float get() = 1f + (translucency - 0.5f) * 0.24f
+    val contentContrast: Float get() = 1f + (translucency - 0.5f) * 0.5f
 }

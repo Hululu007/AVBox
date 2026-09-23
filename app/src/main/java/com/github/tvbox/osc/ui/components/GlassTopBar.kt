@@ -12,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
@@ -36,6 +37,8 @@ import com.kyant.backdrop.shadow.Shadow
 import kotlin.math.min
 
 internal val LocalTopBarGlassBackdrop = compositionLocalOf<LayerBackdrop?> { null }
+
+internal val LocalGlassPauseRecording = compositionLocalOf { { false } }
 
 internal const val GLASS_BACKDROP_BAND_MARGIN_DP = 64
 

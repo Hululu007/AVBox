@@ -6,6 +6,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
+import com.kyant.backdrop.internal.RenderEffectCache
 
 sealed interface BackdropEffectScope : Density, RuntimeShaderCache {
 
@@ -30,6 +31,8 @@ internal abstract class BackdropEffectScopeImpl : BackdropEffectScope, RuntimeSh
     override var renderEffect: RenderEffect? = null
 
     private val runtimeShaderCache = RuntimeShaderCacheImpl()
+
+    internal val effectCache = RenderEffectCache()
 
     override fun obtainRuntimeShader(key: String, string: String): RuntimeShader {
         return runtimeShaderCache.obtainRuntimeShader(key, string)
@@ -59,6 +62,7 @@ internal abstract class BackdropEffectScopeImpl : BackdropEffectScope, RuntimeSh
     fun apply(effects: BackdropEffectScope.() -> Unit) {
         padding = 0f
         renderEffect = null
+        effectCache.begin()
         effects()
     }
 
@@ -70,5 +74,6 @@ internal abstract class BackdropEffectScopeImpl : BackdropEffectScope, RuntimeSh
         padding = 0f
         renderEffect = null
         runtimeShaderCache.clear()
+        effectCache.clear()
     }
 }

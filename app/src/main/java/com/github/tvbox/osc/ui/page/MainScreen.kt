@@ -67,6 +67,7 @@ import com.github.tvbox.osc.R
 import com.github.tvbox.osc.server.ControlManager
 import com.github.tvbox.osc.ui.activity.LivePlayActivity
 import com.github.tvbox.osc.ui.components.AVBoxAlertDialog
+import com.github.tvbox.osc.ui.components.LocalGlassPauseRecording
 import com.github.tvbox.osc.ui.components.LocalSheetDismissThen
 import com.github.tvbox.osc.ui.components.LocalSheetHost
 import com.github.tvbox.osc.ui.components.SheetHost
@@ -199,6 +200,9 @@ private fun MainContent() {
             { drawRect(liquidBackdropBgColor); drawContent() }
         }
     val liquidBackdrop = rememberLayerBackdrop(onDraw = liquidBackdropOnDraw)
+    val pauseGlassRecording: () -> Boolean = remember(pagerState, sheetHost) {
+        { pagerState.isScrollInProgress || sheetHost.request != null }
+    }
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
 
@@ -244,7 +248,10 @@ private fun MainContent() {
     val openLive: () -> Unit = remember(context) {
         { context.startActivity(Intent(context, LivePlayActivity::class.java)) }
     }
-    CompositionLocalProvider(LocalSheetHost provides sheetHost) {
+    CompositionLocalProvider(
+        LocalSheetHost provides sheetHost,
+        LocalGlassPauseRecording provides pauseGlassRecording,
+    ) {
         Box(modifier = Modifier.fillMaxSize()) {
             Scaffold(
                 containerColor = MaterialTheme.colorScheme.surfaceContainer,
@@ -295,7 +302,7 @@ private fun MainContent() {
                         .fillMaxSize()
                         .then(
                             if (liquidGlassEnabled) {
-                                Modifier.layerBackdrop(liquidBackdrop, liquidBackdropBounds)
+                                Modifier.layerBackdrop(liquidBackdrop, liquidBackdropBounds, pauseGlassRecording)
                             } else {
                                 Modifier
                             }
@@ -380,7 +387,6 @@ private fun MainContent() {
                         tabs = glassTabs,
                         config = liquidGlassConfig,
                         interactive = { true },
-                        isTabSwitching = { pagerState.currentPage != pagerState.targetPage },
                         actionItem = liveActionItem,
                         onActionClick = openLive,
                     )

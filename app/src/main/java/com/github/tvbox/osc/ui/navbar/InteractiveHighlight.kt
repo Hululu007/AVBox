@@ -61,16 +61,17 @@ class InteractiveHighlight(
         Modifier.drawWithContent {
             val progress = pressProgressAnimation.value
             if (progress > 0f) {
-                if (shader != null) {
+                val activeShader = shader
+                if (activeShader != null) {
                     drawRect(
-                        Color.White.copy(0.08f * progress),
+                        Color.White.copy(0.06f * progress),
                         blendMode = BlendMode.Plus
                     )
-                    shader.apply {
+                    activeShader.apply {
                         val currentPosition = position(size, positionAnimation.value)
                         setFloatUniform("size", size.width, size.height)
-                        setColorUniform("color", Color.White.copy(0.15f * progress))
-                        setFloatUniform("radius", size.minDimension * 1.5f)
+                        setColorUniform("color", Color.White.copy(0.12f * progress))
+                        setFloatUniform("radius", size.minDimension * 1.2f)
                         setFloatUniform(
                             "position",
                             currentPosition.x.fastCoerceIn(0f, size.width),
@@ -78,7 +79,7 @@ class InteractiveHighlight(
                         )
                     }
                     drawRect(
-                        ShaderBrush(shader.asComposeShader()),
+                        ShaderBrush(activeShader.asComposeShader()),
                         blendMode = BlendMode.Plus
                     )
                 } else {

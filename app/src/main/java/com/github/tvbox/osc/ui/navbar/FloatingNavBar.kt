@@ -1,14 +1,11 @@
 package com.github.tvbox.osc.ui.navbar
 
 import android.os.Build
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.EaseOut
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -55,17 +52,12 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastCoerceIn
 import androidx.compose.ui.util.fastRoundToInt
 import androidx.compose.ui.util.lerp
-import com.github.tvbox.osc.ui.components.GlassHighlight
-import com.github.tvbox.osc.ui.theme.GLASS_THICKNESS_ALPHA
-import com.github.tvbox.osc.ui.theme.GLASS_THICKNESS_DP
 import com.github.tvbox.osc.ui.theme.LiquidGlassConfig
-import com.github.tvbox.osc.ui.theme.REFRACTION_DEPTH_RATIO
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
@@ -74,6 +66,7 @@ import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.colorControls
 import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.InnerShadow
 import com.kyant.backdrop.shadow.Shadow
 import com.kyant.capsule.ContinuousCapsule
@@ -81,23 +74,11 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlin.math.abs
-import kotlin.math.min
+import kotlin.math.roundToInt
 import kotlin.math.sign
 
 /** 悬浮导航栏的轴向:Compact 用底部横条,Medium/Expanded 用侧边竖条(见 spec §4.11) */
 enum class NavAxis { Horizontal, Vertical }
-
-private const val ClickMoveBaseMs = 100
-private const val ClickMovePerSlotMs = 60
-private const val ClickMoveMaxMs = 360
-
-/** 点击切页:弹簧的稳定时间与距离无关、峰值速度却成正比(4 格 ≈56 槽/秒)⇒ 长距离像"瞬移",改用速度恒定的 tween */
-private fun clickMoveSpec(distance: Float): AnimationSpec<Float> = tween(
-    durationMillis = (ClickMoveBaseMs + ClickMovePerSlotMs * distance)
-        .toInt()
-        .coerceAtMost(ClickMoveMaxMs),
-    easing = FastOutSlowInEasing,
-)
 
 data class GlassTabItem(
     val iconRes: Int,
@@ -160,10 +141,10 @@ fun FloatingNavBar(
     axis: NavAxis,
     selectedTabIndex: () -> Int,
     onTabSelected: (Int) -> Unit,
+    onReselected: (Int) -> Unit = {},
     tabs: List<GlassTabItem>,
     config: LiquidGlassConfig,
     interactive: () -> Boolean = { true },
-    isTabSwitching: () -> Boolean = { false },
     actionItem: GlassTabItem? = null,
     onActionClick: () -> Unit = {},
 ) {
@@ -173,7 +154,6 @@ fun FloatingNavBar(
     val slotCount = tabsCount + if (actionItem != null) 1 else 0
     val isLightTheme = !isSystemInDarkTheme()
     val isBlurEnabled = config.navbarEnabled
-    val supportsLens = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
     val isHorizontal = axis == NavAxis.Horizontal
 
     val accentColor = MaterialTheme.colorScheme.primary
@@ -217,9 +197,17 @@ fun FloatingNavBar(
         var currentIndex by remember(selectedTabIndex) { mutableIntStateOf(selectedTabIndex()) }
 
         val currentOnTabSelected by rememberUpdatedState(onTabSelected)
+        val currentOnReselected by rememberUpdatedState(onReselected)
         val currentInteractive by rememberUpdatedState(interactive)
 
-        val dampedDragAnimation = remember(animationScope, tabsCount, slotCount, density, slotStridePx) {
+        class DampedDragAnimationHolder {
+            var instance: DampedDragAnimation? = null
+        }
+        val dampedDragAnimationHolder = remember { DampedDragAnimationHolder() }
+
+        val dampedDragAnimation = remember(
+            animationScope, tabsCount, slotCount, density, slotStridePx, isHorizontal, isLtr
+        ) {
             DampedDragAnimation(
                 animationScope = animationScope,
                 initialValue = NavMetrics.slotIndexOfTab(selectedTabIndex(), actionSlot).toFloat(),
@@ -227,13 +215,30 @@ fun FloatingNavBar(
                 visibilityThreshold = 0.001f,
                 initialScale = 1f,
                 pressedScale = 78f / 56f,
+                canDrag = { layerOffset ->
+                    val animation = dampedDragAnimationHolder.instance
+                        ?: return@DampedDragAnimation true
+                    if (slotStridePx <= 0f) return@DampedDragAnimation false
+                    val posInLayer = if (isHorizontal) layerOffset.x else layerOffset.y
+                    val contentExtent = slotStridePx * slotCount
+                    val rtl = isHorizontal && !isLtr
+                    val base = if (rtl) contentExtent - slotStridePx else 0f
+                    val translation =
+                        animation.value.coerceIn(0f, maxSlotPosition) * slotStridePx *
+                            (if (rtl) -1f else 1f)
+                    base + translation + posInLayer in 0f..contentExtent
+                },
                 onDragStarted = {},
                 onDragStopped = {
                     val slot = targetValue.fastRoundToInt().fastCoerceIn(0, slotCount - 1)
                     val page = NavMetrics.tabIndexOfSlot(slot, actionSlot)
                     currentIndex = page
                     animateToValue(NavMetrics.slotIndexOfTab(page, actionSlot).toFloat())
-                    currentOnTabSelected(page)
+                    if (page != selectedTabIndex()) {
+                        currentOnTabSelected(page)
+                    } else {
+                        currentOnReselected(page)
+                    }
                     animationScope.launch {
                         offsetAnimation.animateTo(0f, spring(1f, 300f, 0.5f))
                     }
@@ -252,28 +257,23 @@ fun FloatingNavBar(
                     }
                 },
                 enabled = { currentInteractive() }
-            )
+            ).also { dampedDragAnimationHolder.instance = it }
         }
 
-        LaunchedEffect(selectedTabIndex) {
+        LaunchedEffect(selectedTabIndex, dampedDragAnimation) {
             snapshotFlow { selectedTabIndex() }.collectLatest { index ->
                 currentIndex = index
+                dampedDragAnimation.animateToValue(
+                    NavMetrics.slotIndexOfTab(index, actionSlot).toFloat()
+                )
             }
-        }
-        LaunchedEffect(dampedDragAnimation) {
-            snapshotFlow { currentIndex }
-                .drop(1)
-                .collectLatest { page ->
-                    val target = NavMetrics.slotIndexOfTab(page, actionSlot).toFloat()
-                    dampedDragAnimation.animateToValue(
-                        target,
-                        clickMoveSpec(abs(target - dampedDragAnimation.value)),
-                    )
-                }
         }
 
         val interactiveHighlight =
-            if (isBlurEnabled && supportsLens && slotStridePx > 0f) {
+            if (isBlurEnabled &&
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                slotStridePx > 0f
+            ) {
                 remember(animationScope, slotStridePx) {
                     InteractiveHighlight(
                         animationScope = animationScope,
@@ -311,55 +311,40 @@ fun FloatingNavBar(
             axis = axis,
             modifier = Modifier
                 .graphicsLayer { setMainAxisTranslation(axis, panelOffset) }
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {}
+                )
                 .drawBackdrop(
                     backdrop = backdrop,
                     shape = { ContinuousCapsule },
                     effects = {
                         if (isBlurEnabled) {
-                            val switching = isTabSwitching()
-                            if (!switching) {
-                                colorControls(
-                                    brightness = config.contentBrightness,
-                                    contrast = config.contentContrast,
-                                    saturation = 1.5f,
-                                )
-                                blur(config.blurDp.dp.toPx())
-                                if (supportsLens) {
-                                    val refraction = min(
-                                        config.distortionDp.dp.toPx(),
-                                        size.minDimension / 2f
-                                    )
-                                    lens(
-                                        refraction * REFRACTION_DEPTH_RATIO,
-                                        refraction,
-                                        depthEffect = true,
-                                        chromaticAberration = config.dispersion,
-                                    )
-                                }
-                            } else {
-                                blur(config.blurDp.dp.toPx())
-                            }
+                            colorControls(
+                                brightness = config.contentBrightness,
+                                contrast = config.contentContrast,
+                                saturation = 1.5f,
+                            )
+                            blur(config.blurDp.dp.toPx())
+                            lens(
+                                config.distortionDp.dp.toPx(),
+                                config.distortionDp.dp.toPx(),
+                                chromaticAberration = config.dispersion,
+                            )
                         }
                     },
                     highlight = {
-                        GlassHighlight.copy(alpha = if (isBlurEnabled) 1f else 0f)
+                        Highlight.Default.copy(alpha = if (isBlurEnabled) 1f else 0f)
                     },
                     shadow = {
                         Shadow.Default.copy(
                             color = Color.Black.copy(if (isLightTheme) 0.1f else 0.2f)
                         )
                     },
-                    innerShadow = {
-                        InnerShadow(
-                            radius = GLASS_THICKNESS_DP.dp,
-                            offset = DpOffset(0.dp, -GLASS_THICKNESS_DP.dp),
-                            alpha = GLASS_THICKNESS_ALPHA,
-                        )
-                    },
                     layerBlock = {
                         if (isBlurEnabled) {
                             val progress = dampedDragAnimation.pressProgress
-                            // 按压时沿主轴鼓出:横条按宽度算,竖条按高度算
                             val mainAxisExtent = if (isHorizontal) size.width else size.height
                             val scale = lerp(1f, 1f + 16f.dp.toPx() / mainAxisExtent, progress)
                             scaleX = scale
@@ -398,7 +383,11 @@ fun FloatingNavBar(
 
         CompositionLocalProvider(
             LocalNavTabScale provides {
-                if (isBlurEnabled) lerp(1f, 1.2f, dampedDragAnimation.pressProgress) else 1f
+                if (isBlurEnabled) {
+                    lerp(1f, 1.2f, dampedDragAnimation.pressProgress)
+                } else {
+                    1f
+                }
             }
         ) {
             NavContainer(
@@ -412,7 +401,7 @@ fun FloatingNavBar(
                         backdrop = backdrop,
                         shape = { ContinuousCapsule },
                         effects = {
-                            if (isBlurEnabled && !isTabSwitching()) {
+                            if (isBlurEnabled) {
                                 val progress = dampedDragAnimation.pressProgress
                                 colorControls(
                                     brightness = config.contentBrightness,
@@ -420,23 +409,15 @@ fun FloatingNavBar(
                                     saturation = 1.5f,
                                 )
                                 blur(config.blurDp.dp.toPx())
-                                if (supportsLens) {
-                                    val refraction = min(
-                                        config.distortionDp.dp.toPx(),
-                                        size.minDimension / 2f
-                                    )
-                                    lens(
-                                        refraction * progress * REFRACTION_DEPTH_RATIO,
-                                        refraction * progress
-                                    )
-                                }
+                                lens(
+                                    config.distortionDp.dp.toPx() * progress,
+                                    config.distortionDp.dp.toPx() * progress
+                                )
                             }
                         },
                         highlight = {
                             val progress = dampedDragAnimation.pressProgress
-                            GlassHighlight.copy(
-                                alpha = if (isBlurEnabled && !isTabSwitching()) progress else 0f
-                            )
+                            Highlight.Default.copy(alpha = if (isBlurEnabled) progress else 0f)
                         },
                         onDrawSurface = { drawRect(containerColor) }
                     )
@@ -491,29 +472,24 @@ fun FloatingNavBar(
                     backdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop),
                     shape = { ContinuousCapsule },
                     effects = {
-                        if (isBlurEnabled && supportsLens && !isTabSwitching()) {
+                        if (isBlurEnabled) {
                             val progress = dampedDragAnimation.pressProgress
-                            lens(
-                                10f.dp.toPx() * progress,
-                                14f.dp.toPx() * progress,
-                                chromaticAberration = true
-                            )
+                            lens(10f.dp.toPx() * progress, 14f.dp.toPx() * progress, true)
                         }
                     },
                     highlight = {
                         val progress = dampedDragAnimation.pressProgress
-                        GlassHighlight.copy(alpha = if (isBlurEnabled && !isTabSwitching()) progress else 0f)
+                        Highlight.Default.copy(alpha = if (isBlurEnabled) progress else 0f)
                     },
                     shadow = {
                         val progress = dampedDragAnimation.pressProgress
-                        Shadow(alpha = if (isBlurEnabled && !isTabSwitching()) progress else 0f)
+                        Shadow(alpha = if (isBlurEnabled) progress else 0f)
                     },
                     innerShadow = {
                         val progress = dampedDragAnimation.pressProgress
                         InnerShadow(
-                            radius = 8.dp * progress,
-                            offset = DpOffset(0.dp, -8.dp * progress),
-                            alpha = if (isBlurEnabled && !isTabSwitching()) progress else 0f
+                            radius = 8f.dp * progress,
+                            alpha = if (isBlurEnabled) progress else 0f
                         )
                     },
                     layerBlock = {
@@ -532,7 +508,7 @@ fun FloatingNavBar(
                         }
                     },
                     onDrawSurface = {
-                        val progress = dampedDragAnimation.pressProgress
+                        val progress = if (isBlurEnabled) dampedDragAnimation.pressProgress else 0f
                         drawRect(
                             if (isLightTheme) Color.Black.copy(0.1f)
                             else Color.White.copy(0.1f),
@@ -631,18 +607,10 @@ private fun NavTabItem(
     role: Role = Role.Tab,
 ) {
     val scale = LocalNavTabScale.current
-    val iconColor by animateColorAsState(
-        targetValue = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
-        else MaterialTheme.colorScheme.onSurfaceVariant,
-        animationSpec = tween(200),
-        label = "tabIconColor"
-    )
-    val textColor by animateColorAsState(
-        targetValue = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
-        else MaterialTheme.colorScheme.onSurfaceVariant,
-        animationSpec = tween(200),
-        label = "tabTextColor"
-    )
+    val iconColor = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
+    else MaterialTheme.colorScheme.onSurfaceVariant
+    val textColor = if (selected) MaterialTheme.colorScheme.onSecondaryContainer
+    else MaterialTheme.colorScheme.onSurfaceVariant
     Column(
         modifier = modifier
             .clip(ContinuousCapsule)

@@ -10,6 +10,7 @@ import com.kyant.backdrop.BackdropEffectScope
 import com.kyant.backdrop.internal.RoundedRectRefractionShaderString
 import com.kyant.backdrop.internal.RoundedRectRefractionWithDispersionShaderString
 import com.kyant.backdrop.internal.RuntimeShaderEffect
+import com.kyant.backdrop.internal.effectCacheOrNull
 import com.kyant.backdrop.isRuntimeShaderSupported
 import com.kyant.shapes.RoundedRectangularShape
 
@@ -52,7 +53,11 @@ fun BackdropEffectScope.lens(
                     setFloatUniform("chromaticAberration", 1f)
                 }
             }
-            RuntimeShaderEffect(shader, "content")
+            val uniformSignature =
+                "${size.width},${size.height},$padding,${cornerRadii.contentToString()}," +
+                    "$refractionHeight,$refractionAmount,$depthEffect,$chromaticAberration"
+            effectCacheOrNull()?.runtimeShaderEffect(shader, "content", uniformSignature)
+                ?: RuntimeShaderEffect(shader, "content")
         } else {
             throwUnsupportedSDFException()
         }

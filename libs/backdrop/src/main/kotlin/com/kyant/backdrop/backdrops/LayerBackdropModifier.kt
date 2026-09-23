@@ -19,17 +19,19 @@ import kotlin.math.floor
 
 fun Modifier.layerBackdrop(
     backdrop: LayerBackdrop,
-    recordBounds: ((Size) -> Rect?)? = null
+    recordBounds: ((Size) -> Rect?)? = null,
+    pauseRecording: () -> Boolean = { false }
 ): Modifier =
-    this then LayerBackdropElement(backdrop, recordBounds)
+    this then LayerBackdropElement(backdrop, recordBounds, pauseRecording)
 
 private class LayerBackdropElement(
     val backdrop: LayerBackdrop,
-    val recordBounds: ((Size) -> Rect?)?
+    val recordBounds: ((Size) -> Rect?)?,
+    val pauseRecording: () -> Boolean
 ) : ModifierNodeElement<LayerBackdropNode>() {
 
     override fun create(): LayerBackdropNode {
-        return LayerBackdropNode(backdrop, recordBounds)
+        return LayerBackdropNode(backdrop, recordBounds, pauseRecording)
     }
 
     override fun update(node: LayerBackdropNode) {
@@ -38,6 +40,7 @@ private class LayerBackdropElement(
             node.backdrop = backdrop
         }
         node.recordBounds = recordBounds
+        node.pauseRecording = pauseRecording
         node.invalidateDraw()
     }
 
@@ -45,6 +48,7 @@ private class LayerBackdropElement(
         name = "layerBackdrop"
         properties["backdrop"] = backdrop
         properties["recordBounds"] = recordBounds
+        properties["pauseRecording"] = pauseRecording
     }
 
     override fun equals(other: Any?): Boolean {
@@ -53,6 +57,7 @@ private class LayerBackdropElement(
 
         if (backdrop != other.backdrop) return false
         if (recordBounds != other.recordBounds) return false
+        if (pauseRecording != other.pauseRecording) return false
 
         return true
     }
@@ -60,13 +65,15 @@ private class LayerBackdropElement(
     override fun hashCode(): Int {
         var result = backdrop.hashCode()
         result = 31 * result + (recordBounds?.hashCode() ?: 0)
+        result = 31 * result + pauseRecording.hashCode()
         return result
     }
 }
 
 private class LayerBackdropNode(
     var backdrop: LayerBackdrop,
-    var recordBounds: ((Size) -> Rect?)?
+    var recordBounds: ((Size) -> Rect?)?,
+    var pauseRecording: () -> Boolean
 ) : DrawModifierNode, GlobalPositionAwareModifierNode, Modifier.Node() {
 
     override fun ContentDrawScope.draw() {
@@ -74,6 +81,12 @@ private class LayerBackdropNode(
 
         val layer = backdrop.graphicsLayer
         val bounds = recordBounds?.invoke(size)?.let { clipToSize(it, size) }
+
+        if (pauseRecording()) {
+            if (bounds != null) layer.topLeft = bounds.first
+            return
+        }
+
         if (bounds == null) {
             layer.topLeft = IntOffset.Zero
             recordLayer(this@LayerBackdropNode, layer) { backdrop.onDraw(this@draw) }

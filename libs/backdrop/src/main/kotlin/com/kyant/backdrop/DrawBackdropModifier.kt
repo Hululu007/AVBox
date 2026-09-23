@@ -7,6 +7,7 @@ import androidx.compose.runtime.neverEqualPolicy
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.GraphicsLayerScope
+import androidx.compose.ui.graphics.RenderEffect
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -250,6 +251,7 @@ private class DrawBackdropNode(
         }
 
     private var graphicsLayer: GraphicsLayer? = null
+    private var appliedRenderEffect: RenderEffect? = null
 
     private val layoutLayerBlock: GraphicsLayerScope.() -> Unit = {
         clip = true
@@ -364,13 +366,18 @@ private class DrawBackdropNode(
         if (!isRenderEffectSupported()) return
 
         effectScope.apply(effects)
-        graphicsLayer?.renderEffect = effectScope.renderEffect
+        val effect = effectScope.renderEffect
+        if (appliedRenderEffect !== effect) {
+            appliedRenderEffect = effect
+            graphicsLayer?.renderEffect = effect
+        }
         padding = effectScope.padding
     }
 
     override fun onAttach() {
         val graphicsContext = requireGraphicsContext()
         graphicsLayer = graphicsContext.createGraphicsLayer()
+        appliedRenderEffect = null
 
         observeEffects()
     }
@@ -382,6 +389,7 @@ private class DrawBackdropNode(
             graphicsLayer = null
         }
 
+        appliedRenderEffect = null
         effectScope.reset()
         layoutCoordinates = null
         exportedBackdrop?.layerCoordinates = null
