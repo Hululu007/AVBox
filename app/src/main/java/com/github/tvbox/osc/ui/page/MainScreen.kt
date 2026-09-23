@@ -30,11 +30,11 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ShortNavigationBar
+import androidx.compose.material3.ShortNavigationBarItem
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -251,13 +251,13 @@ private fun MainContent() {
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
                 bottomBar = {
                     if (surfaceNavVisible && !railMode) {
-                        NavigationBar(
+                        ShortNavigationBar(
                             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         ) {
                             AppTab.entries.forEachIndexed { index, tab ->
                                 // 动作槽插在中间,外观就是普通未选中项(不占 pager 页,故恒 selected = false)
                                 if (index == NavMetrics.actionSlotFor(AppTab.entries.size)) {
-                                    NavigationBarItem(
+                                    ShortNavigationBarItem(
                                         selected = false,
                                         onClick = openLive,
                                         icon = {
@@ -266,11 +266,12 @@ private fun MainContent() {
                                                 contentDescription = null,
                                             )
                                         },
-                                        label = { Text(liveActionItem.label) },
+                                        label = null,
                                     )
                                 }
-                                NavigationBarItem(
-                                    selected = pagerState.currentPage == index,
+                                val selected = pagerState.targetPage == index
+                                ShortNavigationBarItem(
+                                    selected = selected,
                                     onClick = { selectTab(index) },
                                     icon = {
                                         Icon(
@@ -278,7 +279,11 @@ private fun MainContent() {
                                             contentDescription = stringResource(tab.labelRes),
                                         )
                                     },
-                                    label = { Text(stringResource(tab.labelRes)) },
+                                    label = if (selected) {
+                                        { Text(stringResource(tab.labelRes)) }
+                                    } else {
+                                        null
+                                    },
                                 )
                             }
                         }

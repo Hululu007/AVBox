@@ -667,11 +667,13 @@ private fun NavTabItem(
             tint = iconColor,
             modifier = Modifier.size(24.dp)
         )
-        Text(
-            text = tab.label,
-            style = MaterialTheme.typography.labelSmall,
-            color = textColor,
-            maxLines = 1
-        )
+        if (selected) {
+            Text(
+                text = tab.label,
+                style = MaterialTheme.typography.labelSmall,
+                color = textColor,
+                maxLines = 1
+            )
+        }
     }
 }

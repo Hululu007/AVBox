@@ -51,11 +51,11 @@
 
 ## 3. 信息架构与主题(已定)
 
-- **MainActivity**:Scaffold + NavigationBar + HorizontalPager,4 个 tab:首页 / 历史 / 收藏 / 设置;支持手势横滑切换;每页滚动状态独立保留。
+- **MainActivity**:Scaffold + ShortNavigationBar + HorizontalPager,4 个 tab:首页 / 历史 / 收藏 / 设置;支持手势横滑切换;每页滚动状态独立保留。
 - **独立 Activity**:Detail(详情+播放)、LivePlay(直播)、Search(搜索)、ThemeSettings(主题设置)、ConfigManage(配置管理);原 LocalFile(本地文件)已于 2026-09-11 删除(改为系统 SAF,见 §4.7)。
 - **删除页面**:PushActivity(推送整链,删除对账见 `history/steps.md`)。
 - **主题**:默认跟随系统深浅色;Android 12+ 叠加 Material You 动态取色(`dynamicColorScheme`),低于 12 用自定义品牌色板。**2026-09-11 起可在「设置 → 主题设置」页改**:取色来源(系统取色 / 自定义种子色)、深浅模式(跟随系统 / 浅色 / 深色)、预设色卡与自定义种子色(HSV 取色器)、配色风格(MaterialKolor `PaletteStyle` 9 种);配置走 KV(MMKV)+ 全局可观察单例 `AppThemeState`,改动即时全局生效(页面规范见 §4.8)。
-- **色彩角色**:页面背景 `surfaceContainer`;卡片容器**不论深浅一律 `surfaceBright`**(2026-09-09 用户定稿,废弃原"深色 surfaceBright/浅色 surfaceContainerHigh"分支);底部导航栏 `surfaceContainerHigh`、高度 56dp(2026-09-09 用户定稿,原 surfaceContainer/M3 默认 80dp),图标 = `.tubiao/*.svg` 转换的 VectorDrawable(`ic_tab_home/history/collect/settings.xml`,单套图标,选中态 primary 由 NavigationBarItem 自动着色)。页面背景已审计(2026-09-09):全项目唯一 Scaffold(MainScreen) 显式 containerColor=surfaceContainer,无默认 background/Surface 覆盖;Scaffold 默认 background(#FEF7FF/#141218)未在任何页面生效;ModalBottomSheet 未显式指定色,走 M3 默认 surfaceContainerLow。
+- **色彩角色**:页面背景 `surfaceContainer`;卡片容器**不论深浅一律 `surfaceBright`**(2026-09-09 用户定稿,废弃原"深色 surfaceBright/浅色 surfaceContainerHigh"分支);底部导航栏 `surfaceContainerHigh`、**高度 64dp**(关玻璃横条档 = M3 `ShortNavigationBar` 短变体,高度取 `NavigationBarTokens.ContainerHeight`,底部系统栏 inset 另叠在其上;2026-09-23 与参照项目 legado 对齐,此前是 tall 变体 `NavigationBar` 的 80dp —— 2026-09-09 文档写的"56dp"从未在代码里落地,已按实际改写),图标 = `.tubiao/*.svg` 转换的 VectorDrawable(`ic_tab_home/history/collect/settings.xml`,单套图标,选中态由 item 默认色 token 自动着色,与 tall 变体同色)。页面背景已审计(2026-09-09):全项目唯一 Scaffold(MainScreen) 显式 containerColor=surfaceContainer,无默认 background/Surface 覆盖;Scaffold 默认 background(#FEF7FF/#141218)未在任何页面生效;ModalBottomSheet 未显式指定色,走 M3 默认 surfaceContainerLow。
 - **返回行为**:MainActivity 双击返回退出(带提示);LocalFileActivity 的"返回上级目录"改写为 OnBackPressedDispatcher 保留。
 - **横竖屏(2026-09-21 改)**:方向策略按窗口档分岔 —— **`Configuration.smallestScreenWidthDp < 600`(手机)运行期锁 `SENSOR_PORTRAIT`,行为与改造前一致;`≥ 600`(大屏)不锁方向**,由用户旋转/折叠自由切换。判据用 `smallestScreenWidthDp`(与方向无关)而非 `screenWidthDp`(横过来会变)。播放器全屏仍横屏沉浸(隐藏系统栏,configChanges 防播放器重建)。详见 §4.11 / §6.10。
 
@@ -190,7 +190,7 @@
 
 - **页面**:`PreferenceSettingsActivity` + `ui/page/PreferenceSettingsPage.kt`;入口 = 设置 tab「偏好设置」行。二级页壳(无边框顶栏 + 返回钮),内容 = `SettingsGroup` 单组卡片,顶栏留白按 §4.8 同规则。
 - **卡片顺序(用户指定;2026-09-21 定稿为两组)**:组1 = 历史合并 → 无痕模式 → 禁用手势控制 → 禁用导航动画(4 张卡);**组2** = 自动换线 → M3U8 净化 → 弹幕开关 → 弹幕 API → 长按倍速 → 缓冲时间 → 搜索线程(7 张卡)。两块**整组对调**是 2026-09-21 用户要求(原顺序相反;对调后卡位形状不变 = 各自保持 FIRST/MIDDLE/LAST)。全页**共两组**,组间 28dp 间距。
-- **禁用导航动画(2026-09-17)**:开关行 = `SettingsSwitchRow(title="禁用导航动画", subtitle="开启后将禁用底部导航的侧滑动画")`,值存 KV `HawkConfig.NAV_ANIMATION_DISABLED`(`"nav_animation_disabled"`,默认关,已登记 `KVKeySpec` 布尔区)。生效点 = `MainScreen` 的 `HorizontalPager(userScrollEnabled = ...)`,状态在 `ON_RESUME` 重读 KV(从偏好设置页返回即生效)。**两处都禁(2026-09-17 用户补充)**:①`HorizontalPager(userScrollEnabled = ...)` 禁手指左右滑动手势;②**点击 tab 也不带过渡动画** —— 玻璃 `FloatingBottomBar.onTabSelected` 与 M3 `NavigationBarItem.onClick` **两处**都要在开启时走 `pagerState.scrollToPage(index)`(直接跳)、关闭时 `animateScrollToPage`。⚠️ 两处缺一不可(两种底栏模式各一处,只改一处会在切换底栏模式后表现为"开关失效")。
+- **禁用导航动画(2026-09-17)**:开关行 = `SettingsSwitchRow(title="禁用导航动画", subtitle="开启后将禁用底部导航的侧滑动画")`,值存 KV `HawkConfig.NAV_ANIMATION_DISABLED`(`"nav_animation_disabled"`,默认关,已登记 `KVKeySpec` 布尔区)。生效点 = `MainScreen` 的 `HorizontalPager(userScrollEnabled = ...)`,状态在 `ON_RESUME` 重读 KV(从偏好设置页返回即生效)。**两处都禁(2026-09-17 用户补充)**:①`HorizontalPager(userScrollEnabled = ...)` 禁手指左右滑动手势;②**点击 tab 也不带过渡动画** —— 玻璃 `FloatingBottomBar.onTabSelected` 与 M3 `ShortNavigationBarItem.onClick` **两处**都要在开启时走 `pagerState.scrollToPage(index)`(直接跳)、关闭时 `animateScrollToPage`。⚠️ 两处缺一不可(两种底栏模式各一处,只改一处会在切换底栏模式后表现为"开关失效")。
 - **禁用手势控制(2026-09-13)**:开关行 = `SettingsSwitchRow(title="禁用手势控制", subtitle="开启后将禁用手势控制亮度和音量")`,值存 KV `HawkConfig.GESTURE_CONTROL_DISABLED`(`"gesture_control_disabled"`,默认关);位置 = 独立分组中间(2026-09-17 起与无痕模式/禁用导航动画同组)。判定统一走 `GestureHelper.isControlDisabled()`,**点播与直播两侧共用一份实现**。
   - ⚠️ **只禁"上下滑调亮度/音量",不要顺手禁掉别的**:两个控制器里该判定必须是独立方法(`canChangeBrightnessVolume`),**不能并进 `canHandleGesture`** —— 点播侧 `isPortraitEpisodeSwipe`(竖屏上下滑切集)内部也调 `canHandleGesture`,并进去会连切集一起禁掉。单击显隐、双击播放/暂停、横滑进度、左右快滑切台、竖屏上下滑切集全部不受影响。
   - 关闭该开关后竖向滑动**静默忽略**(不调亮度音量,也不弹任何提示),避免"以为坏了"。
@@ -230,7 +230,7 @@
 - `Medium` / `Expanded` → **侧边 Rail**,采用**悬浮覆盖层模型**(沿用现底栏模型,不用 `Scaffold` 的 navigationRail 槽):左对齐、宽 64dp(与现底栏 64dp 高同视觉重量)、`align(CenterStart)`。代价 = 页面内容仍从 x=0 铺、被 rail 压住,留白由 `MainScreen` 统一补。
 
 **形态与玻璃正交(2026-09-21 真机确认的规则)**:导航**形态**由窗口档决定,液态玻璃只是**皮肤**,由用户配置决定 —— 关掉玻璃是**回退到 M3 surface 导航,不是取消 Rail**:
-- 横条档 + 关玻璃 → `Scaffold(bottomBar = M3 NavigationBar)`(原有行为)。
+- 横条档 + 关玻璃 → `Scaffold(bottomBar = M3 ShortNavigationBar)`(短变体,高度 64dp;2026-09-23 起,原为 tall 变体 `NavigationBar` 80dp)。
 - 竖条档 + 关玻璃 → `M3 NavigationRail`(宽 80dp、`surfaceContainerHigh`),页面留白 reserve 用 80dp 而非 76dp。
 ⚠️ 别把"竖条档永远渲染悬浮导航、靠 `containerColor` 不透明兜底"当成回退 —— 那是**胶囊形状 + 无 M3 指示器**的假 surface,真机一看就不对。
 
@@ -256,7 +256,7 @@
 
 **导航栏中央动作槽(2026-09-23,用户"把首页的直播 fab 融合进底部导航栏,放在历史和收藏中间")**:
 
-直播入口从首页右下角 FAB 迁入导航栏正中。**四套渲染都必须带它** —— 玻璃横条 / 玻璃竖条 / 关玻璃的 M3 `NavigationBar` / 关玻璃的 M3 `NavigationRail`。只做一套的后果不是"少个按钮",而是**关掉玻璃的用户彻底失去直播入口**(FAB 已删),故四个分支共用同一份 `GlassTabItem` 与同一个点击回调。
+直播入口从首页右下角 FAB 迁入导航栏正中。**四套渲染都必须带它** —— 玻璃横条 / 玻璃竖条 / 关玻璃的 M3 `ShortNavigationBar` / 关玻璃的 M3 `NavigationRail`。只做一套的后果不是"少个按钮",而是**关掉玻璃的用户彻底失去直播入口**(FAB 已删),故四个分支共用同一份 `GlassTabItem` 与同一个点击回调。
 
 - **槽位数 ≠ 页面数**:动作槽占一格但不占一个页面。**步长与选中胶囊定位一律走槽位空间**,页面下标只用于 `pager` 与选中态。判据集中在 `NavMetrics`:`actionSlotFor(tabCount)`(= `tabCount / 2`,4 个页面 ⇒ 槽位 2,即"首页 历史 | 直播 | 收藏 设置")、`slotIndexOfTab(tab, actionSlot)`、`tabIndexOfSlot(slot, actionSlot)`。⚠️ **别把动作槽当成第 5 个"页面"塞进 `tabs`** —— `pager` 会多出一页、拖动落点与胶囊位置全部错位。
 - **⚠️ 拖动必须跑在"槽位空间",胶囊位置必须是 `value × 步长` 的纯线性关系(2026-09-23 六轮修,用户实测报"滑过直播时会加速")**:动画值 `value` 的 `valueRange = 0f..(slotCount-1)`,拖动换算 `value += dragAmount / slotStridePx` ⇒ **胶囊与手指严格 1:1**,与 legado 的实现一致。
@@ -265,10 +265,15 @@
   - `slotIndexOfTab` 与 `tabIndexOfSlot` **不是互逆的**(动作槽没有页面,槽位 2 与 3 都指向页面 2),成立的不变量只有单向的"页面 → 槽位 → 页面"闭合。单测锁的就是这一条。
   - **松手落点**:`onDragStopped` 先 `targetValue.round()` 得到槽位,再 `tabIndexOfSlot` 换成页面 —— 所以胶囊停在动作槽正上方时松手,会吸附到右侧的 收藏,不会"选中直播"。
 - **⚠️ 染色层不能在动作槽留空(2026-09-23 四轮修,用户实测发现"长按圆形指示器划过直播控件时一片空白")**:导航条是**三层叠画** —— ①容器层(玻璃 + 真实图标,正常配色)②**染色层**(整层 `alpha = 0` + `ColorFilter.tint(primary)`,单独看完全不可见)③**选中胶囊**(`drawBackdrop(rememberCombinedBackdrop(backdrop, tabsBackdrop))`)。⚠️ **胶囊不是实心色块,而是"开在染色层上的一扇窗"**:它采样到的就是染色层里那一格的内容 —— 这正是"选中项变 primary"的实现方式,而不是切换图标颜色。⇒ 若在染色层把动作槽留成 `Spacer`,胶囊划过它时**没有东西可透出来**,只剩一片模糊的页面内容,表现为"一片空白"。**动作槽必须在染色层里照常渲染**;现在两层都调同一个 `NavTabItem`,连 `tinted` 参数都不需要了。
-- **动作槽外观 = 普通 tab(2026-09-23 三轮定稿)**:裸图标(24dp)+ 文字「直播」,与其余四个 tab 同形同色(未选中态 `onSurfaceVariant`),**不带任何容器/背景**。实现上**直接复用 tab 组件**,不另造外观:玻璃条走 `NavTabItem(selected = false, role = Role.Button)`,关玻璃的 `NavigationBar` / `NavigationRail` 走未选中态的 `NavigationBarItem` / `NavigationRailItem`。⚠️ 因此**"动作钮尺寸"这类常量已全部删除**(前两轮的 `ACTION_BUTTON_DP`、以及 `ACTION_BUTTON_WIDTH_DP`/`_HEIGHT_DP` 都不复存在),`NavActionButton.kt` 也一并删除 —— 以后要改外观,改的是 tab 组件本身,不是"那个按钮"。
+- **动作槽外观 = 普通 tab(2026-09-23 三轮定稿,同日四轮修正文字部分)**:裸图标(24dp),**文字只在激活时出现 ⇒ 它作为未激活态的动作槽,永远只显示图标**(见下条「tab 文字可见性」),与其余四个 tab 的未激活态同形同色(`onSurfaceVariant`),**不带任何容器/背景**。实现上**直接复用 tab 组件**,不另造外观:玻璃条走 `NavTabItem(selected = false, role = Role.Button)`,关玻璃的 `ShortNavigationBar` / `NavigationRail` 走未选中态的 `ShortNavigationBarItem` / `NavigationRailItem`。⚠️ 因此**"动作钮尺寸"这类常量已全部删除**(前两轮的 `ACTION_BUTTON_DP`、以及 `ACTION_BUTTON_WIDTH_DP`/`_HEIGHT_DP` 都不复存在),`NavActionButton.kt` 也一并删除 —— 以后要改外观,改的是 tab 组件本身,不是"那个按钮"。
   - **副作用(用户明确接受)**:动作槽与 tab 外观不可区分,从界面上看不出"点它会跳页"。此前两轮尝试过的**实心正圆**与**胶囊+浅色容器**(见 `history/features.md` 同日条目)都是为了让"动作"与"目的地"不同形,这一轮按用户要求放弃该区分。
-  - **a11y 的一处不一致(刻意留的)**:玻璃条那颗传 `Role.Button`(它确实跳页不切页),而 M3 `NavigationBarItem` 内部把 role 写死成 `Role.Tab`,改不了 ⇒ 关玻璃档下这颗会被读成"标签页"。影响仅限读屏播报用词。
-- **关玻璃的横条怎么插**:M3 `NavigationBarItem` 内部就是 `Modifier.weight(1f)`(已核对 material3 1.5.0-alpha28 源码 `NavigationBar.kt:230`),所以在 `NavigationBar` 的 Row 里**直接插一个 `selected = false` 的 `NavigationBarItem`** 就天然等宽居中。⚠️ 别换成固定宽度的占位 —— 那会让 4 个 tab 的等宽分发失衡、整条左移。`NavigationRail` 侧同理,在"第 3 项之前"插一个未选中态的 `NavigationRailItem`(Column 的 `spacedBy` 自带间距)。
+  - **a11y 的一处不一致(刻意留的)**:玻璃条那颗传 `Role.Button`(它确实跳页不切页),而 M3 的 item(`ShortNavigationBarItem` 与 `NavigationBarItem` 共用内部 `NavigationItem`,`NavigationItem.kt:378` 的 `selectable(role = Role.Tab)`)把 role 写死成 `Role.Tab`,改不了 ⇒ 关玻璃档下这颗会被读成"标签页"。影响仅限读屏播报用词。
+- **关玻璃的横条怎么插**:`ShortNavigationBar` 的默认 `ShortNavigationBarArrangement.EqualWeight` 由 measure policy 按 `width / itemsCount` **平分槽位**(已核对 material3 1.5.0-alpha28 源码 `ShortNavigationBar.kt:379`),所以在 content 里**直接插一个 `selected = false` 的 `ShortNavigationBarItem`** 就天然等宽居中。⚠️ **与旧实现不同**:`ShortNavigationBarItem` **不是 `RowScope` 扩展**、没有 `Modifier.weight`(旧文档记的"item 内部就是 `weight(1f)`"是 tall 变体 `NavigationBar` 的做法,2026-09-23 换成短变体后已不适用)。⚠️ 别换成固定宽度的占位 —— 那会让 5 个槽的等宽分发失衡、整条左移。`NavigationRail` 侧同理,在"第 3 项之前"插一个未选中态的 `NavigationRailItem`(Column 的 `spacedBy` 自带间距)。
+- **tab 文字可见性 = 只在激活时出现(2026-09-23 四轮,与参照项目 legado 对齐)**:未激活的 tab **只显示图标**(在槽内垂直居中),激活后才补上图标下方的文字 ⇒ 观感 = "点击后图标往上抬、下面出现文字"。**两套渲染同一判据**:①玻璃条 `NavTabItem` 里 `if (selected) { Text(…) }`(`FloatingNavBar.kt`);②关玻璃档 `ShortNavigationBarItem(label = if (selected) {…} else null)`(`MainScreen.kt`)—— M3 的 `ShortNavigationBarItem` **没有 `alwaysShowLabel` 参数**,只能靠"不给 label"实现,与 legado 的做法一致(legado 判据:`if (showLabel && (alwaysShowLabel || selected))`)。
+  - ⚠️ **两边都是瞬间切换、没有过渡动画**:M3 内部 `NavigationItem` 的 `TopIconOrIconOnlyMeasurePolicy` 是 `if (hasLabel) placeLabelAndTopIcon(…) else placeIcon(…)` 的**硬分支**(material3 1.5.0-alpha28 `NavigationItem.kt:711`),legado 那边也是普通 `if`。想要"抬起来"带缓动得自己加 `AnimatedVisibility` / `animateDpAsState` —— 当前**刻意不加**(先与 legado 完全一致)。
+  - ⚠️ **连带**:动作槽(直播)永远未激活 ⇒ 它在两套里都**只有图标、没有文字**。
+  - ⚠️ **选择态必须取 `pagerState.targetPage`,不能用 `currentPage`(2026-09-23 真机 bug 修正)**:`currentPage` 是"滚动途中离吸附点最近的那页",跨多页滚动时它会**依次经过中间页** ⇒ 中间页被短暂判成选中、文字一闪、图标被顶上去(用户报"从首页点到设置,中间的历史和收藏图标往上闪烁一下")。legado 与我们的玻璃条本来就用 `targetPage`,只有关玻璃横条误用了 `currentPage`。
+  - ⚠️ **竖条档 `NavigationRailItem` 仍用 `currentPage`(未改)**:它的 label 常显(`alwaysShowLabel` 默认 true)⇒ **没有文字闪烁**;差别只在"跨多页滚动时选中指示器会扫过中间项"而非直接跳目标项。要一并对齐需单独确认。
 - **胶囊的落位动画 = 回弹弹簧(2026-09-23 五轮,用户"将长按指示器的动画改为弹簧效果")**:`DampedDragAnimation.valueAnimationSpec` 由上游的 `spring(1f, 1000f, …)` 改为 **`spring(0.6f, 800f, …)`**。⚠️ **上游那个其实已经是 spring,只是阻尼比 1 = 临界阻尼、零回弹**,观感就是普通缓出 —— 所谓"改成弹簧"实际是**把阻尼比降到 1 以下**(过冲 ≈9.5%,峰值 ≈0.14s,稳定 ≈0.24s)。两个连带项:
   - **胶囊的渲染位置必须钳到 `[0, slotCount-1]`**:弹簧会冲过目标值,不钳的话末端的回弹会把胶囊顶出玻璃壳(0→4 这种长距离跳转过冲可达 0.4 格 ≈ 24dp)。钳的是**渲染位置**(`FloatingNavBar` 两处:胶囊平移、`InteractiveHighlight` 位置),不是动画值本身 —— 动画得能过冲才有回弹。
   - `release()` 里"等 value 追上 target 再收回按压缩放"那段靠 `|value - target| < 阈值` 判定,弹簧穿过目标值时即命中 ⇒ 按压收回会比原来略早。属自然效果,不用改。
@@ -422,7 +427,7 @@
 - ⚠️ **竖条的 insets 要用 `systemBars` 而不是 `navigationBars`**:竖条是**满高**的,上下都要让 —— 横条只贴底边,用 `navigationBars` 就够;竖条只用它会在状态栏较厚或竖屏平板上顶进状态栏。`MainScreen` 里两处(悬浮竖条容器、回退的 M3 `NavigationRail`)都已改用 `WindowInsets.systemBars`。
 - **已知小瑕疵(未修,等真机确认后再定)**:`HomeGridLayout` 与 `HomePage` 横向布局的 `bottom` 里那个 `88.dp`(= `FLOATING_NAV_OVERLAY_DP` 76 + 12)是给**底部悬浮条**留的余量,竖条档没有底部条 ⇒ 列表底部多出 88dp 滚动余量。要收口得把这个基准值从页面移到 `MainScreen`(按档给 `88+insets+76` / `insets+8`),但那会再动一次手机档的留白路径 —— 已连出三次几何回归,故**刻意留到平板验证通过之后再做**。
 - ⚠️ **不在滚动容器里的页面元素要单独让开侧边导航**:`contentPadding` 只作用于滚动内容,分类 tab 行(`HomeGridLayout.HomeSortTabRow`)、顶栏(`AppTopBarScaffold.topBarStartInset`)、覆盖层(浮层 / 悬浮控件)都拿不到它,必须各自补 start inset,否则会被 Rail 压住(真机截图确认过)。
-- **导航形态与玻璃正交**:关玻璃是回退 M3 surface 导航(横条→`NavigationBar`、竖条→`NavigationRail` 80dp),不是取消 Rail。别用"悬浮导航 + 不透明容器色"冒充 surface —— 胶囊形状与缺 M3 指示器一眼能看出不对。
+- **导航形态与玻璃正交**:关玻璃是回退 M3 surface 导航(横条→`ShortNavigationBar` 64dp、竖条→`NavigationRail` 80dp),不是取消 Rail。别用"悬浮导航 + 不透明容器色"冒充 surface —— 胶囊形状与缺 M3 指示器一眼能看出不对。
 - ⚠️ **留白只能加在"内容"上,不能加在"页面容器"上**:容器 padding 会把页面背景一起缩掉 ⇒ 导航栏下方露出外层 `Scaffold` 的 `containerColor`,玻璃取不到内容、退化成一块纯色板。这是本项目**真机截图确认过的回归**(数值上完全等价、视觉上完全不同)。判断方法:改完之后问一句"页面背景还延伸到导航栏下面吗"。顶栏要让开 Rail 同理 —— 用 `AppTopBarScaffold(topBarStartInset = …)`,别给它的 `modifier` 传 padding。
 - **页面留白的下发方式**:`MainScreen` 算 `contentPadding: PaddingValues` → 各页加在滚动容器的 `contentPadding` / 覆盖层的 `Modifier.padding` / 顶栏的 `topBarStartInset` 上。页面签名里**没有**导航留白参数,页面内**不出现** `if (isRail)`。各页保留自己的基准值(`8.dp` / `88.dp`)。
 - **band 与顶栏的重叠是刻意接受的取舍**(完整理由见 §5):band 顶部若下移到顶栏之下,Rail 上段会落在源层之外、玻璃退化成纯容器色。改 band 矩形前先读 §5 那条。

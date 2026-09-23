@@ -2439,3 +2439,30 @@ echo-exo-player-error: code=ERROR_CODE_UNSPECIFIED, msg=Unexpected runtime error
 - **同类缺陷一并修(查全部消费方时发现)**:栏目二级页 `PartitionListActivity.VideoGrid` 是**同一副骨架**(自适应 `gridColumns` + `itemsIndexed` + 全宽"加载更多"哨兵),同样会在宽屏首屏末行留空格 ⇒ 接同一条 `shouldPrefetchNextPage`(`enableLoadMore` 为 false 的搜索结果入口自动跳过;`PartitionListViewModel.loadMore()` 本就有 `state==Ready && hasMore && !loader.busy` 守卫,不会连环拉)。`CollectPage` 是本地收藏列表、无分页哨兵,**不需要接**。
 - **⚠️ 顺手纠正一条过时的活规范**:spec 里"`PartitionListActivity` 的'加载更多'用了硬编码 `GridItemSpan(3)`,改列数前必须先统一"是**过时记录** —— `git log -S "GridItemSpan(3)"` 显示 `e4baccf` 就已经把它改成 `maxLineSpan` 了(该提交里能直接看到 `- GridItemSpan(3)` / `+ GridItemSpan(maxLineSpan)`),而且 spec §8 的"阶段一 已完成"那条**自己已经写了"已修正"** —— 两处互相矛盾。已按实际代码改写。**教训:活规范里"未修/待修"的条目要标时间点并定期对账,否则会误导后来人去做一件已经做完的事。**
 
+## surface 模式底栏换成 M3 短变体(2026-09-23,用户选方案 b;已编译+单测,**未装机**)
+
+- **动机**:用户「surface 模式下的导航栏能否改为和 legado 一样的高度」。查证:两边 material3 版本**相同(1.5.0-alpha28)**,但组件不同 —— 我们用 `NavigationBar`(tall 变体,`NavigationBarTokens.TallContainerHeight` = **80dp**),legado 的 `AppNavigationBar` M3 分支用 **`ShortNavigationBar`**(`NavigationBarTokens.ContainerHeight` = **64dp**)。⚠️ 顺带查明 spec §3 记的「高度 56dp」**从未在代码里落地**(全仓无 `NavigationBarDefaults`/`ContainerHeight`/`height(56.dp)`,`git log -S` 在这两条路径上也查不到痕迹),已按实际改写。
+- **改动**:`ui/page/MainScreen.kt`(+6/-5)—— 关玻璃横条档 `NavigationBar` / `NavigationBarItem` → `ShortNavigationBar` / `ShortNavigationBarItem`,imports 同步替换;**竖条档 `NavigationRail` 不动**(用户问的是底部横条)。
+- **已核对「不变」的两项(从 M3 源码与 aar 字节码)**:
+  - **配色不变** —— 两个变体的默认色取自**同一组 token**(`ItemActiveIconColor` / `ItemActiveLabelTextColor` / `ItemActiveIndicatorColor` / `ItemInactiveIconColor` / `ItemInactiveLabelTextColor`),且都走 `MaterialTheme.colorScheme.default*`(主题感知)。
+  - **a11y 不变** —— 两个 item 共用内部 `NavigationItem`(`NavigationItem.kt:378` 的 `selectable(role = Role.Tab)`)⇒ "动作槽被读成标签页"那处既有不一致照旧。
+- **会变的是几何**:短变体的指示器形状/宽度(`NavigationBarVerticalItemTokens.ActiveIndicatorWidth` + `ItemActiveIndicatorShape`)、`arrangement`(默认 `EqualWeight`)、图标与文字间距 ⇒ item 变成 M3 expressive **短样式**(即 legado 那个样子)。`Scaffold` 的 `innerPadding` 自动跟着变 ⇒ 页面底部留白少 16dp,**无需手改任何 padding**。
+- **连带修正 spec §4.11(重要)**:「关玻璃的横条怎么插」原文写「`NavigationBarItem` 内部就是 `Modifier.weight(1f)`(已核对 `NavigationBar.kt:230`)」—— 短变体**不是 `RowScope` 扩展、没有 `Modifier.weight`**,等宽改由 `EqualWeightContentMeasurePolicy` 按 `width / itemsCount` 平分(`ShortNavigationBar.kt:379`)⇒ 已按实际改写(插入方式不变:直接在 content 里插一个 `selected = false` 的 `ShortNavigationBarItem` 仍天然等宽)。另 §3 / §4.11 / §6 共 8 处 `NavigationBar` 引用同步更新(残留的 `NavigationBar` 字样都是系统导航栏的 `isNavigationBarContrastEnforced` / `isAppearanceLightNavigationBars`,无关)。
+- **验证**:`:app:compileReleaseKotlin` **BUILD SUCCESSFUL**;`:app:testDebugUnitTest` **BUILD SUCCESSFUL,263 用例 / 0 失败 / 0 错误**。⚠️ 两条命令都必须加 `-x :pyramid:installReleasePythonRequirements`(或 Debug 那个),否则 Chaquopy 的 pip 安装会被宿主机 safe-delete 策略拦(pip 清缓存 + 批量删除确认)——**环境问题,与本次改动无关**。
+- **未做**:装机(按用户口径"明确说安装到我的设备时才装");短样式的 item 几何只能真机看。
+
+## 底栏 tab 文字改为"只在激活时出现"(2026-09-23 四轮,与 legado 对齐;已编译+单测,**未装机**)
+
+- **用户要求**:「把底部导航的控件改成和 legado 一样,在没有激活时只出现图标,点击后图标往上抬,然后下面是文字,包括液态玻璃」。
+- **查到的 legado 判据**:玻璃条在 `MainScreen` 里 `if (showLabel && (alwaysShowLabel || selected)) { AppText(label) }`;关玻璃档 `AppNavigationBarItem` 把 `label = if (m3ShowLabel && (m3AlwaysShowLabel || selected)) { … } else null` 交给 `ShortNavigationBarItem`(其中 `showLabel = !isUnlabeled`、`alwaysShowLabel = (labelVisibilityMode == "labeled")`,默认档即"仅选中显示")。⇒ **两套都是普通 `if`、瞬间切换、无动画**。
+- **改动 2 处**:
+  - `ui/navbar/FloatingNavBar.kt` 的 `NavTabItem`:把 `Text` 包进 `if (selected) { … }`(图标仍 24dp、列仍 `spacedBy(1.dp, CenterVertically)` ⇒ 文字出现时图标自然上抬)。
+  - `ui/page/MainScreen.kt` 的关玻璃档:`ShortNavigationBarItem(label = if (selected) { { Text(…) } } else null)`,动作槽传 `label = null`。⚠️ M3 的 `ShortNavigationBarItem` **没有 `alwaysShowLabel` 参数**,只能靠"不给 label"实现 —— 与 legado 同法。
+- **机制核对(material3 1.5.0-alpha28 源码)**:`ShortNavigationBarItem` → 内部 `NavigationItem` 的 `TopIconOrIconOnlyMeasurePolicy` 是 `if (hasLabel) placeLabelAndTopIcon(…) else placeIcon(…)` 的**硬分支**(`NavigationItem.kt:711`)⇒ 无过渡;`NavigationItem` 仍是 `selectable(role = Role.Tab)` ⇒ **a11y 不变**。
+- **连带(已告知用户)**:动作槽(直播)永远未激活 ⇒ **两套里都只剩图标、不再有「直播」文字**;这与三轮定稿的"裸图标 + 文字"不一致,已按四轮修正写进 spec §4.11。
+- **刻意不做**:不加 `AnimatedVisibility` / 缓动 —— 用户要的是"和 legado 一样",legado 就是瞬间切换;要缓动另开一轮。
+- **验证**:`:app:compileReleaseKotlin` + `:app:testDebugUnitTest` **BUILD SUCCESSFUL,263 用例 / 0 失败 / 0 错误**。⚠️ 两个命令都要加 `-x :pyramid:installReleasePythonRequirements -x :pyramid:installDebugPythonRequirements`(理由同前:Chaquopy 的 pip 安装被宿主机 safe-delete 策略拦,环境问题)。
+- **未做**:装机。
+- **⚠️ 真机 bug + 修正(同轮)**:用户报「surface 模式下从首页点击 tab 到设置页,中间的**历史和收藏图标会往上闪烁一下**」。**根因**:关玻璃横条的 `selected` 误用 `pagerState.currentPage` —— 它是"滚动途中离吸附点最近的那页",跨 3 页滚动时会**依次经过历史、收藏** ⇒ 中间页被短暂判成选中、文字一闪、图标被顶上去。**改法**:`val selected = pagerState.targetPage == index`(legado `MainScreen.kt:437` 与我们的玻璃条 `selectedTabIndex = { pagerState.targetPage }` 本来就用 targetPage,只有这条写错了)。⚠️ **竖条档 `NavigationRailItem` 仍是 `currentPage`,没改** —— 它的 label 常显 ⇒ 不会闪文字,只有"指示器扫过中间项"的差别,等用户确认再对齐。
+- **文档**:spec §4.11 的「tab 文字可见性」小节已补 `targetPage` 这条坑与竖条档的现状说明。
+
