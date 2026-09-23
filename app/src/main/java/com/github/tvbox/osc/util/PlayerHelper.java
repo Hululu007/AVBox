@@ -454,24 +454,13 @@ public class PlayerHelper {
         return app == null ? "" : LanguageManager.INSTANCE.localized(app).getString(resId);
     }
 
+    /** 网速文本:入参是字节/秒,按 1024 进制显示 B/s / KB/s / MB/s;show=false 时 0 返回空串 */
     public static String getDisplaySpeed(long speed,boolean show) {
         if(speed > 1048576)
-            return new DecimalFormat("#.00").format(speed / 1048576d) + "Mb/s";
+            return new DecimalFormat("#.00").format(speed / 1048576d) + "MB/s";
         else if(speed > 1024)
-            return (speed / 1024) + "Kb/s";
+            return (speed / 1024) + "KB/s";
         else
             return speed > 0?speed + "B/s":(show?"0B/s":"");
-    }
-    public static String getDisplaySpeedBps(long speed, boolean show) {
-        long bitSpeed = speed * 8; // 字节转比特
-        if (bitSpeed >= 1_000_000_000) {
-            return new DecimalFormat("0.00").format(bitSpeed / 1_000_000_000d) + "Gbps";
-        } else if (bitSpeed >= 1_000_000) {
-            return new DecimalFormat("0.0").format(bitSpeed / 1_000_000d) + "Mbps";
-        } else if (bitSpeed >= 1_000) {
-            return new DecimalFormat("0.0").format(bitSpeed / 1_000d) + "Kbps";
-        } else {
-            return bitSpeed > 0 ? bitSpeed + "bps" : (show ? "0bps" : "");
-        }
     }
 }

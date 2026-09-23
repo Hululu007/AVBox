@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.github.tvbox.osc.bean.Subtitle
+import com.github.tvbox.osc.bean.VodInfo
 import com.github.tvbox.osc.dlna.CastVideo
 import xyz.doikki.videoplayer.player.VideoView
 
@@ -90,8 +91,8 @@ class PlayerUiState {
     var liveButtonsVisible: Boolean by mutableStateOf(true)
     var danmuOpen: Boolean by mutableStateOf(false)
     var danmuSearchAvailable: Boolean by mutableStateOf(false)
-    /** 选集入口可见：当前线路剧集数 >1（面板只列剧集，单集时点开没有可选项），由 PlayContainer 在 prepare 后判定 */
-    var episodeBtnVisible: Boolean by mutableStateOf(false)
+    /** 当前播放会话的影片数据（页面在会话建立/接管时写入）；选集入口可见性由它派生，缓存成标志会在同片接管时漏写 */
+    var sessionVod: VodInfo? by mutableStateOf(null)
     /** 详情页竖屏预览态（setPreviewMode 写入）：呼出控件栏时只显示进度行，不显示菜单行 */
     var previewMode: Boolean by mutableStateOf(false)
     var playerBtnText: String by mutableStateOf("")
@@ -126,7 +127,14 @@ class PlayerUiState {
     val trackBtnVisible: Boolean get() = playerType == 1 || playerType == 2
     val danmuBtnVisible: Boolean get() = danmuOpen
     val danmuSearchBtnVisible: Boolean get() = danmuSearchAvailable
-    val castBtnVisible: Boolean get() = android.os.Build.VERSION.SDK_INT >= 30
+
+    /** 选集入口可见:当前线路剧集数 >1(面板只列剧集,单集时点开没有可选项);数据未就绪按不可见处理 */
+    val episodeBtnVisible: Boolean
+        get() {
+            val vod = sessionVod ?: return false
+            val flag = vod.playFlag ?: return false
+            return (vod.seriesMap?.get(flag)?.size ?: 0) > 1
+        }
 
     /** 退后台暂停标记(PlayerControlApi.setLifecyclePaused):此暂停不画中央播放键 */
     var lifecyclePaused: Boolean by mutableStateOf(false)

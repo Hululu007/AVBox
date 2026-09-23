@@ -279,6 +279,13 @@ class ComposeVideoController @JvmOverloads constructor(
         super.onPlayStateChanged(playState)
         curPlayState = playState
         state.playState = playState
+        // 时长可信的状态才对齐:同片接管/页面重挂只回灌当前状态(PAUSED/PLAYING),不会再有 PREPARED;
+        // PREPARING 要排除 —— IJK 此时时长读作 0,会把点播误判成直播源而隐藏倍速/片头尾
+        if (playState != VideoView.STATE_IDLE && playState != VideoView.STATE_ERROR &&
+            playState != VideoView.STATE_PREPARING
+        ) {
+            updateLiveButtonsState()
+        }
         when (playState) {
             VideoView.STATE_IDLE -> {
                 savePlaybackProgress(notifyHistory = true)
@@ -297,11 +304,7 @@ class ComposeVideoController @JvmOverloads constructor(
                 savePlaybackProgress(notifyHistory = true)
             }
             VideoView.STATE_ERROR -> listener?.errReplay()
-            VideoView.STATE_PREPARED -> {
-                state.liveButtonsVisible = runCatching { mControlWrapper?.duration ?: 0L != 0L }
-                    .getOrDefault(true)
-                listener?.prepared()
-            }
+            VideoView.STATE_PREPARED -> listener?.prepared()
             VideoView.STATE_PLAYBACK_COMPLETED -> {
                 savePlaybackProgress(notifyHistory = true)
                 listener?.playNext(true)
@@ -667,6 +670,11 @@ class ComposeVideoController @JvmOverloads constructor(
 
     private fun updateDanmuSearchBtnState() {
         state.danmuSearchAvailable = ApiConfig.get().hasDanmuSearchUi()
+    }
+
+    /** 直播源(duration==0)隐藏倍速/片头尾按钮;取不到时长按可显示处理 */
+    private fun updateLiveButtonsState() {
+        state.liveButtonsVisible = runCatching { mControlWrapper?.duration ?: 0L != 0L }.getOrDefault(true)
     }
 
     private fun speedPlayStart() {
@@ -1253,7 +1261,7 @@ class ComposeVideoController @JvmOverloads constructor(
         state.sysTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
         readBattery()
         val speed = runCatching { wrapper.tcpSpeed }.getOrDefault(0L)
-        state.netSpeedTopRight = PlayerHelper.getDisplaySpeedBps(speed, true)
+        state.netSpeedTopRight = PlayerHelper.getDisplaySpeed(speed, true)
         state.netSpeedCenter = PlayerHelper.getDisplaySpeed(speed, false)
         val size = runCatching { wrapper.videoSize }.getOrDefault(intArrayOf(0, 0))
         state.videoSize = "" + size[0] + " X " + size[1]

@@ -1143,7 +1143,7 @@ class LivePlayActivity : BaseActivity() {
     private val mUpdateNetSpeedRun = object : Runnable {
         override fun run() {
             val videoView = mVideoView ?: return
-            netSpeedText = PlayerHelper.getDisplaySpeedBps(videoView.tcpSpeed, true)
+            netSpeedText = PlayerHelper.getDisplaySpeed(videoView.tcpSpeed, true)
             mHandler.postDelayed(this, 1000)
         }
     }

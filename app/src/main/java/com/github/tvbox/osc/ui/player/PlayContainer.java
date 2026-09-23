@@ -437,6 +437,8 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
                 rebindPlaybackOverlay();
             }
         }
+        // 接管的是引擎里既有的会话(直播回切/音乐页交还),页面自己没走过 setData,数据要在这里补同步
+        syncSessionVod();
         LOG.i("echo-p4 re-attach after live/other page");
     }
 
@@ -675,7 +677,6 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
             public void prepared() {
                 initSubtitleView();
                 if (mVideoView != null) mVideoView.prepared();
-                updateEpisodeBtnState();
                 startDanmuIfReady();
             }
             @Override
@@ -737,21 +738,12 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
     }
 
     /**
-     * 选集入口可见性:当前线路剧集数 >1 才显示(面板只列剧集,不切换线路)——
-     * 单项面板点开没有可选项,等于死键。数据缺失按不可见处理,避免把异常抛到 prepare 路径上。
+     * 把引擎当前会话的影片数据同步给控制层:选集入口可见性由它派生 ——
+     * 同片接管(退出页面后快速重进)与页面重新接管都不走 prepare,只在 prepare 时计算会漏掉这些会话。
      */
-    private void updateEpisodeBtnState() {
-        boolean visible = false;
-        try {
-            VodInfo vod = scheduler == null ? null : scheduler.vod();
-            if (vod != null && vod.seriesMap != null) {
-                List<VodInfo.VodSeries> series = vod.seriesMap.get(vod.playFlag);
-                visible = series != null && series.size() > 1;
-            }
-        } catch (Exception e) {
-            LOG.e("echo-episode btn state failed: " + e.getMessage());
-        }
-        if (mController != null) mController.getUiState().setEpisodeBtnVisible(visible);
+    private void syncSessionVod() {
+        if (mController == null || scheduler == null) return;
+        mController.getUiState().setSessionVod(scheduler.vod());
     }
 
     private String getCastTitle() {
@@ -1406,6 +1398,7 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
         if (isSamePlaybackOwned(session)) {
             LOG.i("echo-p3 take over same playback: " + session.playbackKey());
             engine.setData(session);
+            syncSessionVod();
             mController.setPlayerConfig(scheduler.playerCfg());
             scheduler.markContentStarted();
             scheduler.publishTitle();
@@ -1416,6 +1409,7 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
             return;
         }
         engine.setData(session);
+        syncSessionVod();
         mController.setPlayerConfig(scheduler.playerCfg());
         scheduler.clearTriedLines();
         scheduler.setUserPickedLine(session.userPickedLine());

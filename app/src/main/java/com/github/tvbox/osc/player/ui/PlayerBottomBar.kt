@@ -170,9 +170,7 @@ fun PlayerBottomBar(
                     onClick = actions::onEpisodeClicked,
                 )
             }
-            if (state.castBtnVisible) {
-                PlayerMenuButton(stringResource(R.string.common_cast), onClick = actions::onCastClicked)
-            }
+            PlayerMenuButton(stringResource(R.string.common_cast), onClick = actions::onCastClicked)
             PlayerMenuButton(
                 stringResource(R.string.player_menu_subtitle),
                 onClick = actions::onSubtitleClicked,
