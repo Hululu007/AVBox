@@ -2512,3 +2512,39 @@ echo-exo-player-error: code=ERROR_CODE_UNSPECIFIED, msg=Unexpected runtime error
 - **验证**:`:app:assembleDebug` **BUILD SUCCESSFUL**(APK `app/build/outputs/apk/debug/AVBox_debug.apk`,82.7 MB);`:app:testDebugUnitTest` **263 用例 / 0 失败**;IDE 诊断零新增。**未装机**。
 - **待真机确认**:①长按拖动切页 20 次后是否仍累积掉帧;②按压/释放时折射的 4 档递进有无台阶感(`GLASS_PRESS_LENS_STEPS` 可调);③静态观感与改前一致(blur/colorControls 复用后理论上逐像素相同)。
 
+## 缺陷修复:高刷屏单击屏幕「弹幕提速几秒」(2026-09-24,用户报"横屏播放影视时点击一下屏幕,弹幕速度会突然变快,过几秒后恢复正常")
+
+- **现象**:横屏点播单击(显隐控制层)后弹幕明显提速,约 1~2 秒自行恢复;播放本身无异常。
+- **定位(真机打点实测,非推理)**:临时在 `MyVideoView.updateTimer(DanmakuTimer)`(库的每帧回调,原本空实现)按 250ms 窗口打 `Δ弹幕时钟/Δ墙钟`,并在单击显隐处打点对齐时序。结论 = **弹幕库固有缺陷在高刷屏上暴露**,与点击逻辑无关(单击只翻控制层显隐,不 seek/不 pause/不改速度)。
+  - 库默认 `updateMethod=0`(Choreographer 跟随屏幕刷新率),但每帧时钟推进下限写死 16ms(`mFrameUpdateRate` ← `averageFrameConsumingTime = 16`)⇒ 倍率恒为 `16ms ÷ 实际 tick 间隔`。
+  - 实测:60Hz 窗口 `frames=15~16/250ms`(16.6ms/tick)→ ratio **0.96**;点按后 20ms 内翻成 `frames=29~31/250ms`(8.3ms/tick)→ ratio **1.87~1.94**,且 `dTimer` 恒等于 `frames×16ms`(推进被钉在下限),持续 1~2 秒后回落。全程无帧数骤降 ⇒ 排除"主线程卡顿/库内追帧"的猜想(曾误判一版)。
+  - 触发源:本机面板默认 120Hz(支持 120/144/90/60),平时播放走 60Hz 档,**触屏后 ROM 提频到 120Hz 并维持约 1~2 秒** ⇒ 该窗口内弹幕快 ~1.9x;"几秒后恢复" = 面板回落。
+- **改动(1 文件 2 行)**:建 `DanmakuContext` 后置 `updateMethod = 2`(库自带的 handler 自定速模式,也是 API 16 以下的回落路径)⇒ 循环按 ~16ms 自定速、与刷新率解耦。已核对全部消费方(`DrawHandler.prepare` / UPDATE 分发 / `notifyRendering` / `waitRendering`)与 `mFrameCallback` 空值保护;`DanmakuContext` 与 `danmuView.prepare` 全仓各只有一处调用点。
+- **验证**:修复后同法复测 —— 点按后 tick 仍 60Hz、ratio 0.88~1.22(窗口抖动,无 1.9x 长尾);用户真机确认"可以了"。`:app:assembleDebug` BUILD SUCCESSFUL;`:app:testDebugUnitTest` **263 用例 / 0 失败**;IDE 诊断零新增;干净包(无调试日志)已装机。
+- **代价(如实记录)**:120Hz 面板上弹幕**绘制**帧率从跟随面板降到 ~60fps(运动平滑度略降),换速度正确;60Hz 面板无变化。顺带修掉修复前 60Hz 下恒 0.96x 的偏差(每 tick 慢 0.66ms)。
+- **遗留(既有,非本次引入)**:弹幕时钟仍锚墙钟(`mTimeBase = uptimeMillis() - pausedPosition`)、不与播放器位置同步 ⇒ 缓冲卡顿/拖动/非 1.0 倍速后弹幕与画面错位且不自动纠正;根治需另立改动(库 `setDanmakuSync` 只在 draw 前对齐,或 non-block 模式 + 用播放器位置驱动时钟)。
+
+## 播放器选集入口:横屏全屏底栏「选集」+ 右侧滑出面板(2026-09-24,用户要求)
+
+- **背景**:2026-09-22 删除僵尸选集侧边面板后,播放器没有任何选集入口 —— 手机档(`smallestScreenWidthDp < 600`)运行期锁竖屏、全屏播放又只在横屏,换集只能退出全屏回详情页的选集行。用户要求:横屏全屏播放页点击后从右向左弹出选集面板。
+- **入口**:底栏菜单行「片尾」与「投屏」之间加「选集」(`PlayerActions.onEpisodeClicked`),可见性由 `PlayerUiState.episodeBtnVisible` 控制 —— `PlayContainer.updateEpisodeBtnState()` 在 `prepared()` 判定「当前线路剧集数 >1 或线路数 >1」,单集单片不显示(避免点了是空面板)。
+- **链路**(选 A:复用详情页面板,不新建播放器侧选集状态):`ComposeVideoController` → `VodControlListener.showEpisodes()` → `PlayContainer`(listener 实现) → `PageHost.showEpisodeSheet()`(新增页面能力) → `DetailActivity`(守卫 `vm.vodInfo != null`) → `vm.showEpisodeSheet()` → 详情页既有 `EpisodeSheet`。选集内容 / 线路切换 / 倒序 / 分组 / 定位当前集全部复用,数据零跨层传递。
+- **面板形态**:`AVBoxBottomSheet` 新增 `slideFromEnd`(映射到 `SheetVariant.END`),`EpisodeSheet` 传 `slideFromEnd = fullBox` —— 竖屏详情页仍贴底(行为不变),横屏全屏贴右全高滑出。实现要点:位移 `translationX`、拖拽改 `Orientation.Horizontal` 且主轴尺寸取面板宽、`widthIn(max = min(640dp, 窗口宽 × 0.42)) + fillMaxHeight`、圆角只留左侧两角、不吃 `imePadding`(无输入场景)、不放横条把手(避免误导拖拽方向)、标题顶到面板上缘 16dp。网格适配:列数上限 4 → 2、宽度改 `weight(1f)` 撑满全高。
+- **验证**:`:app:assembleDebug` BUILD SUCCESSFUL;`:app:testDebugUnitTest` 263 用例 / 0 失败;IDE 诊断零新增。**真机行为待走查**,重点三项:①面板打开时右侧边缘上下滑(音量)是否被遮罩吃掉;②横屏刘海屏下面板右侧安全区(当前靠内容自身 16dp 内边距兜);③面板开着时系统旋转 / 折叠导致的 variant 突变(未主动关面板)。
+- **已知取舍**:竖屏贴底面板的 `imePadding` 与网格高度逻辑原样保留;`values-zh-rHK` 缺 `detail_episodes` 会回落简体(既有缺口,非本次引入)。
+- **补(同日,用户要求「弹窗内不要显示线路,只显示集」)**:`EpisodeSheet` 的线路 chips 行加 `!slideFromEnd` 守卫 —— 侧滑形态只列当前线路的剧集;入口可见性随之收紧为「当前线路剧集数 >1」(单集多线路时按钮不再出现,面板里没有可选项)。竖屏贴底面板保持原样。`:app:assembleDebug` BUILD SUCCESSFUL、`:app:testDebugUnitTest` 263 用例 / 0 失败、已装机(`lastUpdateTime=2026-09-24 04:19:38`)。
+
+## 侧滑面板加宽 + 预设色卡内部色块比例化(2026-09-24,用户要求)
+
+- **侧滑面板宽度 42% → 45%**(用户:「面板能不能长一点,让里面的集数显示长一点,百分之 45 吧」):只改 `SHEET_END_WIDTH_FRACTION` 常量,贴底/居中两个变体不受影响。
+- **预设色卡卡内色块改为按卡片边长取比例**(用户:「平板界面的预设色卡这里里面的色块没有自适应」):2026-09-23 那次只切了列数(4/8 列),卡内色块仍是固定 dp(主/次/第三色块高 10dp、内边距 6dp、间距 4dp、勾选圈 18dp)⇒ 卡片尺寸一变(平板 8 列卡比手机卡大),色条相对比例就漂,观感"细成发丝"。改法:`PresetSeedCard` 内套 `BoxWithConstraints` 取 `unit = maxWidth`(卡片 1:1),`barHeight = unit × 0.14`、内边距 `× 0.08`、间距 `× 0.05`、小圆角 `× 0.04`、勾选圈 `× 0.25`;主色条宽度仍是 60%(设计语言不变),文字仍用固定 `labelSmall`(可读性优先)。手机档下换算值与原固定值几乎一致(≈10dp / 6dp / 3.6dp),平板档色块随卡片一起长大。
+- **验证**:`:app:assembleDebug` BUILD SUCCESSFUL、`:app:testDebugUnitTest` 263 用例 / 0 失败、IDE 诊断零新增、已装机(`lastUpdateTime=2026-09-24 04:26:18`)。真机观感待用户确认。
+
+## 修复:竖屏全屏态误用侧滑选集面板(2026-09-24,用户报「竖屏播放界面为什么还是从侧边弹出来的」)
+
+- **现象**:大屏设备(平板)竖屏下点全屏进入全屏态,底栏「选集」弹出的面板从右侧滑出,而不是贴底。
+- **根因**:侧滑判据用的是 `fullBox`(= `vm.fullScreen`),而**窗口是否横屏是另一回事** —— Android 12L+ 起,`sw≥600dp` 的大屏设备默认忽略应用声明的方向限制(`requestedOrientation = SENSOR_LANDSCAPE` 不生效),于是窗口仍竖屏、`fullBox` 却为 true ⇒ 竖屏窗口里按横屏形态渲染(实测 = 视频 letterbox + 全屏布局 + 底栏菜单行可见,正是该机型上的现象)。项目里 `isFullBox()` 也是同一套判据,所以 `previewMode` 一并是 false(菜单行可见,用户能点到「选集」)。
+- **改法**:判据收紧为 `fullBox && 窗口横屏`(`DetailScreen` 已有 `isLandscapeNow`):只有"横屏 + 全屏"才侧滑;竖屏(含大屏被忽略方向的伪全屏态)与平板横屏但非全屏都保持贴底。
+- **验证**:`:app:assembleDebug` BUILD SUCCESSFUL、`:app:testDebugUnitTest` 263 用例 / 0 失败、已装机(`lastUpdateTime=2026-09-24 04:28:04`)。真机待用户确认。
+- **附带观察(既有,非本次引入)**:同一机型上点全屏不会旋转窗口(平台忽略方向限制),所以它在竖屏下进入的是"全屏态但竖屏窗口",由用户自己旋转设备才是真横屏 —— 这是大屏不锁方向的既定策略,本次只让面板形态跟随真实窗口,不改方向策略。
+

@@ -133,6 +133,11 @@ class DetailActivity : BaseActivity(), PageHost {
 
     override fun onPlaybackLinesExhausted(): Boolean = startDetailFallbackAfterLinesExhausted()
 
+    /** 入口可见性由播放侧判定(剧集/线路多于一个才显示按钮),这里只兜住详情数据尚未就绪的时序 */
+    override fun showEpisodeSheet() {
+        if (vm.vodInfo != null) vm.showEpisodeSheet()
+    }
+
     fun playCurrent() {
         val container = playContainer ?: return
         val session = vm.preparePlaySession()

@@ -298,7 +298,7 @@
     <string name="theme_mode_light">浅色</string>
     <string name="theme_mode_dark">深色</string>
     <string name="theme_palette_style">配色风格</string>
-    <string name="theme_preset_palette">预设色卡</string>
+    <string name="theme_preset_palette">主题颜色</string>
     <string name="theme_seed_red">红色</string>
     <string name="theme_seed_orange">橙色</string>
     <string name="theme_seed_yellow">黄色</string>

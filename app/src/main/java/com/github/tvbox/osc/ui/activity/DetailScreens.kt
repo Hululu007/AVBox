@@ -230,7 +230,9 @@ fun DetailScreen(activity: DetailActivity, vm: DetailViewModel) {
         }
     }
 
-    EpisodeSheet(vm, revision)
+    // 侧滑只在"横屏全屏"这一种形态:大屏设备点全屏时系统可能不旋转(忽略应用的方向限制),
+    // 那时窗口仍是竖屏,面板必须保持贴底
+    EpisodeSheet(vm, revision, slideFromEnd = fullBox && isLandscapeNow)
     VodCardMenu(vodMenu)
 }
 
@@ -682,7 +684,7 @@ private fun removeHtmlTag(info: String?): String {
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-private fun EpisodeSheet(vm: DetailViewModel, revision: Int) {
+private fun EpisodeSheet(vm: DetailViewModel, revision: Int, slideFromEnd: Boolean) {
     @Suppress("UNUSED_EXPRESSION") revision
     val show by vm.episodeSheet.collectAsState()
     if (!show) return
@@ -728,10 +730,13 @@ private fun EpisodeSheet(vm: DetailViewModel, revision: Int) {
                 stringResource(R.string.detail_episodes_of, info.name.orEmpty())
             },
         isScrollable = false,
+        // 横屏全屏播放时改成右侧滑出（竖屏详情页仍是贴底弹层）
+        slideFromEnd = slideFromEnd,
     ) {
         val dismissAnimated = LocalSheetDismiss.current
         Column(modifier = Modifier.fillMaxWidth()) {
-            if (flags.size > 1) {
+            // 侧滑面板只要剧集:线路切换归详情页的 chips 行
+            if (flags.size > 1 && !slideFromEnd) {
                 LazyRow(
                     contentPadding = PaddingValues(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -767,21 +772,29 @@ private fun EpisodeSheet(vm: DetailViewModel, revision: Int) {
                 Spacer(modifier = Modifier.height(8.dp))
             }
             val maxNameLength = episodes.maxOfOrNull { it.name?.length ?: 0 } ?: 0
+            // 侧滑面板宽度只有窗口 40% 出头,按名字长度取到的 4 列会挤成小方块,上限压到 2 列
             val gridColumnCount = when {
-                maxNameLength <= 4 -> 4
+                maxNameLength <= 4 -> if (slideFromEnd) 2 else 4
                 maxNameLength <= 12 -> 2
                 else -> 1
             }
-            val rowCount = if (episodes.isEmpty()) 0 else (episodes.size + gridColumnCount - 1) / gridColumnCount
-            val gridContentHeight = (rowCount * 40).dp + (((rowCount - 1).coerceAtLeast(0)) * 8).dp
-            val gridHeight = minOf(560.dp, gridContentHeight)
+            val gridModifier = if (slideFromEnd) {
+                // 全高面板:网格直接撑满标题/线路行之外的剩余高度
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            } else {
+                val rowCount = if (episodes.isEmpty()) 0 else (episodes.size + gridColumnCount - 1) / gridColumnCount
+                val gridContentHeight = (rowCount * 40).dp + (((rowCount - 1).coerceAtLeast(0)) * 8).dp
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false)
+                    .heightIn(max = minOf(560.dp, gridContentHeight))
+            }
             androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
                 state = gridState,
                 columns = androidx.compose.foundation.lazy.grid.GridCells.Fixed(gridColumnCount),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f, fill = false)
-                    .heightIn(max = gridHeight),
+                modifier = gridModifier,
                 contentPadding = PaddingValues(
                     start = 16.dp,
                     end = 16.dp,

@@ -90,6 +90,8 @@ class PlayerUiState {
     var liveButtonsVisible: Boolean by mutableStateOf(true)
     var danmuOpen: Boolean by mutableStateOf(false)
     var danmuSearchAvailable: Boolean by mutableStateOf(false)
+    /** 选集入口可见：当前线路剧集数 >1（面板只列剧集，单集时点开没有可选项），由 PlayContainer 在 prepare 后判定 */
+    var episodeBtnVisible: Boolean by mutableStateOf(false)
     /** 详情页竖屏预览态（setPreviewMode 写入）：呼出控件栏时只显示进度行，不显示菜单行 */
     var previewMode: Boolean by mutableStateOf(false)
     var playerBtnText: String by mutableStateOf("")
@@ -224,6 +226,8 @@ interface PlayerActions {
     fun onTimeEndClicked()
     fun onTimeEndLongClicked()
     fun onTimeResetClicked()
+    /** 打开页面的选集面板（详情页弹层，横屏全屏下的选集入口） */
+    fun onEpisodeClicked()
     fun onCastClicked()
     fun onSubtitleClicked()
     fun onSubtitleLongClicked()

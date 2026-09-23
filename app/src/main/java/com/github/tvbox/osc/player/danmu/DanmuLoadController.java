@@ -44,6 +44,8 @@ public class DanmuLoadController {
         this.controller = controller;
         this.danmuView = danmuView;
         this.danmakuContext = DanmakuContext.create();
+        // 不能用库默认的 updateMethod=0(时钟跟屏幕刷新率走):它把每帧推进下限写死 16ms,面板 120Hz 时弹幕会跑到 ~1.9x
+        this.danmakuContext.updateMethod = 2;
         if (this.videoView != null) {
             this.videoView.setDanmuView(this.danmuView);
         }

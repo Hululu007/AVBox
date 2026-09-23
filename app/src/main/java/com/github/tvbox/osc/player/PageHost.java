@@ -35,6 +35,14 @@ public interface PageHost {
     void requestNotificationPermission();
 
     /**
+     * 打开页面的选集面板(播放器底栏"选集"入口)。
+     *
+     * <p>选集内容与切集逻辑属于详情页(线路切换、分组、倒序都在那边),播放层不自建一套;
+     * 页面无详情数据(直播等)时静默忽略。
+     */
+    void showEpisodeSheet();
+
+    /**
      * 线路耗尽后的"换源兜底"入口(旧 `DetailActivity.startDetailFallbackAfterLinesExhausted`)。
      *
      * @return 是否已接管后续换源(交给页面详情引擎)

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -62,6 +63,8 @@ fun AVBoxBottomSheet(
     containerColor: Color? = null,
     isScrollable: Boolean = true,
     headerContent: (@Composable () -> Unit)? = null,
+    /** 从右侧滑出（面板贴右、全高、左两角圆角），横屏全屏下的选集面板用；false = 原贴底形态 */
+    slideFromEnd: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) = OverlayRequest(
     onDismissRequest = onDismissRequest,
@@ -70,7 +73,7 @@ fun AVBoxBottomSheet(
     containerColor = containerColor,
     isScrollable = isScrollable,
     headerContent = headerContent,
-    variant = SheetVariant.BOTTOM,
+    variant = if (slideFromEnd) SheetVariant.END else SheetVariant.BOTTOM,
     content = content,
 )
 
@@ -174,6 +177,9 @@ private val SheetMaxWidth = 640.dp
 
 private const val SheetMaxHeightFraction = 0.9f
 
+/** 右侧滑出面板的宽度上限 = 窗口宽度占比（横屏全屏窗口宽度跨度大，固定 dp 在宽窗口上会过窄） */
+private const val SHEET_END_WIDTH_FRACTION = 0.45f
+
 private const val SHEET_SLIDE_DURATION_MS = 280
 
 /** 居中对话框:进出场更短(缩放+淡入),面板是四角圆角、限宽 280~560dp */
@@ -188,8 +194,11 @@ private val DIALOG_HORIZONTAL_MARGIN = 24.dp
 private const val SHEET_DRAG_DISMISS_FRACTION = 0.25f
 private const val SHEET_DRAG_DISMISS_VELOCITY = 1400f
 
-/** [SheetVariant.BOTTOM] = 贴底弹层(上滑入场、可拖拽关闭);[SheetVariant.CENTER] = 居中对话框(缩放淡入) */
-internal enum class SheetVariant { BOTTOM, CENTER }
+/**
+ * [SheetVariant.BOTTOM] = 贴底弹层(上滑入场、可拖拽关闭);[SheetVariant.CENTER] = 居中对话框(缩放淡入);
+ * [SheetVariant.END] = 右侧滑出面板(右滑入场/退场,拖拽方向为水平)。
+ */
+internal enum class SheetVariant { BOTTOM, CENTER, END }
 
 internal class SheetRequest(
     val id: Any,
@@ -286,11 +295,13 @@ private fun SheetOverlay(
     val scope = rememberCoroutineScope()
     val collapse = remember { Animatable(1f) }
     var panelHeightPx by remember { mutableIntStateOf(0) }
+    var panelWidthPx by remember { mutableIntStateOf(0) }
     var entered by remember { mutableStateOf(false) }
     var dismissing by remember { mutableStateOf(false) }
     // 走"点遮罩/返回键"这条路径时:退场动画跑完才会调 onDismissRequest。记一个标志,好在组合中途被销毁时补调用。
     var plainDismissPending by remember { mutableStateOf(false) }
     val centered = variant == SheetVariant.CENTER
+    val fromEnd = variant == SheetVariant.END
     val durationMs = if (centered) DIALOG_FADE_DURATION_MS else SHEET_SLIDE_DURATION_MS
 
     val keyboard = LocalSoftwareKeyboardController.current
@@ -353,6 +364,7 @@ private fun SheetOverlay(
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val panelMaxHeight = maxHeight * SheetMaxHeightFraction
+        val panelMaxWidth = minOf(SheetMaxWidth, maxWidth * SHEET_END_WIDTH_FRACTION)
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -371,22 +383,34 @@ private fun SheetOverlay(
             modifier = Modifier
                 .fillMaxSize()
                 .then(if (centered) Modifier.imePadding() else Modifier),
-            contentAlignment = if (centered) Alignment.Center else Alignment.BottomCenter,
+            contentAlignment = when {
+                centered -> Alignment.Center
+                fromEnd -> Alignment.CenterEnd
+                else -> Alignment.BottomCenter
+            },
         ) {
             Surface(
                 modifier = Modifier
                     .then(modifier)
                     .then(
-                        if (centered) {
-                            Modifier
+                        when {
+                            centered -> Modifier
                                 .padding(horizontal = DIALOG_HORIZONTAL_MARGIN)
                                 .widthIn(min = DialogMinWidth, max = DialogMaxWidth)
-                        } else {
-                            Modifier.widthIn(max = SheetMaxWidth)
+                                .fillMaxWidth()
+                                .heightIn(max = panelMaxHeight)
+
+                            fromEnd -> Modifier
+                                .widthIn(max = panelMaxWidth)
+                                .fillMaxWidth()
+                                .fillMaxHeight()
+
+                            else -> Modifier
+                                .widthIn(max = SheetMaxWidth)
+                                .fillMaxWidth()
+                                .heightIn(max = panelMaxHeight)
                         },
                     )
-                    .fillMaxWidth()
-                    .heightIn(max = panelMaxHeight)
                     .graphicsLayer {
                         if (centered) {
                             val progress = 1f - collapse.value
@@ -394,12 +418,21 @@ private fun SheetOverlay(
                             scaleX = scale
                             scaleY = scale
                             alpha = progress
+                        } else if (fromEnd) {
+                            translationX = collapse.value * size.width
                         } else {
                             translationY = collapse.value * size.height
                         }
                     }
-                    .onGloballyPositioned { panelHeightPx = it.size.height },
-                shape = if (centered) DialogShape else RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                    .onGloballyPositioned {
+                        panelHeightPx = it.size.height
+                        panelWidthPx = it.size.width
+                    },
+                shape = when {
+                    centered -> DialogShape
+                    fromEnd -> RoundedCornerShape(topStart = 28.dp, bottomStart = 28.dp)
+                    else -> RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+                },
                 color = containerColor ?: BottomSheetDefaults.ContainerColor,
             ) {
                 CompositionLocalProvider(
@@ -407,16 +440,21 @@ private fun SheetOverlay(
                     LocalSheetDismissThen provides { action -> dismissWithAnimation(action) },
                 ) {
                     // 贴底弹层:键盘高度留在面板内部,面板底边不动 ⇒ 收起键盘时不会在底部漏出下方页面
+                    // (侧滑面板高度贴满屏幕且无输入场景,不吃键盘 inset)
                     Column(
-                        modifier = if (centered) Modifier else Modifier.imePadding(),
+                        modifier = if (centered || fromEnd) Modifier else Modifier.imePadding(),
                     ) {
                         // 居中对话框没有把手、也不吃下滑关闭手势(内容要能正常滚/选文字),
                         // 标题由调用方画在内容里(见 AVBoxAlertDialog)。
                         if (!centered) {
                             Column(
                                 modifier = Modifier.draggable(
-                                    state = sheetDragState(collapse, entered, panelHeightPx),
-                                    orientation = Orientation.Vertical,
+                                    state = sheetDragState(
+                                        collapse,
+                                        entered,
+                                        if (fromEnd) panelWidthPx else panelHeightPx,
+                                    ),
+                                    orientation = if (fromEnd) Orientation.Horizontal else Orientation.Vertical,
                                     onDragStopped = { velocity ->
                                         val dismiss = collapse.value > SHEET_DRAG_DISMISS_FRACTION ||
                                                 velocity > SHEET_DRAG_DISMISS_VELOCITY
@@ -428,8 +466,11 @@ private fun SheetOverlay(
                                     },
                                 ),
                             ) {
-                                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                                    BottomSheetDefaults.DragHandle()
+                                // 侧滑面板的拖拽主轴是水平,横条把手会误导方向,不放
+                                if (!fromEnd) {
+                                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                        BottomSheetDefaults.DragHandle()
+                                    }
                                 }
                                 headerContent?.invoke()
                                 title?.let {
@@ -437,7 +478,12 @@ private fun SheetOverlay(
                                         text = it,
                                         style = MaterialTheme.typography.titleMedium,
                                         color = MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                        modifier = if (fromEnd) {
+                                            // 无把手时节标题顶到面板上缘,保留 M3 面板惯例的 16dp
+                                            Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 8.dp)
+                                        } else {
+                                            Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                                        },
                                     )
                                 }
                             }
@@ -463,14 +509,14 @@ private fun SheetOverlay(
 private fun sheetDragState(
     collapse: Animatable<Float, AnimationVector1D>,
     entered: Boolean,
-    panelHeightPx: Int,
+    panelSpanPx: Int,
 ): DraggableState {
     val scope = rememberCoroutineScope()
     return rememberDraggableState { delta ->
-        if (entered && panelHeightPx > 0) {
+        if (entered && panelSpanPx > 0) {
             scope.launch {
                 collapse.snapTo(
-                    (collapse.value + delta / panelHeightPx).coerceIn(0f, 1f),
+                    (collapse.value + delta / panelSpanPx).coerceIn(0f, 1f),
                 )
             }
         }

@@ -588,6 +588,11 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
             }
 
             @Override
+            public void showEpisodes() {
+                if (pageHost != null) pageHost.showEpisodeSheet();
+            }
+
+            @Override
             public void searchDanmuUi(boolean longClick) {
                 VodInfo.VodSeries series = scheduler.vod() == null ? null : scheduler.currentSeries(scheduler.vod().playFlag, scheduler.vod().playIndex);
                 ApiConfig.get().searchDanmuUi(scheduler.vod() == null ? "" : scheduler.vod().name, series == null ? "" : series.name, longClick);
@@ -670,6 +675,7 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
             public void prepared() {
                 initSubtitleView();
                 if (mVideoView != null) mVideoView.prepared();
+                updateEpisodeBtnState();
                 startDanmuIfReady();
             }
             @Override
@@ -728,6 +734,24 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
                     checkDanmu(danmu);
                     return kotlin.Unit.INSTANCE;
                 }));
+    }
+
+    /**
+     * 选集入口可见性:当前线路剧集数 >1 才显示(面板只列剧集,不切换线路)——
+     * 单项面板点开没有可选项,等于死键。数据缺失按不可见处理,避免把异常抛到 prepare 路径上。
+     */
+    private void updateEpisodeBtnState() {
+        boolean visible = false;
+        try {
+            VodInfo vod = scheduler == null ? null : scheduler.vod();
+            if (vod != null && vod.seriesMap != null) {
+                List<VodInfo.VodSeries> series = vod.seriesMap.get(vod.playFlag);
+                visible = series != null && series.size() > 1;
+            }
+        } catch (Exception e) {
+            LOG.e("echo-episode btn state failed: " + e.getMessage());
+        }
+        if (mController != null) mController.getUiState().setEpisodeBtnVisible(visible);
     }
 
     private String getCastTitle() {

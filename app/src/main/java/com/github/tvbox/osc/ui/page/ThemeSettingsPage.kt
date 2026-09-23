@@ -521,63 +521,70 @@ private fun PresetSeedCard(
         color = previewScheme.surfaceContainer,
         border = BorderStroke(2.dp, borderColor),
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(6.dp),
-        ) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+            // 色块尺寸按卡片边长取比例:卡片宽度在不同窗口档 / 列数下差别很大,固定 dp 的色条在大卡上细成发丝
+            val unit = maxWidth
+            val barHeight = unit * 0.14f
+            val gap = unit * 0.05f
+            val blockCorner = unit * 0.04f
             Box(
                 modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .fillMaxWidth(0.6f)
-                    .height(10.dp)
-                    .background(previewScheme.primary, RoundedCornerShape(5.dp)),
-            )
-            if (selected) {
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .size(18.dp),
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primary,
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Check,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(3.dp),
-                    )
-                }
-            }
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .fillMaxWidth(),
+                    .fillMaxSize()
+                    .padding(unit * 0.08f),
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Box(
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .fillMaxWidth(0.6f)
+                        .height(barHeight)
+                        .background(previewScheme.primary, RoundedCornerShape(barHeight / 2)),
+                )
+                if (selected) {
+                    Surface(
                         modifier = Modifier
-                            .weight(1f)
-                            .height(10.dp)
-                            .background(previewScheme.secondary, RoundedCornerShape(3.dp)),
-                    )
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(10.dp)
-                            .background(previewScheme.tertiary, RoundedCornerShape(3.dp)),
+                            .align(Alignment.TopEnd)
+                            .size(unit * 0.25f),
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primary,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Check,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(unit * 0.04f),
+                        )
+                    }
+                }
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth(),
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(barHeight)
+                                .background(previewScheme.secondary, RoundedCornerShape(blockCorner)),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(barHeight)
+                                .background(previewScheme.tertiary, RoundedCornerShape(blockCorner)),
+                        )
+                    }
+                    Spacer(Modifier.height(gap))
+                    Text(
+                        text = stringResource(nameRes),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = previewScheme.onSurface,
+                        maxLines = 1,
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = stringResource(nameRes),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = previewScheme.onSurface,
-                    maxLines = 1,
-                    modifier = Modifier.fillMaxWidth(),
-                )
             }
         }
     }

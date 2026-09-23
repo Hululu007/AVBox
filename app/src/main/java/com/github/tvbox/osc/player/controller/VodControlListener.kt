@@ -27,6 +27,9 @@ interface VodControlListener {
 
     fun showDanmuSetting()
 
+    /** 打开页面级选集面板：内容(线路/剧集/切集)归详情页，播放侧只转发入口点击 */
+    fun showEpisodes()
+
     fun toggleDanmu(): Boolean
 
     fun searchDanmuUi(longClick: Boolean)

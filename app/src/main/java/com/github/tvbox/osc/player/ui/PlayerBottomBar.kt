@@ -164,6 +164,12 @@ fun PlayerBottomBar(
                     onLongClick = actions::onTimeEndLongClicked,
                 )
             }
+            if (state.episodeBtnVisible) {
+                PlayerMenuButton(
+                    stringResource(R.string.detail_episodes),
+                    onClick = actions::onEpisodeClicked,
+                )
+            }
             if (state.castBtnVisible) {
                 PlayerMenuButton(stringResource(R.string.common_cast), onClick = actions::onCastClicked)
             }

@@ -1053,6 +1053,12 @@ class ComposeVideoController @JvmOverloads constructor(
         }
     }
 
+    override fun onEpisodeClicked() {
+        if (!fastClickAllowed("episode")) return
+        listener?.showEpisodes()
+        hideBottom()
+    }
+
     override fun onCastClicked() {
         listener?.clickCast()
     }
