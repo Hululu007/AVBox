@@ -1,0 +1,139 @@
+# Dependabot configuration
+# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+
+updates:
+  # ──────────────────────────────────────────────
+  # Gradle 依赖(根 build.gradle.kts / settings.gradle.kts / gradle/libs.versions.toml,
+  # 以及各模块 app / player / quickjs / pyramid / libs:backdrop 的 build.gradle.kts)
+  # ──────────────────────────────────────────────
+  - package-ecosystem: "gradle"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 15
+    # 忽略 material3 的 alpha 段(stable 1.5.0 及以后会自动放行):
+    # ①material3 版本是「用户指定、显式覆盖 BOM」的(见 spec §2),不该被机器人自动改;
+    # ②我们用的一堆 expressive API(ContainedLoadingIndicator / ShortNavigationBar / pullToRefresh /
+    #   ToggleButton)只在 alpha 里,alpha 之间改行为是常态,而"尺寸/动画/形状变了"编译期发现不了;
+    # ③自研弹层仍依赖 BottomSheetDefaults 的默认值;④已被 alpha23 弃用 rememberModalBottomSheetState 咬过一次。
+    # 这类回归只会被 auto-merge 静默合入,故等官方发 stable 后再解除。
+    # ⚠️ versions 的多条是「或」关系,不能写成 [">=1.5.0-alpha.24", "<1.5.0"](那会覆盖几乎所有版本、等于永久忽略);
+    #    这里用单条 Maven/Gradle 区间:区间内部是「与」语义 ⇒ 只忽略 [1.5.0-alpha.24, 1.5.0)。
+    ignore:
+      - dependency-name: "androidx.compose.material3:material3"
+        versions: ["[1.5.0-alpha.24,1.5.0)"]
+    groups:
+      # ── 分组顺序很重要:Dependabot 按定义顺序匹配,先匹配到的分组生效 ──
+      # 具体分组必须放在 androidx(androidx.*)之前,否则会被 androidx 抢先匹配
+
+      # Compose(BOM + ui / foundation / material3 / material-icons-extended)
+      compose:
+        patterns:
+          - "androidx.compose.*"
+      # Media3 / ExoPlayer(含 jellyfin 的 ffmpeg 解码器,必须与 media3 同版)
+      media3:
+        patterns:
+          - "androidx.media3.*"
+          - "org.jellyfin.media3.*"
+      # Room 3 / SQLite(两个必须同批升,room3-compiler 与 sqlite-bundled 有版本约束)
+      room:
+        patterns:
+          - "androidx.room3.*"
+          - "androidx.sqlite.*"
+      # 测试相关依赖
+      testing:
+        patterns:
+          - "junit"
+          - "org.junit.*"
+          - "androidx.test.*"
+      # AGP 与 Android 工具链(统一更新避免版本冲突;含 desugar_jdk_libs)
+      agp:
+        patterns:
+          - "com.android.application"
+          - "com.android.library"
+          - "com.android.tools.*"
+      # KSP 插件(必须与 Kotlin 版本配套,单独成组好一起看)
+      ksp:
+        patterns:
+          - "com.google.devtools.ksp"
+      # Chaquopy 插件(Python 采集源支持)
+      chaquopy:
+        patterns:
+          - "com.chaquo.python"
+      # Kotlin 插件与 KotlinX 库
+      kotlin:
+        patterns:
+          - "org.jetbrains.kotlin.*"
+          - "org.jetbrains.kotlinx.*"
+      # AndroidX 兜底(放在 compose / media3 / room / testing 之后,确保细分组优先)
+      androidx:
+        patterns:
+          - "androidx.*"
+      # Coil 图片加载
+      coil:
+        patterns:
+          - "io.coil-kt.*"
+      # 液态玻璃相关(kyant shapes / capsule、MaterialKolor 动态取色)
+      ui-libs:
+        patterns:
+          - "io.github.kyant0.*"
+          - "com.materialkolor.*"
+      # 网络与序列化
+      network:
+        patterns:
+          - "com.squareup.okhttp3.*"
+          - "com.squareup.okio.*"
+          - "com.google.code.gson:*"
+          - "com.lzy.net:*"
+      # 其余第三方(逐个列出,避免被通配吞掉)
+      misc:
+        patterns:
+          - "com.tencent:*"
+          - "org.greenrobot:*"
+          - "com.thoughtworks.xstream:*"
+          - "me.jessyan:*"
+          - "org.nanohttpd:*"
+          - "org.fourthline.cling:*"
+          - "com.github.*"
+          - "com.google.zxing:*"
+          - "org.jsoup:*"
+          - "commons-io:*"
+          - "com.googlecode.juniversalchardet:*"
+          - "xyz.doikki.android.dkplayer:*"
+          - "wang.harlon.quickjs:*"
+          - "javax.*"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "gradle"
+
+  # ──────────────────────────────────────────────
+  # Gradle Wrapper 不需要单独条目:gradle ecosystem 默认会扫
+  # gradle/wrapper/gradle-wrapper.properties,由上面那条统一处理。
+  # ──────────────────────────────────────────────
+
+  # ──────────────────────────────────────────────
+  # GitHub Actions workflows 依赖更新
+  # ──────────────────────────────────────────────
+  - package-ecosystem: "github-actions"
+    # GitHub Actions 生态的 directory 必须写 "/":Dependabot 会自己扫 /.github/workflows
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps(ci)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "github-actions"
