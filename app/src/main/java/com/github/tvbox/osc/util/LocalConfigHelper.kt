@@ -151,8 +151,8 @@ private class LocalConfigImport(
  * 配置 Uri → clan:// 接口地址:**优先直引原文件**(原目录改动立刻生效、不占空间),算不出原目录地址才复制到
  * 外置私有 `files/config/`。
  *
- * 直引判据 = 应用此刻真读得到原文件(`File.canRead`),不是存储权限查询:后者在小米/澎湃等 ROM 上对
- * 未上架应用不落地(开关是开的、查询为 false),按它判会把能直引的源推进"存储根授权不了"的死胡同。
+ * 直引判据 = 可读性能否活过进程重启,不是"此刻读得到":选文件拿到的临时 SAF 授权会让 `File.canRead()` 为真,
+ * 但进程一重启就失效、直引地址当场变死链(源看着还在、内容永不更新)。判据取「所有文件访问」或已持久化的目录授权。
  *
  * 为什么执着于直引:配置里 `./x.jar`、`../lib/x.js` 这类同目录引用会被重写成"配置文件所在目录"的 http 前缀,
  * 复制路线只带 json 过去时这些引用会 404,得靠目录授权把兄弟文件一个个搬过来。
@@ -166,10 +166,9 @@ private fun importLocalConfig(context: Context, uri: Uri): LocalConfigImport? {
     val storageRoot = Environment.getExternalStorageDirectory().absolutePath
     val path = getPathFromUri(context, uri)
     val source = readablePath(path)
-    // 权限查询只用于埋点(判据见 KDoc):它能区分"查询为 false 却读得到"与"真读不到"
     val granted = PermissionHelper.isStorageGranted(context)
     LOG.i("echo-local-src path granted=" + granted + " src=" + source + " uri=" + uri)
-    if (source != null) {
+    if (source != null && (granted || LocalSourceTree.covers(context, source))) {
         toClanApi(source, storageRoot)?.let { return LocalConfigImport(it, null, emptyList(), null) }
     }
     if (path != null) {

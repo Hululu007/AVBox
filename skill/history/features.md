@@ -2643,3 +2643,12 @@ echo-exo-player-error: code=ERROR_CODE_UNSPECIFIED, msg=Unexpected runtime error
 - **保留不变**:暂停浮层仍被 `pauseOverlayVisible && !lifecyclePaused` 抑制 —— 它是"标题 + 中央播放图标"的独立浮层,语义是"已暂停,点击播放",而回前台会续播,拍进快照才是真假象。纯音频会话不走 `PlayContainer.hostPause`(让路给 `isConfirmedAudioOnly`),音乐页有自己的 host 实现,未受影响。
 - **预期内的连带变化(不再是缺陷)**:加载/解析期退后台(IDLE/PREPARING 下 `pause()` 是空操作、不产生 PAUSED 事件)现在快照会带控制条 + 加载转圈 —— 用户离开时控制条确实开着,这正是"保存退出前状态"的结果。
 - **验证**:`:app:assembleDebug` BUILD SUCCESSFUL;`:app:testDebugUnitTest` **285 用例 / 0 失败**。**真机待走查**:①全屏播放唤出控件后立刻回桌面 → 卡片含顶栏/进度条/中央三键(中间 ⏸),回前台自动续播且控件仍在、10s 后自动收起;②手动暂停后回桌面 → 卡片中央 ▶ + 暂停浮层(未续播,回前台仍暂停);③加载中转圈时退后台 → 卡片带控制条与转圈;④纯音频(音乐页)退后台行为无变化。
+
+## 本地源导入不再被临时 SAF 授权骗过(2026-09-25,真机取证)
+
+- **现象**:添加本地源(「从本地选择」选 json)不再申请「所有文件访问」;导入后当场能用,重启应用后源"还在"但内容永不更新,手动刷新才报「本地源文件读不到」。
+- **根因(源码定位)**:`LocalConfigHelper.importLocalConfig` 的直引判据是 `readablePath()`(即 `File.canRead()`),而 `OpenDocument` 给**本次选中文档**的临时 SAF 授权会让它当场为真 ⇒ 走直引分支、`directPath` 保持 null ⇒ `handleLocalConfigResult` 返回 false ⇒ 唯一会申请权限的 `settleUnreachableSource` 从不执行。取证:导入埋点 `granted=false src=/storage/…` 紧跟 `direct=false`(`src=` 就是那个假可读);同一路径 `GET /file/…` 重启前 200、`am force-stop` 后 500,同刻 `Android/data/…` 仍 200。
+- **改法(2 文件)**:①`LocalConfigHelper` 直引判据改为 `granted || LocalSourceTree.covers()`(持久可读性),不成立就把路径交回调用方争授权;②`ApiConfig` 两个 `useCache` 快照分支加 `isRemoteSource` 守卫(本地/局域网源不吃快照)。
+- **行为变化**:未开「所有文件访问」的设备导本地源会先跳一次设置页(拿到即直引、不再多要目录授权;拿不到退目录授权);已持久可读(权限在手 / 目录授权已覆盖)的设备行为不变、不会多弹。真机走查:改后埋点 `direct=true` → 授权后 `granted=true` + `direct=false`,重启后本地服务对该文件仍返 200(改前 500)。
+- **验证**:`:app:assembleDebug` BUILD SUCCESSFUL;`:app:testDebugUnitTest` **285 用例 / 0 失败**;真机(vivo V2425A / Android 16)按上述流程走通;约束已登记 spec §6.15。
+- **遗留(未改)**:`toast_local_direct_grant_hint` 文案只说"请选择该配置所在的文件夹",而新流程多数人先看到「所有文件访问」设置页,措辞与紧随其后的界面不一致(次要不一致,需动四语文案)。

@@ -172,7 +172,9 @@ public class ApiConfig {
             return;
         }
         File cache = new File(App.getInstance().getFilesDir().getAbsolutePath() + "/" + MD5.encode(apiUrl));
-        if (useCache && cache.exists()) {
+        // 本地/局域网源不吃快照(与 useCachedConfig 同一口径):本地源失效时靠快照"加载成功"会让用户
+        // 以为源正常、实则内容永不更新,而这一支在 fetch 之前就早退,后面的可读性判据拦不住
+        if (useCache && cache.exists() && isRemoteSource(apiUrl)) {
             try {
                 String json = readConfigFile(cache);
                 if (switchApiCollectionIfNeeded(apiUrl, json)) {
@@ -279,7 +281,8 @@ public class ApiConfig {
         final String liveConfigKey = resolvedLive.key;
         File live_cache = new File(App.getInstance().getFilesDir().getAbsolutePath() + "/" + MD5.encode(liveApiUrl));
         LOG.i("echo-load live config "+liveApiUrl);
-        if (useCache && live_cache.exists()) {
+        // 同 loadConfig:本地/局域网直播源不吃快照,否则失效的本地源会被旧快照长期掩盖
+        if (useCache && live_cache.exists() && isRemoteSource(liveApiUrl)) {
             try {
                 String json = readConfigFile(live_cache);
                 if (switchLiveApiCollectionIfNeeded(liveApiUrl, json)) {
@@ -403,6 +406,11 @@ public class ApiConfig {
         // 目录授权兜底时 File.exists 同样不可信(可能把"读不到"误报成"已删除"),由本地服务判读不到即报 not found
         if (path == null || LocalSourceTree.INSTANCE.serves(App.getInstance(), path)) return false;
         return !new File(path).exists();
+    }
+
+    /** 只有 http(s) 远程源吃快照;本地/局域网(clan:// 本机、file://、局域网 IP)的改动必须立即生效 */
+    private static boolean isRemoteSource(String apiUrl) {
+        return apiUrl != null && (apiUrl.startsWith("http://") || apiUrl.startsWith("https://"));
     }
 
     /** 本机文件源地址 → 真实路径(与 {@code RemoteServer} 的 `/file/` 同一映射);非本机形态或解析不出返回 null */
