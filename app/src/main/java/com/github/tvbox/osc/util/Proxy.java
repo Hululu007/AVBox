@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -212,7 +213,7 @@ public class Proxy {
         return lower.endsWith(".m3u8") || lower.endsWith(".m3u");
     }
 
-    private static String joinUrl(String base, String url, String type, Map<String, String> params) {
+    static String joinUrl(String base, String url, String type, Map<String, String> params) {
         if (base == null) base = "";
         if (url == null) url = "";
         try {
@@ -233,7 +234,19 @@ public class Proxy {
             }
         } catch (Exception e) {
             e.printStackTrace();
-            return null;
+            // 野站分片常带未编码非法字符(空格/CJK)导致 URI 解析失败:绝不能返回 null —— 字面量 null 会写进播放列表
+            return fallbackUrl(url, type, params);
+        }
+    }
+
+    /** URI 解析失败时的兜底:绝对地址按原样编码仍走代理(保留防盗链头),其余原样返回 */
+    private static String fallbackUrl(String url, String type, Map<String, String> params) {
+        if (!url.startsWith("http://") && !url.startsWith("https://")) return url;
+        try {
+            return ControlManager.get().getAddress(true) + "proxy?go=live&type=" + type + headerQuery(params) + "&url=" + URLEncoder.encode(url, "UTF-8");
+        } catch (Exception e) {
+            SpiderDebug.log(e);
+            return url;
         }
     }
 
@@ -314,10 +327,23 @@ public class Proxy {
                 .build();
 
         try (Response response = client.newCall(request).execute()) {
-            if (response.isRedirect()) { // 判断是否为重定向
-                return response.header("Location"); // 获取重定向后的地址
+            if (response.isRedirect()) {
+                String resolved = resolveRedirectLocation(response.request().url(), response.header("Location"));
+                if (resolved != null) return resolved;
             }
-            return url; // 如果没有重定向，返回原 URL
+            return url;
+        }
+    }
+
+    /** Location 允许相对地址(RFC 7231),必须按请求 URL 解析;缺失或非法时返回 null,由调用方回落原 URL */
+    static String resolveRedirectLocation(HttpUrl requestUrl, String location) {
+        if (requestUrl == null || location == null || location.length() == 0) return null;
+        try {
+            HttpUrl resolved = requestUrl.resolve(location);
+            return resolved != null ? resolved.toString() : null;
+        } catch (Exception e) {
+            SpiderDebug.log(e);
+            return null;
         }
     }
 

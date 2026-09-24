@@ -425,12 +425,22 @@ public class DanmakuApi {
         name = Trans.t2s(name == null ? "" : name);
         episode = Trans.t2s(episode == null ? "" : episode);
         if (hasPlaceholder(apiUrl)) {
-            return OkHttp.newCall(apiUrl.replace("{name}", name).replace("{episode}", episode), TAG);
+            return OkHttp.newCall(fillPlaceholders(apiUrl, name, episode), TAG);
         }
         ArrayMap<String, String> params = new ArrayMap<>();
         params.put("name", name);
         params.put("episode", episode);
         return OkHttp.newCall(apiUrl, OkHttp.toBody(params), TAG);
+    }
+
+    /** 占位符替换前必须编码:剧名里的 & 会被当成额外参数、# 之后整段变 fragment */
+    static String fillPlaceholders(String apiUrl, String name, String episode) {
+        return apiUrl.replace("{name}", encodePlaceholder(name)).replace("{episode}", encodePlaceholder(episode));
+    }
+
+    /** 占位符可能落在 path 上:空格编成 %20(+ 在 path 里是字面量;在 query 里两种写法都表示空格) */
+    private static String encodePlaceholder(String text) {
+        return encode(text).replace("+", "%20");
     }
 
     private static String getApiUrl() {

@@ -122,6 +122,7 @@
     <!-- 通用 -->
     <string name="common_back">返回</string>
     <string name="common_not_set">未设置</string>
+    <string name="common_set">已设置</string>
     <string name="common_vod">点播</string>
     <string name="common_live">直播</string>
     <string name="common_off">关闭</string>

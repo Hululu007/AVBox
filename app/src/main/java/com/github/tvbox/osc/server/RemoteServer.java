@@ -428,12 +428,13 @@ public class RemoteServer extends NanoHTTPD {
         return info.toString();
     }
 
-    /** 把 DoH 解析结果编码为合法的 DNS 应答报文(单条 question + 全部 A/AAAA 答案) */
-    private static byte[] buildDnsResponse(String hostname, java.util.List<InetAddress> addresses) {
-        boolean ipv6 = false;
+    /** 把 DoH 解析结果编码为合法的 DNS 应答报文(单条 question + 每条地址按自身地址族写 TYPE/RDLENGTH) */
+    static byte[] buildDnsResponse(String hostname, java.util.List<InetAddress> addresses) {
+        // 客户端只给 name、拿不到它请求的 QTYPE:非纯 IPv6(含无地址的 SERVFAIL)一律按 A 标
+        boolean ipv6Only = !addresses.isEmpty();
         for (InetAddress address : addresses) {
-            if (address instanceof Inet6Address) {
-                ipv6 = true;
+            if (!(address instanceof Inet6Address)) {
+                ipv6Only = false;
                 break;
             }
         }
@@ -452,18 +453,18 @@ public class RemoteServer extends NanoHTTPD {
             buffer.write(raw);
         }
         buffer.writeByte(0); // 名字结束
-        buffer.writeByte(ipv6 ? 0x00 : 0x01);
-        buffer.writeByte(0x1c);
+        buffer.writeShort(ipv6Only ? 0x001c : 0x0001); // QTYPE: A / AAAA
         buffer.writeShort(1); // CLASS_IN
         for (InetAddress address : addresses) {
+            boolean ipv6 = address instanceof Inet6Address;
+            byte[] raw = address.getAddress();
             buffer.writeByte(0xc0);
             buffer.writeByte(0x0c); // 名字指针 → 指向 question 中的名字
-            buffer.writeByte(0x00);
-            buffer.writeByte(0x1c); // TYPE: AAAA(6,16 字节)
+            buffer.writeShort(ipv6 ? 0x001c : 0x0001); // TYPE: A / AAAA
             buffer.writeShort(1); // CLASS_IN
             buffer.writeInt(60); // TTL 60s
-            buffer.writeShort(16);
-            buffer.write(address.getAddress());
+            buffer.writeShort(raw.length); // RDLENGTH 必须等于实际写入的地址字节数
+            buffer.write(raw);
         }
         return buffer.readByteString().toByteArray();
     }

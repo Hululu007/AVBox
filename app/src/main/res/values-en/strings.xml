@@ -122,6 +122,7 @@
     <!-- Common -->
     <string name="common_back">Back</string>
     <string name="common_not_set">Not set</string>
+    <string name="common_set">Set</string>
     <string name="common_vod">VOD</string>
     <string name="common_live">Live</string>
     <string name="common_off">Off</string>

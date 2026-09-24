@@ -356,8 +356,9 @@ public class OkGoHelper {
         }
     }
 
-    static OkHttpClient defaultClient = null;
-    static OkHttpClient noRedirectClient = null;
+    // 爬虫/JS 请求在后台线程读,init/reloadDns 在主线程写
+    static volatile OkHttpClient defaultClient = null;
+    static volatile OkHttpClient noRedirectClient = null;
 
     public static OkHttpClient getDefaultClient() {
         return defaultClient;
@@ -440,6 +441,8 @@ public class OkGoHelper {
         HttpHeaders.setUserAgent("okhttp/" + OkHttp.VERSION);
 
         OkHttpClient okHttpClient = builder.build();
+        // 与 init 同步:漏掉这行会让每主机并发上限退回默认 5
+        okHttpClient.dispatcher().setMaxRequestsPerHost(10);
         OkGo.getInstance().setOkHttpClient(okHttpClient);
 
         defaultClient = okHttpClient;

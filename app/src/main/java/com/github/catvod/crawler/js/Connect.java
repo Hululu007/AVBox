@@ -14,6 +14,7 @@ import com.whl.quickjs.wrapper.QuickJSContext;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 
 import okhttp3.Call;
 import okhttp3.FormBody;
@@ -32,11 +33,20 @@ public class Connect {
         return to(url, req, "js_okhttp_tag");
     }
 
-    /** BugReview #31:tag 可按爬虫隔离,避免搜索页 stopAll 误杀其他站点在途 JS 请求 */
+    /** tag 按爬虫隔离:避免搜索页 stopAll 误杀其他站点在途 JS 请求 */
     public static Call to(String url, Req req, Object tag) {
-        client = OkGoHelper.getDefaultClient();
+        client = withTimeout(req, req.isRedirect() ? OkGoHelper.getDefaultClient() : OkGoHelper.getNoRedirectClient());
         return client.newCall(getRequest(url, req, Headers.of(req.getHeader()), tag));
-    }    
+    }
+
+    /** OkHttp 超时是 client 级,爬虫的 timeout 只能靠派生 client;不能用 OkHttp.client() —— 它会换成 OkDns,丢掉配置 hosts 映射 */
+    static OkHttpClient withTimeout(Req req, OkHttpClient base) {
+        long timeout = req.getTimeout();
+        // 0 在 OkHttp 里表示"不超时":不采用该语义,非正数一律回落默认值(否则爬虫写错一个 0 就能让请求永不超时)
+        if (timeout <= 0) timeout = OkGoHelper.DEFAULT_MILLISECONDS;
+        if (timeout == OkGoHelper.DEFAULT_MILLISECONDS) return base;
+        return base.newBuilder().connectTimeout(timeout, TimeUnit.MILLISECONDS).readTimeout(timeout, TimeUnit.MILLISECONDS).writeTimeout(timeout, TimeUnit.MILLISECONDS).build();
+    }
 
     public static JSObject success(QuickJSContext ctx, Req req, Response res) {
         try {

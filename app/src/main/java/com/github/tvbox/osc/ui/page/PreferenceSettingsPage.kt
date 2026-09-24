@@ -154,7 +154,8 @@ fun PreferenceSettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel =
                 SettingsCard(SettingsCardPosition.MIDDLE) {
                     SettingsRow(
                         title = stringResource(R.string.settings_danmu_api),
-                        valueText = state.danmuApi.ifEmpty { stringResource(R.string.common_not_set) },
+                        // 不显示接口链接本身:填过什么只有编辑弹窗里可见
+                        valueText = stringResource(if (state.danmuApi.isEmpty()) R.string.common_not_set else R.string.common_set),
                         onClick = { danmuApiDialog = true },
                     )
                 }
