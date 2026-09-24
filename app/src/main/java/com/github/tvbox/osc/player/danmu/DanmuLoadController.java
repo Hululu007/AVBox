@@ -37,6 +37,8 @@ public class DanmuLoadController {
     private int startedSeq = -1;
     private boolean pendingPrepare;
     private boolean temporarilyClosed;
+    /** 加载/错误遮罩在屏:弹幕视图位置在控制器之上(PlayContainer 里 surfaceSlot 的兄弟且在其后),必须收起 */
+    private boolean overlayHidden;
     private LoadCallback loadCallback;
 
     public DanmuLoadController(MyVideoView videoView, PlayerControlApi controller, DanmakuView danmuView) {
@@ -105,10 +107,10 @@ public class DanmuLoadController {
         boolean hasDanmu = !TextUtils.isEmpty(danmuText);
         if (controller != null) controller.setHasDanmu(hasDanmu);
         if (!hasDanmu || !DanmuHelper.isOpen()) {
-            if (danmuView != null) danmuView.setVisibility(View.GONE);
+            setViewVisible(false);
             return;
         }
-        if (danmuView != null) danmuView.setVisibility(View.VISIBLE);
+        setViewVisible(true);
         if (!isVideoReady()) {
             pendingPrepare = true;
             return;
@@ -167,6 +169,33 @@ public class DanmuLoadController {
         pendingPrepare = !TextUtils.isEmpty(danmuText) && DanmuHelper.isOpen();
     }
 
+    /**
+     * 加载/错误遮罩在屏(离屏)时调用:遮罩画在控制器层,而弹幕视图在其之上,不收起就是"黑遮罩上飘弹幕"。
+     */
+    public void setOverlayHidden(boolean hidden) {
+        if (overlayHidden == hidden) return;
+        overlayHidden = hidden;
+        if (hidden) {
+            setViewVisible(false);
+        } else {
+            applyVisibility();
+        }
+    }
+
+    /** 揭开遮罩后按既有规则恢复：有弹幕文本 / 待 prepare / 已 prepare，开关打开且未被临时关闭 */
+    private void applyVisibility() {
+        if (danmuView == null) return;
+        setViewVisible(DanmuHelper.isOpen()
+                && !temporarilyClosed
+                && (!TextUtils.isEmpty(danmuText) || pendingPrepare || danmuView.isPrepared()));
+    }
+
+    /** 弹幕视图可见性的唯一出口：遮罩在屏时一律 GONE（否则遮罩期间任何路径都会把它重新显示出来） */
+    private void setViewVisible(boolean visible) {
+        if (danmuView == null) return;
+        danmuView.setVisibility(visible && !overlayHidden ? View.VISIBLE : View.GONE);
+    }
+
     public void destroy() {
         reset();
         if (executor != null) {
@@ -197,19 +226,19 @@ public class DanmuLoadController {
                     if (videoView != null) videoView.setDanmuView(danmuView);
                     if (danmuCount <= 0) {
                         LOG.e("echo-danmu empty after parse");
-                        danmuView.setVisibility(View.GONE);
+                        setViewVisible(false);
                         notifyLoadFailed(seq);
                         return;
                     }
                     danmuView.prepare(parser, danmakuContext);
                     clearLoadCallback(seq);
-                    danmuView.setVisibility(DanmuHelper.isOpen() ? View.VISIBLE : View.GONE);
+                    setViewVisible(DanmuHelper.isOpen());
                     startIfReady(seq);
                     danmuView.postDelayed(() -> startIfReady(seq), 300);
                     danmuView.postDelayed(() -> startIfReady(seq), 1000);
                 } catch (Throwable th) {
                     LOG.e("echo-danmu prepare error: " + th.getMessage());
-                    danmuView.setVisibility(View.GONE);
+                    setViewVisible(false);
                     notifyLoadFailed(seq);
                 }
             });
@@ -238,7 +267,7 @@ public class DanmuLoadController {
             return;
         }
         long position = videoView.getCurrentPosition();
-        danmuView.setVisibility(View.VISIBLE);
+        setViewVisible(true);
         danmuView.seekTo(position);
         danmuView.start(position);
         startedSeq = seq;
@@ -260,7 +289,7 @@ public class DanmuLoadController {
         } catch (Throwable th) {
             LOG.e("DanmuLoadController", "danmu view release failed", th);
         }
-        danmuView.setVisibility(View.GONE);
+        setViewVisible(false);
     }
 
     private String getSourceSummary(String danmu) {

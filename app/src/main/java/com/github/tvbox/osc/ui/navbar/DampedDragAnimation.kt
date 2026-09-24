@@ -58,7 +58,9 @@ class DampedDragAnimation(
     val scaleY: Float get() = scaleYAnimation.value
     val velocity: Float get() = velocityAnimation.value
 
-    val modifier: Modifier = Modifier.pointerInput(Unit) {
+    // 键必须是 this(实例身份):实例会在槽位数/步长变化时重建;用 Unit 时指针节点不重启,
+    // 手势会一直驱动旧实例(拖动指示器无反应,重启才好)
+    val modifier: Modifier = Modifier.pointerInput(this) {
         inspectDragGestures(
             enabled = enabled,
             onDragStart = { down ->

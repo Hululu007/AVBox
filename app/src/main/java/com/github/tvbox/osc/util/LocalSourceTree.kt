@@ -51,6 +51,12 @@ object LocalSourceTree {
         isPersisted(context, uri) && path.startsWith("$tree/")
     }
 
+    /** 本地服务此刻能否靠已记住的授权目录读到 [path];与 [covers] 不同:会话级授权也算(同 [open] 口径) */
+    fun serves(context: Context, path: String): Boolean = remembered(context).any { text ->
+        val tree = treePath(context, Uri.parse(text)) ?: return@any false
+        relativeUnder(tree, path) != null
+    }
+
     /** 按"外置存储相对路径"从授权目录里打开文件(本地服务用);没有匹配的目录/文件返回 null */
     fun open(context: Context, relativePath: String): InputStream? {
         val target = Environment.getExternalStorageDirectory().absolutePath + "/" + relativePath
@@ -83,17 +89,26 @@ object LocalSourceTree {
         return DocumentsContract.buildDocumentUriUsingTree(tree, documentId)
     }
 
+    /**
+     * 找目录里显示名为 [name] 的子文档 docId。
+     *
+     * 列下标必须现查:provider 可能按自己的列序返回,按下标取会拿错列 ⇒ 名字永远对不上 ⇒ 文件明明在却找不到。
+     */
     private fun findChildId(context: Context, tree: Uri, parentId: String, name: String): String? {
         var cursor: Cursor? = null
         return try {
             val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentId)
-            cursor = context.contentResolver.query(
+            val queried = context.contentResolver.query(
                 children,
                 arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME),
                 null, null, null,
-            )
-            while (cursor != null && cursor.moveToNext()) {
-                if (name == cursor.getString(1)) return cursor.getString(0)
+            ) ?: return null
+            cursor = queried
+            val idIndex = queried.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+            val nameIndex = queried.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+            if (idIndex < 0 || nameIndex < 0) return null
+            while (queried.moveToNext()) {
+                if (name == queried.getString(nameIndex)) return queried.getString(idIndex)
             }
             null
         } catch (ignored: Throwable) {
@@ -107,9 +122,9 @@ object LocalSourceTree {
         }
     }
 
-    /** 目录树 → 真实路径;只在 docId 形如 `primary:<相对路径>` / `XXXX-XXXX:<相对路径>` 时成立 */
+    /** 目录树 → 真实路径;走 [treeDocPath],比文件形态宽 —— 收窄会让用户选对文件夹也被判成"没授权" */
     private fun treePath(context: Context, tree: Uri): String? = try {
-        externalStoragePath(
+        treeDocPath(
             DocumentsContract.getTreeDocumentId(tree),
             Environment.getExternalStorageDirectory().absolutePath,
         )
@@ -123,4 +138,31 @@ object LocalSourceTree {
 internal fun relativeUnder(root: String, path: String): String? {
     if (!path.startsWith("$root/")) return null
     return path.substring(root.length + 1)
+}
+
+/** 目录树 docId → 真实路径:文件形态解析不出的卷根(`primary:` / `XXXX-XXXX:`)、`raw:`、绝对路径都认;认不出返回 null */
+internal fun treeDocPath(docId: String, primaryRoot: String): String? = when {
+    docId.startsWith("raw:") -> docId.substring(4).ifEmpty { null }
+    docId.startsWith("/") -> docId
+    else -> externalStoragePath(docId, primaryRoot) ?: volumeRootPath(docId, primaryRoot)
+}
+
+/** 卷根(冒号后为空):`primary:` → 存储根,`XXXX-XXXX:` → `/storage/<卷名>` */
+private fun volumeRootPath(docId: String, primaryRoot: String): String? {
+    val split = docId.split(":", limit = 2)
+    if (split.size < 2 || split[1].isNotEmpty()) return null
+    return if ("primary".equals(split[0], ignoreCase = true)) primaryRoot else "/storage/${split[0]}"
+}
+
+/**
+ * 该**目录**是否系统永不允许授权(Android 11+ 对 targetSdk≥30 禁用这些目录的 SAF 授权):
+ * 存储根、`Download` 根、`Android/data|obb` 及其子目录、副卷卷根(如 SD 卡)。子目录不受限。
+ *
+ * 用途:失败时给出"把配置挪进自建文件夹"的出路 —— 用户反复"再点一次"永远也不会成。
+ */
+internal fun isUngrantableDir(path: String?, primaryRoot: String): Boolean {
+    val dir = path?.trimEnd('/') ?: return false
+    if (dir == primaryRoot || dir == "$primaryRoot/Download") return true
+    if (dir.startsWith("$primaryRoot/Android/data") || dir.startsWith("$primaryRoot/Android/obb")) return true
+    return dir.startsWith("/storage/") && dir.count { it == '/' } == 2
 }

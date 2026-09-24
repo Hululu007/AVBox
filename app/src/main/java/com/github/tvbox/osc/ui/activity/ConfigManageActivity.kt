@@ -2,7 +2,7 @@ package com.github.tvbox.osc.ui.activity
 
 import android.content.Context
 import android.content.Intent
-import android.widget.Toast
+import android.net.Uri
 import com.github.tvbox.osc.ui.theme.enableTransparentEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.ComposeView
@@ -26,7 +26,7 @@ class ConfigManageActivity : BaseActivity() {
 
     private val localConfigLauncher =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            if (uri != null && handleLocalConfigResult(this, uri)) sourceTreeLauncher.launch(null)
+            if (uri != null && handleLocalConfigResult(this, uri)) settleUnreachableSource(uri)
         }
 
     private val sourceTreeLauncher =
@@ -34,17 +34,23 @@ class ConfigManageActivity : BaseActivity() {
             handleLocalSourceTreeResult(this, uri)
         }
 
+    /** 不预检存储权限:能不能直引由"应用此刻是否真读得到"决定,预检会让读得到的设备白跳一次设置页 */
     fun launchLocalConfig(onResult: (api: String) -> Unit) {
+        startLocalConfig(localConfigLauncher) { api -> onResult(api) }
+    }
+
+    /**
+     * 读不到原文件:先争一次「所有文件访问」(只有它能救存储根 / Download 根这类落点),
+     * 拿到就重试导入;拿不到则用上一次已挂起的结果接着要目录授权。
+     */
+    private fun settleUnreachableSource(uri: Uri) {
         if (PermissionHelper.isStorageGranted(this)) {
-            startLocalConfig(localConfigLauncher) { api -> onResult(api) }
+            sourceTreeLauncher.launch(null)
             return
         }
         PermissionHelper.requestStorage(this) { granted, _ ->
-            if (!granted.isNullOrEmpty()) {
-                startLocalConfig(localConfigLauncher) { api -> onResult(api) }
-            } else {
-                Toast.makeText(this, getString(R.string.toast_permission_required), Toast.LENGTH_SHORT).show()
-            }
+            if (granted.isNullOrEmpty()) sourceTreeLauncher.launch(null)
+            else if (handleLocalConfigResult(this, uri)) sourceTreeLauncher.launch(null)
         }
     }
 

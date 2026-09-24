@@ -406,6 +406,8 @@
     <string name="settings_gesture_disable_subtitle">开启后将禁用手势控制亮度和音量</string>
     <string name="settings_nav_animation_disable">禁用导航动画</string>
     <string name="settings_nav_animation_disable_subtitle">开启后将禁用底部导航的侧滑动画</string>
+    <string name="settings_nav_live_hidden">导航栏隐藏直播</string>
+    <string name="settings_nav_live_hidden_subtitle">开启后导航栏不再显示直播入口</string>
     <string name="settings_auto_switch_line">自动换线</string>
     <string name="settings_m3u8_purify">M3U8 净化</string>
     <string name="settings_danmu_switch">弹幕开关</string>
@@ -493,6 +495,7 @@
     <string name="toast_local_missing_files_hint">还有 %1$d 个同目录文件没搬过来,请选择该配置所在的文件夹</string>
     <string name="toast_local_missing_files_all_files">还有 %1$d 个同目录文件没搬过来,请选择该配置所在的文件夹(开启「所有文件访问」后可直接引用原目录,不必搬文件)</string>
     <string name="toast_local_tree_denied">没拿到该配置所在文件夹的授权,已取消导入(可再点一次重试)</string>
+    <string name="toast_local_tree_forbidden">该配置在系统不允许授权的目录里(存储根/下载/Android),请把它放进自建文件夹(如 手机存储/AVBox/)后再导入</string>
     <string name="toast_local_grant_not_persisted">目录授权没能长期保留,重启后该源可能失效(建议开启「所有文件访问」)</string>
     <string name="toast_local_refs_missing">还有 %1$d 个同目录引用的文件没搬过来,该源可能不可用(可重新导入)</string>
     <string name="player_channel_mono">单声道</string>

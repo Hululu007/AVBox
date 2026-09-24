@@ -406,6 +406,8 @@
     <string name="settings_gesture_disable_subtitle">Disables brightness and volume gestures</string>
     <string name="settings_nav_animation_disable">Disable Navigation Animation</string>
     <string name="settings_nav_animation_disable_subtitle">Disables the bottom navigation slide animation</string>
+    <string name="settings_nav_live_hidden">Hide Live in Navigation Bar</string>
+    <string name="settings_nav_live_hidden_subtitle">Hides the Live entry in the navigation bar</string>
     <string name="settings_auto_switch_line">Auto Switch Line</string>
     <string name="settings_m3u8_purify">M3U8 Purify</string>
     <string name="settings_danmu_switch">Danmaku Switch</string>
@@ -493,6 +495,7 @@
     <string name="toast_local_missing_files_hint">%1$d files in the same folder have not been copied. Select the folder containing this config</string>
     <string name="toast_local_missing_files_all_files">%1$d files in the same folder have not been copied. Select the folder containing this config (with “All files access”, the original folder can be referenced directly)</string>
     <string name="toast_local_tree_denied">Folder access for this config was not granted, import cancelled (tap again to retry)</string>
+    <string name="toast_local_tree_forbidden">This config sits in a folder the system never allows granting (storage root / Download / Android). Move it into a folder you created (e.g. Phone storage/AVBox/) and import again.</string>
     <string name="toast_local_grant_not_persisted">Folder access could not be kept permanently; this source may stop working after a restart (enabling “All files access” is recommended)</string>
     <string name="toast_local_refs_missing">%1$d referenced files in the same folder have not been copied, so this source may not work (re-import to fix)</string>
     <string name="player_channel_mono">Mono</string>

@@ -178,8 +178,12 @@ private fun MainContent() {
     var navAnimationEnabled by remember {
         mutableStateOf(!KV.get(HawkConfig.NAV_ANIMATION_DISABLED, false))
     }
+    var navLiveHidden by remember {
+        mutableStateOf(KV.get(HawkConfig.NAV_LIVE_HIDDEN, false))
+    }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         navAnimationEnabled = !KV.get(HawkConfig.NAV_ANIMATION_DISABLED, false)
+        navLiveHidden = KV.get(HawkConfig.NAV_LIVE_HIDDEN, false)
     }
 
     val selectTab: (Int) -> Unit = { index ->
@@ -263,7 +267,7 @@ private fun MainContent() {
                         ) {
                             AppTab.entries.forEachIndexed { index, tab ->
                                 // 动作槽插在中间,外观就是普通未选中项(不占 pager 页,故恒 selected = false)
-                                if (index == NavMetrics.actionSlotFor(AppTab.entries.size)) {
+                                if (!navLiveHidden && index == NavMetrics.actionSlotFor(AppTab.entries.size)) {
                                     ShortNavigationBarItem(
                                         selected = false,
                                         onClick = openLive,
@@ -387,7 +391,7 @@ private fun MainContent() {
                         tabs = glassTabs,
                         config = liquidGlassConfig,
                         interactive = { true },
-                        actionItem = liveActionItem,
+                        actionItem = if (navLiveHidden) null else liveActionItem,
                         onActionClick = openLive,
                     )
                 }
@@ -402,7 +406,7 @@ private fun MainContent() {
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                 ) {
                     AppTab.entries.forEachIndexed { index, tab ->
-                        if (index == NavMetrics.actionSlotFor(AppTab.entries.size)) {
+                        if (!navLiveHidden && index == NavMetrics.actionSlotFor(AppTab.entries.size)) {
                             NavigationRailItem(
                                 selected = false,
                                 onClick = openLive,

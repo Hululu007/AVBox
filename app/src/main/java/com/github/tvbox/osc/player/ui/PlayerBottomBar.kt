@@ -44,7 +44,6 @@ import com.github.tvbox.osc.R
 import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.player.state.PlayerActions
 import com.github.tvbox.osc.player.state.PlayerUiState
-import xyz.doikki.videoplayer.player.VideoView
 import xyz.doikki.videoplayer.util.PlayerUtils.stringForTime
 
 /** SeekBar max 照搬旧布局 android:max="1000" */
@@ -254,14 +253,11 @@ private fun CurrentTimeText(state: PlayerUiState, modifier: Modifier = Modifier)
  * 预览态（竖屏详情页）进度行左侧的播放/暂停钮（2026-09-13 用户要求）：
  * - 触摸盒 40dp、图形 22dp、白色 90% —— 与详情页右下角全屏入口完全同款（该入口 = 40dp 盒 + 9dp padding + 90% 白 tint），
  *   二者分列进度条左右两端且同一水平中心线；左侧边距与全屏入口的右侧边距一致（都取 `playerEdgePadding()`）。
- * - 图标状态判定与中央控制组一致：`BUFFERING` / `BUFFERED` 也算“播放中”——dkplayer 缓冲结束停在
- *   `STATE_BUFFERED` 不回 `STATE_PLAYING`，只判 `STATE_PLAYING` 会让图标反显（实际在播却显示“播放”）。
+ * - 图标状态判定与中央控制组统一走 `PlayerUiState.playbackActive`。
  */
 @Composable
 private fun PreviewPlayPauseButton(state: PlayerUiState, actions: PlayerActions) {
-    val playing = state.playState == VideoView.STATE_PLAYING ||
-            state.playState == VideoView.STATE_BUFFERING ||
-            state.playState == VideoView.STATE_BUFFERED
+    val playing = state.playbackActive
     Box(
         modifier = Modifier
             .size(PreviewPlayPauseBox)

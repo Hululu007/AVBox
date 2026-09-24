@@ -173,18 +173,40 @@ public class OkGoHelper {
         return "";
     }
 
-    public static void setDnsList() {
+    public static void applyDohConfig(String dohJson) {
+        String pinned = getDohUrl(KV.get(HawkConfig.DOH_URL, 0));
+        KV.put(HawkConfig.DOH_JSON, dohJson);
+        JsonArray merged = getDohConfigArray();
+
         List<String> list = new ArrayList<>();
-        JsonArray jsonArray = getDohConfigArray();
         list.add("关闭"); // i18n: keep(DNS 选项索引锚点,显示由设置页映射资源)
-        for (int i = 0; i < jsonArray.size(); i++) {
-            JsonObject dnsConfig = jsonArray.get(i).getAsJsonObject();
+        for (int i = 0; i < merged.size(); i++) {
+            JsonObject dnsConfig = merged.get(i).getAsJsonObject();
             String name = dnsConfig.has("name") ? dnsConfig.get("name").getAsString() : "Unknown Name";
             list.add(name);
         }
         dnsHttpsList = list;
-        if(KV.get(HawkConfig.DOH_URL, 0)+1>list.size())KV.put(HawkConfig.DOH_URL, 0);
+
+        int index = indexOfDohUrl(merged, pinned);
+        if (index >= 0) {
+            KV.put(HawkConfig.DOH_URL, index + 1);
+        } else if (KV.get(HawkConfig.DOH_URL, 0) > merged.size()) {
+            KV.put(HawkConfig.DOH_URL, 0);
+        }
         refreshHosts();
+    }
+
+    static int indexOfDohUrl(JsonArray merged, String url) {
+        if (merged == null || url == null || url.isEmpty()) return -1;
+        for (int i = 0; i < merged.size(); i++) {
+            JsonElement element = merged.get(i);
+            if (element == null || !element.isJsonObject()) continue;
+            JsonObject item = element.getAsJsonObject();
+            String key = item.has("url") ? item.get("url").getAsString()
+                    : (item.has("name") ? item.get("name").getAsString() : null);
+            if (url.equals(key)) return i;
+        }
+        return -1;
     }
 
     /** 刷新 hosts 快照:CustomDns.lookup 只在 myHosts 为 null(首次刷新前)时才回落读 ApiConfig,写完必须显式刷新 */

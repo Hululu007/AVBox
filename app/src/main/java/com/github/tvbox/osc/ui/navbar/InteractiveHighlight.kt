@@ -100,8 +100,9 @@ class InteractiveHighlight(
         }
     }
 
+    // 键必须是 this(实例身份):同 DampedDragAnimation.modifier,实例重建后手势必须跟着重启
     val gestureModifier: Modifier =
-        Modifier.pointerInput(animationScope) {
+        Modifier.pointerInput(this) {
             inspectDragGestures(
                 enabled = enabled,
                 onDragStart = { down ->

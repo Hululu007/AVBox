@@ -406,6 +406,8 @@
     <string name="settings_gesture_disable_subtitle">開啟後將停用手勢控制亮度和音量</string>
     <string name="settings_nav_animation_disable">停用導覽動畫</string>
     <string name="settings_nav_animation_disable_subtitle">開啟後將停用底部導覽的側滑動畫</string>
+    <string name="settings_nav_live_hidden">導覽列隱藏直播</string>
+    <string name="settings_nav_live_hidden_subtitle">開啟後導覽列不再顯示直播入口</string>
     <string name="settings_auto_switch_line">自動換線</string>
     <string name="settings_m3u8_purify">M3U8 淨化</string>
     <string name="settings_danmu_switch">彈幕開關</string>
@@ -493,6 +495,7 @@
     <string name="toast_local_missing_files_hint">還有 %1$d 個同目錄檔案沒搬過來，請選擇該設定所在的資料夾</string>
     <string name="toast_local_missing_files_all_files">還有 %1$d 個同目錄檔案沒搬過來，請選擇該設定所在的資料夾（開啟「所有檔案存取」後可直接引用原目錄，不必搬檔案）</string>
     <string name="toast_local_tree_denied">沒取得該設定所在資料夾的授權，已取消匯入（可再點一次重試）</string>
+    <string name="toast_local_tree_forbidden">該設定在系統不允許授權的目錄裡（儲存根／下載／Android），請將它放進自建資料夾（例如 手機儲存/AVBox/）後再匯入</string>
     <string name="toast_local_grant_not_persisted">目錄授權沒能長期保留，重新啟動後該源可能失效（建議開啟「所有檔案存取」）</string>
     <string name="toast_local_refs_missing">還有 %1$d 個同目錄引用的檔案沒搬過來，該源可能無法使用（可重新匯入）</string>
     <string name="player_channel_mono">單聲道</string>

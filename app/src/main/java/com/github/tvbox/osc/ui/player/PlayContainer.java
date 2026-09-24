@@ -92,6 +92,9 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
     private Activity mActivity;
     private final Context mContext;
 
+    /** 存入字段而不是每次写 lambda:hostDestroy 要按"是不是自己"摘监听 */
+    private final TipStateListener tipStateListener = this::onTipStateChanged;
+
     public PlayContainer(@NonNull Activity activity) {
         super(activity);
         mActivity = activity;
@@ -102,8 +105,24 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
         LayoutInflater.from(activity).inflate(R.layout.view_play_container, this, true);
         PlayerTipBridge.hide();
         init();
+        // 提示层(加载/错误遮罩)画在控制器 Compose 层:状态要桥进控制层,并收起位置在控制器之上的弹幕视图。
+        // 挂监听在 init() 之后(mController/danmuLoadController 已就位)与 hide() 之后(免旧容器残留回调)
+        PlayerTipBridge.setTipStateListener(tipStateListener);
         scheduler.setViewBridge(viewBridge);
         if (engine != null) engine.attach(this);
+    }
+
+    /** 提示层状态变化:桥入控制层状态(遮罩在视频面之上、顶栏/底栏之下),并让弹幕视图让位 */
+    private void onTipStateChanged(PlayerTipState tip) {
+        if (mHandler == null) return;
+        boolean showing = tip.getLoading() || tip.getErr();
+        // 提示可能由调度/取流线程写入(setTip 会从解析链路直接调用),控制层状态与弹幕视图可见性统一回主线程
+        mHandler.post(() -> {
+            if (mController != null) {
+                mController.getUiState().applyTip(tip.getMsg(), tip.getLoading(), tip.getErr());
+            }
+            if (danmuLoadController != null) danmuLoadController.setOverlayHidden(showing);
+        });
     }
 
     public PlaybackViewBridge viewBridge() {
@@ -444,8 +463,9 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
 
     public void hostPause() {
         if (mVideoView != null && !exitingPreview && !scheduler.isConfirmedAudioOnly()) {
+            // 传 isPlaying() 而非恒 true:标记语义 = 回前台会续播(与 hostResume 同一判据),手动暂停后离开须为 false
             lifecyclePaused = mVideoView.isPlaying();
-            if (mController != null) mController.setLifecyclePaused(true);
+            if (mController != null) mController.setLifecyclePaused(lifecyclePaused);
             mVideoView.pause();
         }
     }
@@ -461,6 +481,7 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
 
     public void hostDestroy() {
         LOG.i("echo-music destroy: hostDestroy enter");
+        PlayerTipBridge.clearTipStateListener(tipStateListener);
         if (engine != null && !handedOver) engine.detach(this);
         cancelPreloadToast();
         if (EventBus.getDefault().isRegistered(this)) {

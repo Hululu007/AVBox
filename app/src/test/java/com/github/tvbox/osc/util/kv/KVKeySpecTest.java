@@ -69,6 +69,7 @@ public class KVKeySpecTest {
     public void primitiveKeys_resolveToTheirBoxedTypes() {
         assertEquals(TypeToken.get(Integer.class).getType(), spec.typeOf("play_type"));
         assertEquals(TypeToken.get(Boolean.class).getType(), spec.typeOf("incognito"));
+        assertEquals(TypeToken.get(Boolean.class).getType(), spec.typeOf("nav_live_hidden"));
         assertEquals(TypeToken.get(String.class).getType(), spec.typeOf("api_url"));
     }
 

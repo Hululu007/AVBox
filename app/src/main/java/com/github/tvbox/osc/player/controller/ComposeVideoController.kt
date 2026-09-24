@@ -298,9 +298,12 @@ class ComposeVideoController @JvmOverloads constructor(
                 startProgress()
             }
             VideoView.STATE_PAUSED -> {
-                state.topLeftVisible = false
-                state.netSpeedTopRightVisible = false
-                if (state.controlsVisible) hideBottom()
+                // 生命周期暂停保留界面(退后台那一帧进任务快照):不收菜单、不清顶栏
+                if (!state.lifecyclePaused) {
+                    state.topLeftVisible = false
+                    state.netSpeedTopRightVisible = false
+                    if (state.controlsVisible) hideBottom()
+                }
                 savePlaybackProgress(notifyHistory = true)
             }
             VideoView.STATE_ERROR -> listener?.errReplay()
@@ -778,6 +781,8 @@ class ComposeVideoController @JvmOverloads constructor(
 
     override fun setLifecyclePaused(paused: Boolean) {
         state.lifecyclePaused = paused
+        // 退后台保留控件(任务快照 = 离开时的样子):冻结自动收起,否则计时会在后台把控件收掉
+        if (paused) uiHandler.removeCallbacks(idleHideRunnable) else keepControlsAlive()
     }
 
     override fun resetSpeed() {
@@ -850,6 +855,9 @@ class ComposeVideoController @JvmOverloads constructor(
     override fun onPlayPauseClicked() {
         // 与其余按钮一致 500ms 防抖：触摸误双击＝两次 togglePlay 净零
         if (!fastClickAllowed("play_pause")) return
+        // 遮罩在屏且不在播放态时短路:内核里可能还挂着上一次会话的地址,start() 会按旧地址起播
+        // (错误态同样是 IDLE,故判遮罩而非只判 loading)
+        if (state.tipVisible && !isInPlaybackState()) return
         mControlWrapper?.togglePlay()
         keepControlsAlive()
     }

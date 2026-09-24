@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 2026-09-11:play_loading/play_load_error/play_load_tip 三个提示 View 已移除,
-     提示改由 DetailScreen 的 Compose 覆盖层绘制(状态走 PlayerTipBridge)。
+     提示改由 Compose 覆盖层绘制(状态走 PlayerTipBridge)。2026-09-24 起该覆盖层画在控制器层
+     (PlayerLayers.PlayerTipLayer,遮罩在视频面之上、顶栏/底栏之下),不再由详情页绘制。
+     ⚠️ 弹幕视图排在 surfaceSlot 之后(位置在控制器之上),遮罩期间须由 DanmuLoadController 收起。
      2026-09-14(P2 播放服务化):MyVideoView 改为运行时加入的 surfaceSlot —— 旧路径由页面 new MyVideoView
      放入槽位;服务模式由 PlaybackEngine 把引擎侧渲染容器(mPlayerContainer)搬进槽位。 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"

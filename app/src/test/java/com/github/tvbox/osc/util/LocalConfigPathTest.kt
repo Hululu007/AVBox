@@ -61,6 +61,51 @@ class LocalConfigPathTest {
         assertNull(externalStoragePath("nodocid", root))
     }
 
+    // ---- 目录树 docId 比文件 docId 宽:卷根、`raw:`、绝对路径形态都必须映射出路径 ----
+
+    @Test
+    fun treeDocPathAcceptsVolumeRoots() {
+        // 选中整个卷(冒号后为空):只按文件形态解析会返回 null ⇒ 用户选对了文件夹也被判成"没拿到授权"
+        assertEquals(root, treeDocPath("primary:", root))
+        assertEquals("/storage/ABCD-1234", treeDocPath("ABCD-1234:", root))
+        // 有相对部分时与文件形态同解
+        assertEquals("$root/Download", treeDocPath("primary:Download", root))
+        assertEquals("/storage/ABCD-1234/TVBox", treeDocPath("ABCD-1234:TVBox", root))
+    }
+
+    @Test
+    fun treeDocPathAcceptsNonVolumeDocIds() {
+        assertEquals("/storage/emulated/0/Download", treeDocPath("raw:/storage/emulated/0/Download", root))
+        assertEquals("$root/Download", treeDocPath("$root/Download", root))
+        // 认不出的形态仍返回 null:映射不出本地路径的 provider(网盘)不该被记进授权列表
+        assertNull(treeDocPath("nodocid", root))
+        assertNull(treeDocPath("raw:", root))
+        assertNull(treeDocPath("images/media/1", root))
+    }
+
+    // ---- 系统永不允许授权的目录:判错的后果是让用户反复去点一个点了也没用的选择器 ----
+
+    @Test
+    fun ungrantableDirCoversRootsAndAndroid() {
+        assertTrue(isUngrantableDir(root, root))
+        assertTrue(isUngrantableDir("$root/", root))
+        assertTrue(isUngrantableDir("$root/Download", root))
+        assertTrue(isUngrantableDir("$root/Android/data", root))
+        assertTrue(isUngrantableDir("$root/Android/data/com.github.avbox.osc/files", root))
+        assertTrue(isUngrantableDir("$root/Android/obb", root))
+        // 副卷卷根(如 SD 卡)同样不能授权
+        assertTrue(isUngrantableDir("/storage/ABCD-1234", root))
+    }
+
+    @Test
+    fun ungrantableDirLeavesSubfoldersAlone() {
+        assertFalse(isUngrantableDir("$root/Download/sub", root))
+        assertFalse(isUngrantableDir("$root/Android", root))
+        assertFalse(isUngrantableDir("/storage/ABCD-1234/TVBox", root))
+        assertFalse(isUngrantableDir("$root/影视备份/摸鱼本地", root))
+        assertFalse(isUngrantableDir(null, root))
+    }
+
     // ---- downloads provider(选择器的「下载」分类;Android 10+ 主流形态是 msf:) ----
 
     @Test

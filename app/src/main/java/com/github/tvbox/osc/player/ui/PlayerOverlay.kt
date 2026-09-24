@@ -44,14 +44,15 @@ import com.github.tvbox.osc.player.state.PlayerUiState
 import com.github.tvbox.osc.ui.components.ScallopShape
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
-import xyz.doikki.videoplayer.player.VideoView
 
 /**
  * 播放器控制层根 Composable（Compose 化改造 §3.3 方案 C1）。
  * 层级顺序照搬 player_vod_control_view.xml 的 z-order（自底向上）：
- * 顶部栏 → 底部菜单 → 暂停浮层 → 亮度/音量提示 → seek 提示 → loading → 中央网速 →
+ * 加载/错误遮罩 → 顶部栏 → 底部菜单 → 暂停浮层 → 亮度/音量提示 → seek 提示 → loading → 中央网速 →
  * 返回键 → 锁屏 → 长按倍速。原生字幕视图是控制器的直接子 View（位于 Compose 层之下），
  * 与旧布局一致。
+ *
+ * ⚠️ 遮罩（[PlayerTipLayer]）必须留在最底、顶栏/底栏之前，否则加载期唤不出控件（见该层注释）。
  */
 @Composable
 fun PlayerOverlay(
@@ -59,15 +60,16 @@ fun PlayerOverlay(
     actions: PlayerActions,
 ) {
     Box(Modifier.fillMaxSize()) {
+        PlayerTipLayer(state)
         PlayerTopBar(state, actions)
         // 旧 XML bottom_container 为 layout_gravity="bottom"（BoxScope 内显式贴底）
         PlayerBottomBar(state, actions, Modifier.align(Alignment.BottomCenter))
-        // 中央控制组（图二样式）：点击显示底栏时出现 上一集/播放暂停/下一集
         PlayerCenterControls(state, actions, Modifier.align(Alignment.Center))
         PlayerPauseLayer(state, actions)
         PlayerSlideHint(state)
         PlayerSeekHint(state)
-        PlayerLoadingLayer(state)
+        // 遮罩自带指示器：同时在屏会叠出两层转圈（遮罩的居中指示器 + 缓冲转圈），故遮罩在屏时不画
+        if (!state.tipVisible) PlayerLoadingLayer(state)
         PlayerNetSpeedCenter(state)
         PlayerLockButton(state, actions)
         PlayerSpeedBoostHint(state)
@@ -194,17 +196,12 @@ internal fun playerEdgePadding(): Dp =
  * 中央控制组（图二样式）：显示底栏时屏幕中央出现三个半透明圆形按钮：
  * 左＝上一集、中＝播放/暂停（图标随播放态切换）、右＝下一集。
  * 触摸点按；锁定时不显示。固定尺寸（等比例缩放已回退）。
- * loading（PREPARING/BUFFERING）时中央让位给转圈；预览态（竖屏详情页）同样显示（可播控/切集）。
+ * 预览态（竖屏详情页）同样显示；加载/解析期隐藏。
  */
 @Composable
 private fun PlayerCenterControls(state: PlayerUiState, actions: PlayerActions, modifier: Modifier = Modifier) {
-    // 预览态（竖屏详情页）也可用：单击唤出后中央三键可播控/切集
-    if (!state.controlsVisible || state.locked || state.loadingVisible) return
-    // BUFFERING/BUFFERED 也算“播放中”：dkplayer 缓冲结束后停在 STATE_BUFFERED 不回 STATE_PLAYING，
-    // 只判 STATE_PLAYING 会导致每次卡缓冲后图标长期反显（实际在播却显示“播放”，点下是暂停）
-    val playing = state.playState == VideoView.STATE_PLAYING ||
-            state.playState == VideoView.STATE_BUFFERING ||
-            state.playState == VideoView.STATE_BUFFERED
+    if (!state.centerControlsVisible) return
+    val playing = state.playbackActive
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(28.dp),

@@ -23,6 +23,8 @@
     <string name="theme_nav_bar">底部導航</string>
     <string name="settings_nav_animation_disable">禁用導航動畫</string>
     <string name="settings_nav_animation_disable_subtitle">開啟後將禁用底部導航的側滑動畫</string>
+    <string name="settings_nav_live_hidden">導航欄隱藏直播</string>
+    <string name="settings_nav_live_hidden_subtitle">開啟後導航欄不再顯示直播入口</string>
     <string name="theme_app_controls">應用控件</string>
     <string name="settings_music_page_subtitle">識別為純音頻時自動開啟</string>
     <string name="player_menu_video_track">視頻軌</string>
@@ -51,6 +53,7 @@
     <string name="toast_local_missing_files_hint">還有 %1$d 個同目錄檔案沒搬過來，請選擇該設定所在的文件夾</string>
     <string name="toast_local_missing_files_all_files">還有 %1$d 個同目錄檔案沒搬過來，請選擇該設定所在的文件夾（開啟「所有檔案存取」後可直接引用原目錄，不必搬檔案）</string>
     <string name="toast_local_tree_denied">沒取得該設定所在文件夾的授權，已取消匯入（可再點一次重試）</string>
+    <string name="toast_local_tree_forbidden">該設定在系統不允許授權的目錄裡（儲存根／下載／Android），請將它放進自建文件夾（例如 手機儲存/AVBox/）後再匯入</string>
     <string name="config_pick_local">從本地選擇</string>
     <string name="search_history">搜尋記錄</string>
     <string name="search_history_clear">清除搜尋記錄</string>

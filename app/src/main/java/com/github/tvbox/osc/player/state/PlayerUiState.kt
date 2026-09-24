@@ -108,6 +108,20 @@ class PlayerUiState {
     /** 尺寸/倍速/播放器选择弹窗（阶段 7：替代 View 版 SelectDialog），null = 不显示 */
     var selectDialog: SelectDialogState? by mutableStateOf(null)
 
+    // —— 加载/错误遮罩（由 PlayerTipBridge 经页面桥入，见 PlayContainer.onTipStateChanged） ——
+    var tipMsg: String by mutableStateOf("")
+    var tipLoading: Boolean by mutableStateOf(false)
+    var tipErr: Boolean by mutableStateOf(false)
+
+    /** 遮罩是否在屏：盖住视频面（含上一部/上一集的残留画面），但**不**盖顶栏与底栏 */
+    val tipVisible: Boolean get() = tipLoading || tipErr
+
+    fun applyTip(msg: String, loading: Boolean, err: Boolean) {
+        tipMsg = msg
+        tipLoading = loading
+        tipErr = err
+    }
+
     // —— Step 6 对话框 sheet 化（替代 View 版 DanmuSetting/SearchDanmu/Subtitle/SearchSubtitle/Cast/Episode Dialog） ——
     /** 弹幕设置面板；内部配置直接读写 DanmuHelper + EventBus，无需业务回调 */
     var danmuSettingSheet: DanmuSettingSheetState? by mutableStateOf(null)
@@ -136,8 +150,15 @@ class PlayerUiState {
             return (vod.seriesMap?.get(flag)?.size ?: 0) > 1
         }
 
-    /** 退后台暂停标记(PlayerControlApi.setLifecyclePaused):此暂停不画中央播放键 */
+    /** 退后台暂停标记:语义 = 回前台会续播(见 PlayerControlApi.setLifecyclePaused),此时不画暂停浮层 */
     var lifecyclePaused: Boolean by mutableStateOf(false)
+
+    /** 控制层按“播放中”渲染(中央键/预览态键):BUFFERED 不回 PLAYING(dkplayer),只判 PLAYING 会图标反显;生命周期暂停回前台必续播 */
+    val playbackActive: Boolean
+        get() = lifecyclePaused ||
+                playState == VideoView.STATE_PLAYING ||
+                playState == VideoView.STATE_BUFFERING ||
+                playState == VideoView.STATE_BUFFERED
 
     /** 暂停浮层可见:暂停中且底栏已收起;生命周期暂停不算(避免任务快照拍到"已暂停"假象) */
     val pauseOverlayVisible: Boolean
@@ -150,6 +171,9 @@ class PlayerUiState {
     /** loading 可见（照搬 BaseController.onPlayStateChanged） */
     val loadingVisible: Boolean
         get() = playState == VideoView.STATE_PREPARING || playState == VideoView.STATE_BUFFERING
+
+    val centerControlsVisible: Boolean
+        get() = controlsVisible && !loadingVisible && !tipVisible && !locked
 
     /** 中央网速文本可见（旧实现仅 IDLE 阶段可见） */
     val netSpeedCenterVisible: Boolean

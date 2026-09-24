@@ -34,6 +34,7 @@ import com.github.tvbox.osc.util.HeaderGuard;
 import com.github.tvbox.osc.util.HistoryHelper;
 import com.github.tvbox.osc.util.LOG;
 import com.github.tvbox.osc.util.LanguageManager;
+import com.github.tvbox.osc.util.LocalSourceTree;
 import com.github.tvbox.osc.util.M3u8;
 import com.github.tvbox.osc.util.MD5;
 import com.github.tvbox.osc.util.OkGoHelper;
@@ -375,14 +376,16 @@ public class ApiConfig {
     }
 
     /**
-     * 本机文件源(`clan://localhost/` / `file://`)且当前无存储权限 ⇒ 本地服务按原始路径读必然 EACCES。
+     * 本机文件源(`clan://localhost/` / `file://`)且应用此刻读不到 ⇒ 本地服务按原始路径读必然 EACCES。
      * 把"静默回落 filesDir 旧快照"改成明确报错,否则用户改了本地 json 不生效且毫无提示(2026-09-16)。
      * ⚠️ 只判这两种"本机文件"形态:`clan://<ip>/…` 是局域网 TVBox 服务地址,与本地存储权限无关。
+     * ⚠️ 权限查询为 false 不等于读不到(部分 ROM 上二者不一致),有目录授权兜底时同理 —— 漏判会把读得到的源报成"读不到"。
      */
     private static boolean isLocalSourceUnreadable(String apiUrl) {
-        if (apiUrl == null) return false;
-        if (!apiUrl.startsWith("clan://localhost/") && !apiUrl.startsWith("file://")) return false;
-        return !PermissionHelper.isStorageGranted(App.getInstance());
+        String path = localSourcePath(apiUrl);
+        if (path == null) return false;
+        if (LocalSourceTree.INSTANCE.serves(App.getInstance(), path)) return false;
+        return !PermissionHelper.isStorageGranted(App.getInstance()) && !new File(path).canRead();
     }
 
     /**
@@ -397,7 +400,9 @@ public class ApiConfig {
      */
     private static boolean isLocalSourceMissing(String apiUrl) {
         String path = localSourcePath(apiUrl);
-        return path != null && !new File(path).exists();
+        // 目录授权兜底时 File.exists 同样不可信(可能把"读不到"误报成"已删除"),由本地服务判读不到即报 not found
+        if (path == null || LocalSourceTree.INSTANCE.serves(App.getInstance(), path)) return false;
+        return !new File(path).exists();
     }
 
     /** 本机文件源地址 → 真实路径(与 {@code RemoteServer} 的 `/file/` 同一映射);非本机形态或解析不出返回 null */
@@ -887,22 +892,16 @@ public class ApiConfig {
             }
         }
 
+        String dohJson = "";
         if (infoJson.has("doh")) {
             // 接口可能把 doh 写成非数组(或格式异常):此时视为未提供,退回内置列表,不让整个配置加载挂掉
-            String doh_json = "";
             try {
-                doh_json = infoJson.getAsJsonArray("doh").toString();
+                dohJson = infoJson.getAsJsonArray("doh").toString();
             } catch (Exception e) {
                 e.printStackTrace();
             }
-            if(!KV.get(HawkConfig.DOH_JSON, "").equals(doh_json)){
-                KV.put(HawkConfig.DOH_URL, 0);
-                KV.put(HawkConfig.DOH_JSON,doh_json);
-            }
-        }else {
-            KV.put(HawkConfig.DOH_JSON,"");
         }
-        OkGoHelper.setDnsList();
+        OkGoHelper.applyDohConfig(dohJson);
         LOG.i("echo-api-config-----------load");
         //追加的广告拦截
         if(infoJson.has("ads")){

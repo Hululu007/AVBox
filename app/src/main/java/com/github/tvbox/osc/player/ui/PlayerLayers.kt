@@ -1,12 +1,16 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+
 package com.github.tvbox.osc.player.ui
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -14,6 +18,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ContainedLoadingIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,6 +32,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.player.state.LockVisibility
@@ -60,12 +67,54 @@ private fun HintPill(modifier: Modifier, content: @Composable () -> Unit) {
 }
 
 /**
+ * 加载/错误遮罩：盖住视频面，但**必须**画在顶栏/底栏之前 —— 盖到控制条上时，加载期单击只会
+ * 静默翻转 `controlsVisible`（遮罩不拦触摸），用户一个控件也看不到。
+ */
+@Composable
+fun PlayerTipLayer(state: PlayerUiState) {
+    if (!state.tipVisible) return
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            if (state.tipLoading) {
+                ContainedLoadingIndicator(
+                    containerColor = Color.White.copy(alpha = 0.2f),
+                    indicatorColor = Color.White.copy(alpha = 0.75f),
+                )
+            } else {
+                Icon(
+                    painter = painterResource(R.drawable.icon_error),
+                    contentDescription = null,
+                    tint = Color.White.copy(alpha = 0.75f),
+                    modifier = Modifier.size(48.dp),
+                )
+            }
+            if (state.tipMsg.isNotEmpty()) {
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = state.tipMsg,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.75f),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 24.dp),
+                )
+            }
+        }
+    }
+}
+
+/**
  * 暂停浮层：仅中央播放键（60dp 半透明圆底，点按即续播，免二次点击）。
  * 退后台触发的暂停不显示（pauseOverlayVisible 排除 lifecyclePaused）——避免被系统任务快照拍出"已暂停"假象。
+ * 遮罩在屏时同样不显示：那时暂停的是上一次会话的残留内核，键压在遮罩上会误导（点它启停的不是即将播放的内容）。
  */
 @Composable
 fun PlayerPauseLayer(state: PlayerUiState, actions: PlayerActions) {
-    if (!state.pauseOverlayVisible) return
+    if (!state.pauseOverlayVisible || state.tipVisible) return
     Box(Modifier.fillMaxSize()) {
         Box(
             Modifier
@@ -158,10 +207,11 @@ fun PlayerLoadingLayer(state: PlayerUiState) {
     }
 }
 
-/** 中央网速（旧 tv_play_load_net_speed：center + marginTop 40mm，仅 IDLE 可见） */
+/** 中央网速（旧 tv_play_load_net_speed：center + marginTop 40mm，仅 IDLE 可见）。
+ *  遮罩在屏时不显示：解析期播放态正是 IDLE，网速会压在遮罩上。 */
 @Composable
 fun PlayerNetSpeedCenter(state: PlayerUiState) {
-    if (!state.netSpeedCenterVisible) return
+    if (!state.netSpeedCenterVisible || state.tipVisible) return
     Box(Modifier.fillMaxSize()) {
         Text(
             text = state.netSpeedCenter,
@@ -241,10 +291,11 @@ fun PlayerLockButton(state: PlayerUiState, actions: PlayerActions) {
  * 样式与其他提示浮层统一(2026-09-13 用户要求):复用 [HintPill] —— 与控制条进度提示
  * ([PlayerSeekHint])完全同款的半透明 surface 药丸,不再用旧的纯黑圆角底 `#66000000` + 白字;
  * 文字色随主题 `onSurface`,字号用 play 模块的 ts_26 档(与中央提示同级)。
+ * 遮罩在屏时不显示:长按倍速作用的是上一次会话的残留内核,提示不该出现在加载画面上。
  */
 @Composable
 fun PlayerSpeedBoostHint(state: PlayerUiState) {
-    if (!state.speedBoostVisible) return
+    if (!state.speedBoostVisible || state.tipVisible) return
     Box(Modifier.fillMaxSize()) {
         HintPill(modifier = Modifier.align(Alignment.Center)) {
             Text(

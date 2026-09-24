@@ -51,8 +51,8 @@ fun startLocalConfig(
 /**
  * SAF 结果入口:选中的 Uri 转成 clan:// 地址。
  *
- * @return true = 还差一次目录授权(直引时应用读不到原目录 / 复制时搬不到兄弟文件),调用方**必须**接着
- * 调 `launchSourceTree()`;否则要么源直引不了、要么缺文件(如 jar)。
+ * @return true = 还差一次目录授权,调用方**必须**接着收尾:先争一次存储权限(拿到就能直引原目录),
+ * 拿不到再拉目录选择器。
  */
 fun handleLocalConfigResult(activity: Activity, uri: Uri): Boolean {
     val callback = LocalConfigHost.pending
@@ -108,7 +108,14 @@ fun handleLocalSourceTreeResult(activity: Activity, tree: Uri?) {
         val grantedPath = if (picked == null) null else LocalSourceTree.remember(activity, picked)
         LOG.i("echo-local-src tree direct=" + grantedPath + " need=" + directPath)
         if (picked == null || grantedPath == null || relativeUnder(grantedPath, directPath) == null) {
-            Toast.makeText(activity, activity.getString(R.string.toast_local_tree_denied), Toast.LENGTH_LONG).show()
+            // 配置落在系统永不允许授权的目录(存储根 / Download 根 / Android/data)时,"再点一次"不会成,得给条出路
+            val root = Environment.getExternalStorageDirectory().absolutePath
+            val tip = if (isUngrantableDir(File(directPath).parent, root)) {
+                R.string.toast_local_tree_forbidden
+            } else {
+                R.string.toast_local_tree_denied
+            }
+            Toast.makeText(activity, activity.getString(tip), Toast.LENGTH_LONG).show()
             return
         }
         if (!LocalSourceTree.isPersisted(activity, picked)) {
@@ -144,9 +151,8 @@ private class LocalConfigImport(
  * 配置 Uri → clan:// 接口地址:**优先直引原文件**(原目录改动立刻生效、不占空间),算不出原目录地址才复制到
  * 外置私有 `files/config/`。
  *
- * 直引还要求应用自己读得到原文件(`RemoteServer` 的 `/file/` 与爬虫都走应用的文件权限):有「所有文件访问」
- * 时自然成立;读不到(权限没生效 / ROM 限制)则要一次目录授权(`LocalSourceTree`),由本地服务用 SAF 读原目录 ——
- * 地址仍指向原目录,不需要搬文件。
+ * 直引判据 = 应用此刻真读得到原文件(`File.canRead`),不是存储权限查询:后者在小米/澎湃等 ROM 上对
+ * 未上架应用不落地(开关是开的、查询为 false),按它判会把能直引的源推进"存储根授权不了"的死胡同。
  *
  * 为什么执着于直引:配置里 `./x.jar`、`../lib/x.js` 这类同目录引用会被重写成"配置文件所在目录"的 http 前缀,
  * 复制路线只带 json 过去时这些引用会 404,得靠目录授权把兄弟文件一个个搬过来。
@@ -160,9 +166,10 @@ private fun importLocalConfig(context: Context, uri: Uri): LocalConfigImport? {
     val storageRoot = Environment.getExternalStorageDirectory().absolutePath
     val path = getPathFromUri(context, uri)
     val source = readablePath(path)
+    // 权限查询只用于埋点(判据见 KDoc):它能区分"查询为 false 却读得到"与"真读不到"
     val granted = PermissionHelper.isStorageGranted(context)
     LOG.i("echo-local-src path granted=" + granted + " src=" + source + " uri=" + uri)
-    if (granted) {
+    if (source != null) {
         toClanApi(source, storageRoot)?.let { return LocalConfigImport(it, null, emptyList(), null) }
     }
     if (path != null) {
@@ -617,23 +624,24 @@ internal fun safeFileName(name: String?): String {
     return if (base.isEmpty() || base == "." || base == "..") "local_config.json" else base
 }
 
-/** 取 DISPLAY_NAME,取不到用 local_config.json 兜底 */
-private fun getDisplayName(context: Context, uri: Uri): String {
-    var name = "local_config.json"
+/** 显示名优先 DISPLAY_NAME,答不上退到 `Uri.lastPathSegment`:退成常量会让"是不是 py 爬虫"判错 */
+private fun getDisplayName(context: Context, uri: Uri): String =
+    safeFileName(queryDisplayName(context, uri) ?: uri.lastPathSegment)
+
+/** 查 DISPLAY_NAME;查不到返回 null(由调用方退到 Uri 尾段) */
+private fun queryDisplayName(context: Context, uri: Uri): String? {
     var cursor: Cursor? = null
-    try {
+    return try {
         cursor = context.contentResolver.query(uri, null, null, null, null)
         if (cursor != null && cursor.moveToFirst()) {
             val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-            if (index >= 0) {
-                val displayName = cursor.getString(index)
-                if (!displayName.isNullOrEmpty()) {
-                    name = displayName
-                }
-            }
+            if (index >= 0) cursor.getString(index)?.takeIf { it.isNotEmpty() } else null
+        } else {
+            null
         }
     } catch (ignored: Throwable) {
-        LOG.d("LocalConfigHelper", "query display name failed, fallback default name")
+        LOG.d("LocalConfigHelper", "query display name failed, fallback to uri segment")
+        null
     } finally {
         try {
             cursor?.close()
@@ -641,5 +649,4 @@ private fun getDisplayName(context: Context, uri: Uri): String {
             LOG.d("LocalConfigHelper", "close failed")
         }
     }
-    return safeFileName(name)
 }

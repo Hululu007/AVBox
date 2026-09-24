@@ -108,7 +108,7 @@ fun PlayerTopBar(state: PlayerUiState, actions: PlayerActions) {
                         Text(
                             text = state.title,
                             color = Color.White,
-                            fontSize = playerTextSize(R.dimen.ts_20),
+                            fontSize = playerTextSize(R.dimen.ts_22),
                             fontWeight = FontWeight.Medium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,

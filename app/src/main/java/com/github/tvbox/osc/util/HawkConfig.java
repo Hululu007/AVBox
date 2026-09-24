@@ -100,6 +100,8 @@ public class HawkConfig {
      * 禁用导航动画(2026-09-17):开启后底部导航(HorizontalPager)不响应左右滑动手势,点底栏仍可切换
      */
     public static final String NAV_ANIMATION_DISABLED = "nav_animation_disabled";
+    /** 导航栏隐藏直播:直播是"动作槽"不是页面,隐藏它不影响页面索引与选中态 */
+    public static final String NAV_LIVE_HIDDEN = "nav_live_hidden";
     // 搜索线程数(2026-09-12,设置页滑块 16/32/48/64 四档):全站搜索源并发信号量许可数
     public static final String SEARCH_THREADS = "search_threads";
     public static final int SEARCH_THREADS_DEFAULT = 32;

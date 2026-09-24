@@ -84,7 +84,6 @@ import com.github.tvbox.osc.ui.components.VodCard
 import com.github.tvbox.osc.ui.components.VodCardMenu
 import com.github.tvbox.osc.ui.components.rememberVodCardMenuState
 import com.github.tvbox.osc.ui.page.openVodCardOrDetail
-import com.github.tvbox.osc.ui.player.PlayerTipBridge
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -182,8 +181,8 @@ fun DetailScreen(activity: DetailActivity, vm: DetailViewModel) {
                     )
                 }
             }
-            PlayerTipOverlay()
-            if (!fullBox) {
+            // 提示层由控制器 Compose 层绘制(PlayerLayers.PlayerTipLayer):写在这一层会盖住顶栏/底栏
+            if (!fullBox && pageState is DetailViewModel.PageState.Ready) {
                 Icon(
                     painter = painterResource(R.drawable.ic_player_expand),
                     contentDescription = stringResource(R.string.detail_fullscreen_play),
@@ -829,44 +828,6 @@ private fun EpisodeSheet(vm: DetailViewModel, revision: Int, slideFromEnd: Boole
                         shape = RoundedCornerShape(12.dp),
                     )
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PlayerTipOverlay() {
-    val tip = PlayerTipBridge.state
-    if (!tip.loading && !tip.err) return
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            if (tip.loading) {
-                ContainedLoadingIndicator(
-                    containerColor = Color.White.copy(alpha = 0.2f),
-                    indicatorColor = Color.White.copy(alpha = 0.75f),
-                )
-            } else {
-                Icon(
-                    painter = painterResource(R.drawable.icon_error),
-                    contentDescription = null,
-                    tint = Color.White.copy(alpha = 0.75f),
-                    modifier = Modifier.size(48.dp),
-                )
-            }
-            if (tip.msg.isNotEmpty()) {
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text = tip.msg,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.75f),
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(horizontal = 24.dp),
-                )
             }
         }
     }

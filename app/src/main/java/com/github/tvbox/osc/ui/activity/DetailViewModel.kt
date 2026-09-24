@@ -136,6 +136,17 @@ class DetailViewModel : ViewModel() {
     }
 
     fun setFullScreen(full: Boolean) {
+        if (full) {
+            val reason = DetailFullScreenGate.refusalReason(
+                pageState.value,
+                loadingText = { str(R.string.detail_content_not_ready) },
+                emptyText = { str(R.string.detail_empty_source) },
+            )
+            if (reason != null) {
+                toastEvent.value = reason
+                return
+            }
+        }
         val landNow = playContainerRef?.resources?.configuration?.orientation == Configuration.ORIENTATION_LANDSCAPE
         rotating.value = (full != landNow)
         fullScreen.value = full
