@@ -21,6 +21,9 @@ interface VodControlListener {
 
     fun selectSubtitle()
 
+    /** 长按字幕按钮:关闭全部字幕,并记住该片不再自动开字幕(持久意图,与"临时关弹幕"不同) */
+    fun closeSubtitles()
+
     fun selectAudioTrack()
 
     fun selectVideoTrack()

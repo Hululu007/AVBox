@@ -3,12 +3,14 @@ package com.github.tvbox.osc.player;
 import android.content.Context;
 import android.text.TextUtils;
 
+import androidx.media3.common.C;
+
 import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.api.ApiConfig;
 import com.github.tvbox.osc.base.App;
 import com.github.tvbox.osc.bean.IJKCode;
 import com.github.tvbox.osc.server.ControlManager;
-import com.github.tvbox.osc.util.AudioTrackMemory;
+import com.github.tvbox.osc.util.TrackMemory;
 import com.github.tvbox.osc.util.FileUtils;
 import com.github.tvbox.osc.util.HawkConfig;
 import com.github.tvbox.osc.util.LOG;
@@ -19,8 +21,10 @@ import com.github.tvbox.osc.util.KV;
 import java.io.File;
 import java.net.URI;
 import java.net.URLEncoder;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import tv.danmaku.ijk.media.player.IMediaPlayer;
@@ -43,6 +47,13 @@ public class IjkMediaPlayer extends IjkPlayer {
     protected String currentPlayPath;
     private static final String DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36";
     private static final String DEFAULT_ACCEPT = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/json;q=0.9";
+
+    /** 本片记忆键(见 TrackMemory);内核重建即新实例,故由 MyVideoView 在起播前推入 */
+    private String contentKey = "";
+
+    public void setContentKey(String key) {
+        this.contentKey = key == null ? "" : key;
+    }
 
     public IjkMediaPlayer(Context context, IJKCode codec) {
         super(context);
@@ -266,6 +277,8 @@ public class IjkMediaPlayer extends IjkPlayer {
                 v.trackId = index;
                 v.index = index;
                 v.selected = index == videoSelected;
+                v.type = C.TRACK_TYPE_VIDEO;
+                v.formatKey = TrackMemory.videoFingerprint(name, 0, 0);
                 data.addVideo(v);
             }
             else if (info.getTrackType() == ITrackInfo.MEDIA_TRACK_TYPE_AUDIO) {//音轨信息
@@ -280,6 +293,9 @@ public class IjkMediaPlayer extends IjkPlayer {
                 a.trackId = index;
                 a.index = index;
                 a.selected = index == audioSelected;
+                a.type = C.TRACK_TYPE_AUDIO;
+                // 没有归一化 Format:用 ffmpeg 轨描述串当指纹细节(同批片稳定,能区分同语言的 AAC/E-AC3)
+                a.formatKey = TrackMemory.audioFingerprint(language, name, 0);
                 // 如果需要，还可以检查轨道的描述或标题以获取更多信息
                 data.addAudio(a);
             }
@@ -298,6 +314,8 @@ public class IjkMediaPlayer extends IjkPlayer {
                 t.trackId = index;
                 t.index = index;
                 t.selected = index == subtitleSelected;
+                t.type = C.TRACK_TYPE_TEXT;
+                t.formatKey = TrackMemory.textFingerprint(language, info.getInfoInline());
                 data.addSubtitle(t);
             }
             index++;
@@ -381,35 +399,126 @@ public class IjkMediaPlayer extends IjkPlayer {
         return builder.toString();
     }
 
-    public void setTrack(int trackIndex) {
-        int audioSelected = mMediaPlayer.getSelectedTrack(ITrackInfo.MEDIA_TRACK_TYPE_AUDIO);
-        int subtitleSelected = mMediaPlayer.getSelectedTrack(ITrackInfo.MEDIA_TRACK_TYPE_TIMEDTEXT);
-        if (trackIndex!=audioSelected && trackIndex!=subtitleSelected){
+    /**
+     * 用户显式选轨:改当前选择并记住**指纹**(下标换集即失效,存了必然选错轨)。
+     * 挡位按轨道类型各取各的当前下标 —— 音轨与字幕下标相同时也得切得动(视轨与字幕共用过同一挡位)。
+     */
+    public void setTrack(TrackInfoBean track) {
+        if (track == null) return;
+        if (track.type == C.TRACK_TYPE_TEXT) {
+            // 选内置字幕即重新决定字幕来源(覆盖 #off/#local/#online):先记后切,切换失败也保留意图
+            TrackMemory.saveSubtitle(contentKey, track.formatKey);
+        } else {
+            TrackMemory.saveTrack(contentKey, track.type, track.formatKey);
+        }
+        selectTrack(track);
+    }
+
+    /** 程序性选轨(默认字幕等自动逻辑),不写记忆 */
+    public void selectTrack(TrackInfoBean track) {
+        if (track == null) return;
+        selectTrack(track.index, track.type);
+    }
+
+    private void selectTrack(int trackIndex, int trackType) {
+        try {
+            int selected = mMediaPlayer.getSelectedTrack(ijkTrackType(trackType));
+            if (trackIndex == selected) return;
             mMediaPlayer.selectTrack(trackIndex);
+        } catch (Exception e) {
+            LOG.i("echo-ijk-select-track-error:" + e.getMessage());
         }
     }
-    public void setTrack(int trackIndex,String playKey) {
-        int audioSelected = mMediaPlayer.getSelectedTrack(ITrackInfo.MEDIA_TRACK_TYPE_AUDIO);
-        if (trackIndex!=audioSelected){
-            // playKey 可能为 null(progressKey 是 @Nullable):直接 isEmpty() 抛 NPE 会让后续 seekTo/start 全不执行
-            AudioTrackMemory.save(playKey, trackIndex);
-            mMediaPlayer.selectTrack(trackIndex);
-        }
+
+    /** media3 轨道类型 → IJK 轨道类型(内置字幕在 IJK 侧是 TIMEDTEXT) */
+    private static int ijkTrackType(int trackType) {
+        if (trackType == C.TRACK_TYPE_VIDEO) return ITrackInfo.MEDIA_TRACK_TYPE_VIDEO;
+        if (trackType == C.TRACK_TYPE_AUDIO) return ITrackInfo.MEDIA_TRACK_TYPE_AUDIO;
+        return ITrackInfo.MEDIA_TRACK_TYPE_TIMEDTEXT;
     }
 
     public void setOnTimedTextListener(IMediaPlayer.OnTimedTextListener listener) {
         mMediaPlayer.setOnTimedTextListener(listener);
     }
 
-    public void loadDefaultTrack(TrackInfo trackInfo,String playKey) {
-        if(trackInfo!=null && trackInfo.getAudio().size()>1){
-            Integer trackIndex = AudioTrackMemory.ijkLoad(playKey);
-            if (trackIndex == -1) {
-                int firsIndex=trackInfo.getAudio().get(0).index;
-                setTrack(firsIndex);
-                return;
-            };
-            setTrack(trackIndex);
+    /** 按记忆还原音轨/视轨/内置字幕;无记忆时音轨退默认(多条选第一条),内置字幕退"国语→第一条" */
+    public void restoreTracks(TrackInfo trackInfo) {
+        if (!restoreByMemory(trackInfo, C.TRACK_TYPE_AUDIO)
+                && trackInfo != null && trackInfo.getAudio().size() > 1) {
+            selectTrack(trackInfo.getAudio().get(0));
         }
+        restoreByMemory(trackInfo, C.TRACK_TYPE_VIDEO);
+        restoreSubtitleByMemory(trackInfo);
+    }
+
+    private boolean restoreByMemory(TrackInfo trackInfo, int trackType) {
+        String remembered = TrackMemory.loadTrack(contentKey, trackType);
+        if (remembered == null || trackInfo == null) return false;
+        List<TrackInfoBean> list = tracksOf(trackInfo, trackType);
+        List<String> keys = new ArrayList<>();
+        for (TrackInfoBean bean : list) keys.add(bean.formatKey);
+        int index = TrackMemory.pick(keys, remembered);
+        if (index < 0) {
+            LOG.i("echo-track-memory miss type=" + trackType + " key=" + contentKey + " fp=" + remembered);
+            return false;
+        }
+        LOG.i("echo-track-memory restore type=" + trackType + " fp=" + remembered);
+        selectTrack(list.get(index));
+        return true;
+    }
+
+    /** 内置字幕按指纹还原;#off / #local / #online 三种来源决定由页面层落地,这里不动 */
+    private void restoreSubtitleByMemory(TrackInfo trackInfo) {
+        String record = TrackMemory.loadSubtitle(contentKey);
+        if (record == null) {
+            selectDefaultSubtitlePick(trackInfo);
+            return;
+        }
+        if (!TrackMemory.isSubtitleTrack(record)) return;
+        if (trackInfo != null) {
+            List<TrackInfoBean> list = trackInfo.getSubtitle();
+            List<String> keys = new ArrayList<>();
+            for (TrackInfoBean bean : list) keys.add(bean.formatKey);
+            int index = TrackMemory.pick(keys, record);
+            if (index >= 0) {
+                LOG.i("echo-track-memory restore text fp=" + record);
+                selectTrack(list.get(index));
+                return;
+            }
+        }
+        // 有决定但这一集定位不到(编码变了/有歧义):退回默认选轨,别变成"什么都没有"
+        LOG.i("echo-track-memory text miss, use default: " + record);
+        selectDefaultSubtitlePick(trackInfo);
+    }
+
+    /** 当前没有选中任何内置字幕轨时补一次默认选轨(外挂字幕落地失败回落时全靠它 —— IJK 自己不会替我们选) */
+    public void ensureSubtitleTrackSelected(TrackInfo trackInfo) {
+        if (trackInfo == null) return;
+        List<TrackInfoBean> subtitles = trackInfo.getSubtitle();
+        if (subtitles.isEmpty()) return;
+        for (TrackInfoBean subtitle : subtitles) {
+            if (subtitle.selected) return;
+        }
+        selectDefaultSubtitlePick(trackInfo);
+    }
+
+    /** 默认内置字幕:国语优先,否则第一条 */
+    private void selectDefaultSubtitlePick(TrackInfo trackInfo) {
+        if (trackInfo == null) return;
+        List<TrackInfoBean> subtitles = trackInfo.getSubtitle();
+        if (subtitles.isEmpty()) return;
+        for (TrackInfoBean bean : subtitles) {
+            if ("国语".equals(bean.language)) { // i18n: keep(字幕语言匹配值)
+                selectTrack(bean);
+                return;
+            }
+        }
+        selectTrack(subtitles.get(0));
+    }
+
+    private List<TrackInfoBean> tracksOf(TrackInfo trackInfo, int trackType) {
+        if (trackType == C.TRACK_TYPE_AUDIO) return trackInfo.getAudio();
+        if (trackType == C.TRACK_TYPE_VIDEO) return trackInfo.getVideo();
+        return trackInfo.getSubtitle();
     }
 }

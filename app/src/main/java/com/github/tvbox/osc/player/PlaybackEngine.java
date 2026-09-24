@@ -762,6 +762,8 @@ public final class PlaybackEngine implements PlaybackHostApi {
             if (!reusePlayer && videoView.getMediaPlayer() != null) releasePlayer();
             // 归属记录须在 releasePlayer 之后(它会 clearStartedContent)
             controller.markContentStarted();
+            // 无页面 = 没有轨道菜单 = 没有用户选择:清键,免得上一部片的键留在内核上(页面起播前会重新下发)
+            videoView.setTrackMemoryKey("");
             videoView.setUrl(url, headers);
             if (reusePlayer) {
                 videoView.replay(false);

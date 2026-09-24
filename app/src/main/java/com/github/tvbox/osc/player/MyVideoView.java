@@ -55,10 +55,27 @@ public class MyVideoView extends VideoView implements DrawHandler.Callback {
         applyExoDiskCacheFlag();
     }
 
+    /** 本片记忆键(见 TrackMemory);存于 VideoView 是因为内核重建后要把键推给新实例 */
+    private String mTrackMemoryKey = "";
+
+    public void setTrackMemoryKey(String key) {
+        mTrackMemoryKey = key == null ? "" : key;
+        applyTrackMemoryKey();
+    }
+
     @Override
     protected void initPlayer() {
         super.initPlayer();
         applyExoDiskCacheFlag();
+        applyTrackMemoryKey();
+    }
+
+    private void applyTrackMemoryKey() {
+        if (mMediaPlayer instanceof ExoPlayer) {
+            ((ExoPlayer) mMediaPlayer).setContentKey(mTrackMemoryKey);
+        } else if (mMediaPlayer instanceof IjkMediaPlayer) {
+            ((IjkMediaPlayer) mMediaPlayer).setContentKey(mTrackMemoryKey);
+        }
     }
 
     private void applyExoDiskCacheFlag() {
@@ -290,6 +307,8 @@ public class MyVideoView extends VideoView implements DrawHandler.Callback {
     @Override
     public void release() {
         super.release();
+        // 键随内核一起作废:直播页/音乐页直接 setUrl 起播从不推键,留着上一部片的键会吃掉它们的默认字幕
+        mTrackMemoryKey = "";
         if (haveDanmu()) danmuView.release();
     }
 

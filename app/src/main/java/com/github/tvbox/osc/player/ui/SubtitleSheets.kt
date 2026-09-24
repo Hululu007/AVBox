@@ -240,6 +240,8 @@ fun SubtitleSearchSheet(sheet: SubtitleSearchSheetState, onDismiss: () -> Unit) 
     var page by remember { mutableIntStateOf(1) }
     var canLoadMore by remember { mutableStateOf(false) }
     val zipCache = remember { mutableListOf<Subtitle>() }
+    // 当前展开的发布页(zipfiles 模式下列表是它内部的文件):随选择回传,供播放层记住来源
+    var release by remember { mutableStateOf<Subtitle?>(null) }
     val maxPage = 5
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
 
@@ -249,6 +251,7 @@ fun SubtitleSearchSheet(sheet: SubtitleSearchSheetState, onDismiss: () -> Unit) 
             Toast.makeText(context, context.getString(R.string.toast_input_empty), Toast.LENGTH_SHORT).show()
         } else {
             mode = "search"
+            release = null
             items = emptyList()
             loading = true
             word = w
@@ -309,6 +312,7 @@ fun SubtitleSearchSheet(sheet: SubtitleSearchSheetState, onDismiss: () -> Unit) 
     // zip 展开态按返回回搜索列表(旧 onBackPressed)
     BackHandler(enabled = mode == "zipfiles") {
         mode = "search"
+        release = null
         items = zipCache.toList()
         canLoadMore = page < maxPage
         loading = false
@@ -370,13 +374,16 @@ fun SubtitleSearchSheet(sheet: SubtitleSearchSheetState, onDismiss: () -> Unit) 
                                     onClick = {
                                         if (item.isZip) {
                                             mode = "zipfiles"
+                                            release = item
                                             loading = true
                                             viewModel.getSearchResultSubtitleUrls(item)
                                         } else {
-                                            // 旧行为:发起直链解析后立即收起,回调在容器侧落地
+                                            // 旧行为:发起直链解析后立即收起,回调在容器侧落地。
+                                            // 发布页取不到就传空串:宁可不记,也不要把文件直链当发布页存进记忆
+                                            val releaseUrl = release?.url.orEmpty()
                                             viewModel.getSubtitleUrl(item) { subtitle ->
                                                 mainHandler.post {
-                                                    if (subtitle.url != null) sheet.onLoadSubtitle(subtitle)
+                                                    if (subtitle.url != null) sheet.onLoadSubtitle(subtitle, releaseUrl)
                                                 }
                                             }
                                             dismiss()

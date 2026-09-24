@@ -1087,19 +1087,8 @@ class ComposeVideoController @JvmOverloads constructor(
 
     override fun onSubtitleLongClicked() {
         if (!fastClickAllowed("zimu_long")) return
-        // 照搬旧长按：关闭全部字幕
-        try {
-            mSubtitleView.visibility = View.GONE
-            mSubtitleView.destroy()
-            mSubtitleView.clearSubtitleCache()
-            mSubtitleView.isInternal = false
-            mLyricView.visibility = View.GONE
-            mLyricView.destroy()
-            mLyricView.clearSubtitleCache()
-            mExoSubtitleView.visibility = View.GONE
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        // 关闭字幕归播放层:要落"这个片不要字幕"的记忆并让它跨集生效
+        listener?.closeSubtitles()
         hideBottom()
         Toast.makeText(context, context.getString(R.string.player_subtitle_closed), Toast.LENGTH_SHORT).show()
     }

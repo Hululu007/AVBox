@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel;
 
 import com.github.tvbox.osc.bean.Subtitle;
 import com.github.tvbox.osc.bean.SubtitleData;
+import com.github.tvbox.osc.player.SubtitleFilePicker;
 import com.github.tvbox.osc.util.OkGoHelper;
 import com.lzy.okgo.OkGo;
 import com.lzy.okgo.callback.AbsCallback;
@@ -37,6 +38,11 @@ public class SubtitleViewModel extends ViewModel {
         void loadSubtitle(Subtitle subtitle);
     }
 
+    /** 发布页文件列表回调（记忆还原路径用；error = 网络/解析失败） */
+    private interface FilesCallback {
+        void onFiles(List<Subtitle> files, boolean error);
+    }
+
     public MutableLiveData<SubtitleData> searchResult;
 
     public SubtitleViewModel() {
@@ -52,7 +58,40 @@ public class SubtitleViewModel extends ViewModel {
     }
 
     public void getSubtitleUrl(Subtitle subtitle, SubtitleLoader subtitleLoader) {
-        getSubtitleUrlFromAssrt(subtitle, subtitleLoader);
+        getSubtitleUrlFromAssrt(subtitle, subtitleLoader, null);
+    }
+
+    /**
+     * 记忆还原路径:在指定发布页里挑出"本集"的文件并解析出直链。
+     *
+     * <p>不走 {@link #searchResult}:那是面板的列表数据,播放层写进去会与用户正在浏览的面板互相覆盖。
+     * 挑文件规则见 {@link com.github.tvbox.osc.player.SubtitleFilePicker};挑不出(不确定是本集)回调 {@code onFailed}。
+     */
+    public void pickEpisodeSubtitle(String releaseUrl, String episodeName, String fileNameHint,
+                                    SubtitleLoader onPicked, Runnable onFailed) {
+        if (TextUtils.isEmpty(releaseUrl) || onPicked == null) {
+            if (onFailed != null) onFailed.run();
+            return;
+        }
+        Subtitle release = new Subtitle();
+        release.setUrl(releaseUrl);
+        getSearchResultSubtitleUrlsFromAssrt(release, new FilesCallback() {
+            @Override
+            public void onFiles(List<Subtitle> files, boolean error) {
+                if (error || files == null || files.isEmpty()) {
+                    if (onFailed != null) onFailed.run();
+                    return;
+                }
+                List<String> names = new ArrayList<>();
+                for (Subtitle item : files) names.add(item.getName());
+                int index = SubtitleFilePicker.pick(names, episodeName, fileNameHint);
+                if (index < 0) {
+                    if (onFailed != null) onFailed.run();
+                    return;
+                }
+                getSubtitleUrlFromAssrt(files.get(index), onPicked, onFailed);
+            }
+        });
     }
 
     private void setSearchListData(List<Subtitle> data, boolean isNew, boolean isZip) {
@@ -133,6 +172,15 @@ public class SubtitleViewModel extends ViewModel {
     Pattern regexShooterFileOnclick = Pattern.compile("onthefly\\(\"(\\d+)\",\"(\\d+)\",\"([\\s\\S]*)\"\\)");
 
     private void getSearchResultSubtitleUrlsFromAssrt(Subtitle subtitle) {
+        getSearchResultSubtitleUrlsFromAssrt(subtitle, new FilesCallback() {
+            @Override
+            public void onFiles(List<Subtitle> files, boolean error) {
+                setSearchListData(files, true, error);
+            }
+        });
+    }
+
+    private void getSearchResultSubtitleUrlsFromAssrt(Subtitle subtitle, FilesCallback callback) {
         try {
             String url = subtitle.getUrl();
             OkGo.<String>get(url).execute(new AbsCallback<String>() {
@@ -160,16 +208,16 @@ public class SubtitleViewModel extends ViewModel {
                                     data.add(one);
                                 }
                             }
-                            setSearchListData(data, true, false);
+                            callback.onFiles(data, false);
                         } else {//有的字幕 不一定是压缩包
                             Element item = doc.selectFirst(".download a#btn_download");
                             if (item == null) {
-                                setSearchListData(null, true, false);
+                                callback.onFiles(null, false);
                                 return;
                             }
                             String href = item.attr("href");
                             if (TextUtils.isEmpty(href)) {
-                                setSearchListData(null, true, false);
+                                callback.onFiles(null, false);
                                 return;
                             }
                             if (isSupportedSubtitleFile(href)) {
@@ -180,13 +228,14 @@ public class SubtitleViewModel extends ViewModel {
                                 one.setUrl(url);
                                 one.setIsZip(false);
                                 data.add(one);
-                                setSearchListData(data, true, false);
+                                callback.onFiles(data, false);
                             } else {
-                                setSearchListData(null, true, false);
+                                callback.onFiles(null, false);
                             }
                         }
                     } catch (Throwable th) {
                         th.printStackTrace();
+                        callback.onFiles(null, true);
                     }
                 }
 
@@ -198,11 +247,12 @@ public class SubtitleViewModel extends ViewModel {
                 @Override
                 public void onError(com.lzy.okgo.model.Response<String> response) {
                     super.onError(response);
-                    setSearchListData(null, true, true);
+                    callback.onFiles(null, true);
                 }
             });
         } catch (Exception e) {
             e.printStackTrace();
+            callback.onFiles(null, true);
         }
     }
 
@@ -220,7 +270,13 @@ public class SubtitleViewModel extends ViewModel {
                 || lower.endsWith(".ttml");
     }
 
-    private void getSubtitleUrlFromAssrt(Subtitle subtitle, SubtitleLoader subtitleLoader) {
+    /**
+     * 解析字幕直链(assrt 下载链是 302,直链在 Location 头里)。
+     *
+     * <p>{@code onFailed} 只有记忆还原路径传:拿不到直链必须能回落默认字幕链,否则该片会一直没字幕
+     * (面板路径不传 —— 选不到字幕由用户自己重选,不需要回落)。
+     */
+    private void getSubtitleUrlFromAssrt(Subtitle subtitle, SubtitleLoader subtitleLoader, Runnable onFailed) {
         String ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.54 Safari/537.36";
         Request request = new Request.Builder()
                 .url(subtitle.getUrl())
@@ -241,11 +297,17 @@ public class SubtitleViewModel extends ViewModel {
             @Override
             public void onFailure(Call call, IOException e) {
                 e.printStackTrace();
+                if (onFailed != null) onFailed.run();
             }
 
             @Override
             public void onResponse(Call call, Response response) throws IOException {
-                subtitle.setUrl(response.header("location"));
+                String location = response.header("location");
+                if (TextUtils.isEmpty(location)) {
+                    if (onFailed != null) onFailed.run();
+                    return;
+                }
+                subtitle.setUrl(location);
                 subtitleLoader.loadSubtitle(subtitle);
             }
         });

@@ -219,10 +219,14 @@ class SubtitleSheetState(
     val onTextSizeChange: () -> Unit = {},
 )
 
-/** 字幕搜索面板状态（替代 View 版 SearchSubtitleDialog）；onLoadSubtitle = 拿到字幕直链后回调 */
+/**
+ * 字幕搜索面板状态（替代 View 版 SearchSubtitleDialog）。
+ *
+ * onLoadSubtitle 第二参 = 该文件所属**发布页**地址（直链只对当集有效，发布页才是可跨集的身份）。
+ */
 class SubtitleSearchSheetState(
     val searchWord: String,
-    val onLoadSubtitle: (Subtitle) -> Unit,
+    val onLoadSubtitle: (Subtitle, String) -> Unit,
 )
 
 /** 投屏设备面板状态（替代 View 版 CastDeviceDialog） */

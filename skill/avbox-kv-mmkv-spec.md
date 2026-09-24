@@ -21,7 +21,7 @@
 | Hawk 调用点 | **34 个文件、约 250+ 处**(`Hawk.get/put/contains/delete`) |
 | 高密度文件 | `ApiConfig` 48 / `LivePlayActivity` 35 / `SettingsPage` 28 / `HistoryHelper` 14 / `DanmuHelper` 12 |
 | 键总量 | `HawkConfig` 定义 78 个 `public static final String`(可用 `Select-String "public static final String"` 复核;另有 `DEFAULT_LOAD_LIVE` 等少量直接字符串键;2026-09-17 新增 `nav_animation_disabled`) |
-| 其他存储 | ~~2 处独立 SharedPreferences(`thunder` 雷电标识、`AudioTrackMemory`),与 Hawk 无关,不在本次范围~~ → **2026-09-15 已补迁入 KV**(`thunder_imei`/`thunder_mac`;音轨记忆 `audio_track_<progressKey>_*`(EXO 侧 2026-09-22 起含 `_exo_renderer` 渲染器下标)),**全仓不再有 SharedPreferences**,见 `history/features.md` 同日"SP 残留清零"条目 |
+| 其他存储 | ~~2 处独立 SharedPreferences(`thunder` 雷电标识、`AudioTrackMemory`),与 Hawk 无关,不在本次范围~~ → **2026-09-15 已补迁入 KV**(`thunder_imei`/`thunder_mac`;轨道记忆 —— 2026-09-25 起键族为 `track_mem_<sourceKey>@<vodId>_audio|video|text`,旧 `audio_track_<progressKey>_*` 已废弃),**全仓不再有 SharedPreferences**,见 `history/features.md` 同日"SP 残留清零"条目 |
 
 ### 1.2 键类型分布(决定编码规则的关键)
 

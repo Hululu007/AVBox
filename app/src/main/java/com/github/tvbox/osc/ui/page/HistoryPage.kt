@@ -86,6 +86,7 @@ import com.github.tvbox.osc.util.HistoryHelper
 import com.github.tvbox.osc.util.HistoryMerge
 import com.github.tvbox.osc.util.KV
 import com.github.tvbox.osc.util.PlaybackProgress
+import com.github.tvbox.osc.util.TrackMemory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -182,6 +183,8 @@ class HistoryViewModel : ViewModel() {
         placementAnim.value = true
         viewModelScope.launch(Dispatchers.IO) {
             RoomDataManger.deleteVodRecord(item.sourceKey, item)
+            // 记录删了,该片的轨道/字幕记忆一并清掉,免得留下访问不到的孤儿键
+            TrackMemory.delete(TrackMemory.contentKey(item.sourceKey, item.id))
             refresh()
         }
     }

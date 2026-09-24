@@ -5,7 +5,7 @@ import android.os.Looper;
 
 import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.base.App;
-import com.github.tvbox.osc.util.AudioTrackMemory;
+import com.github.tvbox.osc.util.TrackMemory;
 import com.github.tvbox.osc.util.HawkConfig;
 import com.github.tvbox.osc.util.LOG;
 import com.github.tvbox.osc.util.KV;
@@ -57,6 +57,13 @@ public class ExoPlayer extends ExoMediaPlayer {
     private final ArrayList<Renderer> capturedVideoRenderers = new ArrayList<>();
     /** 点播磁盘缓存标记(第二期「边播边缓存」,由 MyVideoView 注入;直播页恒 false) */
     private boolean useDiskCache;
+
+    /** 本片记忆键(见 TrackMemory);内核重建即新实例,故由 MyVideoView 在起播前推入 */
+    private String contentKey = "";
+
+    public void setContentKey(String key) {
+        this.contentKey = key == null ? "" : key;
+    }
 
     /**
      * EXO 解码方式(硬解/软解)的进程级下发位(2026-09-17)。
@@ -328,6 +335,8 @@ public class ExoPlayer extends ExoMediaPlayer {
                     bean.index = trackIndex;
                     bean.selected = isCurrentTrackSelected(fmt, type);
                     bean.bitmapSubtitle = type == C.TRACK_TYPE_TEXT && isBitmapSubtitle(fmt);
+                    bean.type = type;
+                    bean.formatKey = formatKey(fmt, type);
 
                     if (type == C.TRACK_TYPE_AUDIO) {
                         data.addAudio(bean);
@@ -356,32 +365,41 @@ public class ExoPlayer extends ExoMediaPlayer {
         LOG.i(sb.toString());
     }
 
-    public void setTrack(int groupIndex, int trackIndex, String playKey) {
-        MappingTrackSelector.MappedTrackInfo mappedInfo = trackSelector.getCurrentMappedTrackInfo();
-        setTrack(findAudioRendererIndex(mappedInfo), groupIndex, trackIndex, playKey);
-    }
-
-    public void setTrack(TrackInfoBean track, String playKey) {
+    /** 用户显式选轨:改当前选择并记住**指纹**(下标换集即失效,存了必然选错轨) */
+    public void setTrack(TrackInfoBean track) {
         if (track == null) return;
-        setTrack(track.renderId, track.trackGroupId, track.trackId, playKey);
+        if (!applyTrack(track.renderId, track.trackGroupId, track.trackId)) return;
+        if (track.type == C.TRACK_TYPE_TEXT) {
+            // 选内置字幕即重新决定字幕来源,覆盖 #off / #local / #online
+            TrackMemory.saveSubtitle(contentKey, track.formatKey);
+        } else {
+            TrackMemory.saveTrack(contentKey, track.type, track.formatKey);
+        }
     }
 
-    private void setTrack(int rendererIndex, int groupIndex, int trackIndex, String playKey) {
+    /** 程序性选轨(默认字幕等自动逻辑),不写记忆 */
+    public void selectTrack(TrackInfoBean track) {
+        if (track == null) return;
+        applyTrack(track.renderId, track.trackGroupId, track.trackId);
+    }
+
+    /** 下发选择(无记忆写入);返回是否真的下发 */
+    private boolean applyTrack(int rendererIndex, int groupIndex, int trackIndex) {
         try {
             MappingTrackSelector.MappedTrackInfo mappedInfo = trackSelector.getCurrentMappedTrackInfo();
             if (mappedInfo == null) {
                 LOG.i("echo-setTrack: MappedTrackInfo is null");
-                return;
+                return false;
             }
             if (rendererIndex == C.INDEX_UNSET || rendererIndex < 0 || rendererIndex >= mappedInfo.getRendererCount()) {
                 LOG.i("echo-setTrack: No renderer found");
-                return;
+                return false;
             }
 
             TrackGroupArray groups = mappedInfo.getTrackGroups(rendererIndex);
             if (!isTrackIndexValid(groups, groupIndex, trackIndex)) {
                 LOG.i("echo-setTrack: Invalid track index - group:" + groupIndex + ", track:" + trackIndex);
-                return;
+                return false;
             }
             DefaultTrackSelector.SelectionOverride override =
                     new DefaultTrackSelector.SelectionOverride(groupIndex, trackIndex);
@@ -405,48 +423,124 @@ public class ExoPlayer extends ExoMediaPlayer {
                     + " mime=" + (applied == null ? "null" : applied.sampleMimeType)
                     + " channels=" + (applied == null ? -1 : applied.channelCount)
                     + " codecs=" + (applied == null ? "null" : applied.codecs)
-                    + " playKey=" + playKey);
-
-            if (targetType == C.TRACK_TYPE_AUDIO) {
-                // 渲染器下标必须一起记:(组,轨)只在所属渲染器内有效
-                AudioTrackMemory.save(playKey, rendererIndex, groupIndex, trackIndex);
-            }
+                    + " trackKey=" + contentKey);
+            return true;
         } catch (Exception e) {
             LOG.i("echo-setTrack error: " + e.getMessage());
+            return false;
         }
     }
 
-    public void loadDefaultTrack(String playKey) {
-        AudioTrackMemory.ExoTrack remembered = AudioTrackMemory.exoLoad(playKey);
+    /** 按记忆还原音轨/视轨/内置字幕;无记忆/定位不到的类型保持播放器默认(内置字幕则退"国语→第一条") */
+    public void restoreTracks() {
+        restoreByMemory(C.TRACK_TYPE_AUDIO);
+        restoreByMemory(C.TRACK_TYPE_VIDEO);
+        restoreSubtitleByMemory();
+    }
+
+    private void restoreByMemory(int trackType) {
+        String remembered = TrackMemory.loadTrack(contentKey, trackType);
         if (remembered == null) return;
-
-        MappingTrackSelector.MappedTrackInfo mappedInfo = trackSelector.getCurrentMappedTrackInfo();
-        if (mappedInfo == null) return;
-
-        int audioRendererIndex = resolveAudioRendererIndex(mappedInfo, remembered.rendererIndex);
-        if (audioRendererIndex == C.INDEX_UNSET) return;
-
-        setTrack(audioRendererIndex, remembered.groupIndex, remembered.trackIndex, "");
+        int[] position = locate(trackType, remembered);
+        if (position == null) {
+            LOG.i("echo-track-memory miss type=" + trackType + " key=" + contentKey + " fp=" + remembered);
+            return;
+        }
+        if (applyTrack(position[0], position[1], position[2])) {
+            LOG.i("echo-track-memory restore type=" + trackType + " fp=" + remembered);
+        }
     }
 
-    /**
-     * 还原音轨记忆时定位渲染器:`(组,轨)` 只在所属渲染器内有效,套到别的渲染器会静默选错轨;
-     * 记忆无渲染器下标或该下标已不是音频渲染器时回落第一个音频渲染器。
-     */
-    private int resolveAudioRendererIndex(MappingTrackSelector.MappedTrackInfo mappedInfo, int remembered) {
-        if (remembered >= 0 && remembered < mappedInfo.getRendererCount()
-                && mappedInfo.getRendererType(remembered) == C.TRACK_TYPE_AUDIO) {
-            return remembered;
+    /** 内置字幕按指纹还原;#off / #local / #online 三种来源决定由页面层落地,这里不动 */
+    private void restoreSubtitleByMemory() {
+        String record = TrackMemory.loadSubtitle(contentKey);
+        if (record == null) return;
+        if (!TrackMemory.isSubtitleTrack(record)) return;
+        int[] position = locate(C.TRACK_TYPE_TEXT, record);
+        if (position == null) {
+            // 有决定但这一集定位不到(编码变了/有歧义):退回默认选轨,别变成"什么都没有"
+            LOG.i("echo-track-memory text miss, use default: " + record);
+            selectDefaultSubtitlePick();
+            return;
         }
-        return findAudioRendererIndex(mappedInfo);
+        if (applyTrack(position[0], position[1], position[2])) {
+            LOG.i("echo-track-memory restore text fp=" + record);
+        }
+    }
+
+    /** 在指定类型的全部渲染器/组/轨里按指纹定位;返回 {渲染器,组,轨},定位不到返回 null */
+    private int[] locate(int trackType, String fingerprint) {
+        MappingTrackSelector.MappedTrackInfo mappedInfo = trackSelector.getCurrentMappedTrackInfo();
+        if (mappedInfo == null) return null;
+        List<String> keys = new ArrayList<>();
+        List<int[]> positions = new ArrayList<>();
+        for (int rendererIndex = 0; rendererIndex < mappedInfo.getRendererCount(); rendererIndex++) {
+            if (mappedInfo.getRendererType(rendererIndex) != trackType) continue;
+            TrackGroupArray groups = mappedInfo.getTrackGroups(rendererIndex);
+            for (int groupIndex = 0; groupIndex < groups.length; groupIndex++) {
+                TrackGroup group = groups.get(groupIndex);
+                for (int trackIndex = 0; trackIndex < group.length; trackIndex++) {
+                    Format format = group.getFormat(trackIndex);
+                    // 与菜单口径一致:未声明语言的 CEA608/708 不进列表(菜单里看不到,就不会是"用户选过")
+                    if (trackType == C.TRACK_TYPE_TEXT && isUndeclaredClosedCaptionTrack(format)) continue;
+                    keys.add(formatKey(format, trackType));
+                    positions.add(new int[]{rendererIndex, groupIndex, trackIndex});
+                }
+            }
+        }
+        int index = TrackMemory.pick(keys, fingerprint);
+        return index < 0 ? null : positions.get(index);
+    }
+
+    /** 轨道指纹:语言取菜单同款的归一化值(跨内核可比),编码优先 codecs、缺失退 mime 子类型 */
+    private String formatKey(Format fmt, int trackType) {
+        if (fmt == null) return "";
+        String codec = firstNonEmpty(fmt.codecs, mimeSubtype(fmt));
+        if (trackType == C.TRACK_TYPE_AUDIO) {
+            return TrackMemory.audioFingerprint(getLanguage(fmt), codec, fmt.channelCount);
+        }
+        if (trackType == C.TRACK_TYPE_VIDEO) {
+            return TrackMemory.videoFingerprint(codec, fmt.width, fmt.height);
+        }
+        return TrackMemory.textFingerprint(getLanguage(fmt), codec);
+    }
+
+    private String mimeSubtype(Format fmt) {
+        if (fmt == null || fmt.sampleMimeType == null || !fmt.sampleMimeType.contains("/")) return "";
+        return fmt.sampleMimeType.substring(fmt.sampleMimeType.indexOf('/') + 1);
+    }
+
+    private String firstNonEmpty(String first, String second) {
+        return (first != null && !first.isEmpty()) ? first : (second == null ? "" : second);
     }
 
     public void loadDefaultSubtitleTrack() {
         if (defaultSubtitleTrackSelected) return;
-        TrackInfo trackInfo = getTrackInfo();
-        List<TrackInfoBean> subtitles = trackInfo.getSubtitle();
-        if (subtitles.isEmpty()) return;
+        // 该片已有字幕决定(内置/外挂/关闭):默认选轨让位,由页面层按记忆落地;
+        // 内置指纹定位不到时,restoreSubtitleByMemory 会自己退回默认选轨
+        if (TrackMemory.loadSubtitle(contentKey) != null) {
+            LOG.i("echo-track-memory subtitle decision exists, skip default");
+            defaultSubtitleTrackSelected = true;
+            return;
+        }
+        selectDefaultSubtitlePick();
+    }
 
+    /** 当前没有选中任何内置字幕轨时补一次默认选轨(外挂字幕落地失败回落、或媒体未标 DEFAULT 轨时全靠它) */
+    public void ensureSubtitleTrackSelected() {
+        List<TrackInfoBean> subtitles = getTrackInfo().getSubtitle();
+        if (subtitles.isEmpty()) return;
+        for (TrackInfoBean subtitle : subtitles) {
+            if (subtitle.selected) return;
+        }
+        selectDefaultSubtitlePick();
+    }
+
+    /** 默认内置字幕:国语优先,否则第一条 */
+    private void selectDefaultSubtitlePick() {
+        List<TrackInfoBean> subtitles = getTrackInfo().getSubtitle();
+        // 轨道还没映射出来时不封口:onTracksChanged 会再来一次(封了就再也选不上)
+        if (subtitles.isEmpty()) return;
         defaultSubtitleTrackSelected = true;
         TrackInfoBean target = subtitles.get(0);
         for (TrackInfoBean subtitle : subtitles) {
@@ -455,7 +549,7 @@ public class ExoPlayer extends ExoMediaPlayer {
                 break;
             }
         }
-        setTrack(target, "");
+        selectTrack(target);
     }
 
     private void loadDefaultSubtitleTrackBeforeReady() {
@@ -469,16 +563,6 @@ public class ExoPlayer extends ExoMediaPlayer {
 
     public void setInternalSubtitleDelay(int milliseconds) {
         internalSubtitleDelayUs = milliseconds * 1000L;
-    }
-
-    private int findAudioRendererIndex(MappingTrackSelector.MappedTrackInfo mappedInfo) {
-        if (mappedInfo == null) return C.INDEX_UNSET;
-        for (int i = 0; i < mappedInfo.getRendererCount(); i++) {
-            if (mappedInfo.getRendererType(i) == C.TRACK_TYPE_AUDIO) {
-                return i;
-            }
-        }
-        return C.INDEX_UNSET;
     }
 
     private boolean isTrackIndexValid(TrackGroupArray groups, int groupIndex, int trackIndex) {
