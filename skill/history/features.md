@@ -2708,3 +2708,19 @@ echo-exo-player-error: code=ERROR_CODE_UNSPECIFIED, msg=Unexpected runtime error
 - **文档**:`skill/avbox-kv-mmkv-spec.md` 已补门面 API(`keys`)与新增键族的修订记录;`文档/影视进度记忆机制分析与优化方案.md` 尚未修订(§3.1 表结构写成 `value: Long` 实为 `data: byte[]`、§7.3"唯一周期性开销"漏了 `reserver` 物理删除、§10 的收口点前提已被证伪)。
 
 - **复核·第四轮(两个独立子代理只读复审,按 SKILL 两轴记账)**:覆盖本轮改动(无痕读侧/接管侧/历史页空态、作废登记按 MD5、容量淘汰解除归属、快照与索引同口径回收)报出 4 个「本次引入」,**核实均成立并已修**。「中高 —— 复核后判定为误报」复审称"级联 owner 取自历史记录的 `sourceKey`、换源会被改写,导致正在播的那份清不到" —— 核实前提不成立:`switchSource → loadDetail` 会把 `vodId` 与 `firstsourceKey` **一起**同步成新源,历史条目 owner 与进度 owner 恒一致;据此加的"按 id 找当前源副本"级联**无收益、且引入"跨源同 id 误删"风险,已回退**(换源前那份旧源进度/索引的孤儿仍按上轮口径登记,未级联)。「中」无痕禁用同片接管会把**正在播的内容**(音频在后台)打回重新取流 + 从 0 起播 ⇒ 改为只在"内容未在播"时拒绝接管(活状态照常接管,不打断)。「中」`discardStartedContentOf` 被历史页 IO 协程调用,而归属字段只在主线程写 ⇒ 内部先 `main.post` 回主线程,消除丢更新(表现会是"删了历史重进仍被接管")。「中低」容量淘汰的排除集只排 `justSavedOwner`,未排"当前正在看的片" ⇒ 补上(该片被淘汰时作废登记没有解除机会,进度会被一直丢弃)。「低(登记不改)」`retain` 首次执行会清掉索引之外的存量快照(卡片上的"已看 X%/X/Y 集"消失,续播点与历史条目不受影响;代价已写进 ui-spec §6.16);`EpisodeTotals.retain` 同步执行、每 60 秒一次主线程 KV 读改写(量级极小);`RoomDataManger.getAllVodRecord` 的 `min(limit, hisNum)` 对 `limit<=0` 无防御(SQLite `LIMIT -1` = 全表,唯一调用方传 30/50/100 故不可达);`.codebuddy/tools/i18n_*.py` 内硬编码本机绝对路径(工具未入库)。同为低但已修的注释项:`CacheManager.clearAllProgress` 的 javadoc 压到 2 行、`WatchProgressStore` 两处"真机取证/同上"措辞、`EpisodeTotals.snapshot` 补无痕守卫(与 `PlaybackProgress.snapshot` 同口径)。文档回写:`avbox-mobile-ui-spec.md` §4.9(无痕四侧)+ §6.16(四条新约束、闭合换源边界)、`HawkConfig`/`HistoryHelper` 无痕注释去日期并改齐枚举、`values-zh-rHK` 补 `history_incognito`(港层「記錄」vs 基础层「紀錄」)、`avbox-i18n-spec.md` §7 加复核行。**补齐**(用户要求):搜索页的搜索记录在无痕下同样隐藏 —— `SearchActivity.SearchIdleContent` 显示 `search_incognito` 空态而非历史 chip(清空按钮保留,与历史页同口径),新增 2 个文案 key(四语各 1 条声明,共 4 层;港层用「記錄」),四语声明数 435/435/435/71。构建 + 343 单测全绿;**真机走查仍欠**(删除/无痕两组场景)。
+
+## 历史/收藏页:删到空与整表清空补上过渡动画(2026-09-26,用户问"仅剩一条时清空或者全部一起清空,是不是没有动画")
+
+- **现象**:两条路径都是瞬切空态 —— 列表项退场依赖 `Modifier.animateItem`,前提是 LazyColumn/LazyVerticalGrid 仍在组合树中;`items` 一空,`when` 直接换成 `LoadStateBox`,容器连同子项被整体丢弃,退场动画无从播放(`deleteAll` 另把 `placementAnim` 置 false,本就不做位移)。列表还有多条时删一条的动画本来就正常。
+- **修法**:两页都把「列表 / 空态」收进 `AnimatedContent(targetState = 内容, contentKey = { it.isEmpty() })`,列表→空态时整块交叉淡入淡出(spring `StiffnessMediumLow`,与 `animateItem` 的 fade 同手感);列表内部增删不经过渡,仍由 `animateItem` 负责,行为不变。
+- **历史页 targetState 用私有 `HistoryContent`(items + 集数/百分比快照)而非裸 items**:进度快照在删除时被一并清空,退场内容若读外层状态,卡片会在淡出中丢进度条 —— 与 `ConfigManagePage` 的 `PendingSwitch` 同坑(过渡期退场内容不能读外层可变状态);收藏页无附加快照,直接传列表。
+- **验证**:`:app:assembleDebug` BUILD SUCCESSFUL;`:app:testDebugUnitTest` **343 用例 / 0 失败**;已装机。**真机走查待用户**:①长按删最后一条 → 卡片淡出 + 空态淡入;②点清空 → 整列表淡出 + 空态淡入;③收藏页同上两种;④多条时删一条仍是单项淡出 + 其余上移(回归项)。
+
+## 搜索页:搜索记录的清空 / 删到空补上过渡(2026-09-26,用户追问"搜索记录的删除呢,能否也加上")
+
+- **现象**:与历史/收藏页同源 —— 搜索记录区是「空态文本 / FlowRow chips」的 if-else 分支,清空或删到最后一条时瞬切;`FlowRow` 是非 lazy 布局,**chip 连 `animateItem` 都用不了**,单条删除时被删的 chip 瞬间消失、其余 chip 瞬移(本次未做,见下)。
+- **修法**:两分支收进 `AnimatedContent(targetState = history, contentKey = { it.isEmpty() })`,并挂 `SizeTransform(clip = false)` —— 两个分支高度不同(chips 块 vs 一行空态文本),不加尺寸过渡卡片底边会跳一下。无痕分支留在 AnimatedContent 外(它是"不展示",不是"空")。
+- **与 §4.6 既有定稿的边界**:该处 2026-09-21 定稿过"内容分区(闲置区↔结果区)不做过渡"(用户以效果不好+卡顿为由删掉了两版 `AnimatedContent`)。本次是**卡片内部**的局部过渡(一行文本 ↔ 若干 chip),且只在"有记录↔无记录"这一次跃迁时叠绘,不是两棵全屏子树;真机若仍见卡顿,按原口径退回硬切。
+- **已知取舍**:列表内部删单条(chips 仍在)仍无动画 —— FlowRow 没有 `animateItem` 等价物,要逐条淡出/位移得引入 `LookaheadScope + animatePlacement`(项目内暂无先例),本次不引入。
+- **踩坑**:`ContentTransform.using(SizeTransform(...))` 的 `using` 是 `ContentTransform` 的**成员函数**,写 `import androidx.compose.animation.using` 会编译报 `Unresolved reference 'using'`。
+- **验证**:`:app:assembleDebug` BUILD SUCCESSFUL;`:app:testDebugUnitTest` **343 用例 / 0 失败**;已装机。**真机走查待用户**:①长按删到空 → chips 整块淡出 + 空态淡入、卡片高度平滑;②点清空同上;③删中间一条(仍有记录)按已知取舍仍无动画;④搜索页整体操作无卡顿感(重点盯 §4.6 那条定稿的顾虑)。

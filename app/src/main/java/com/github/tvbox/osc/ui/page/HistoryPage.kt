@@ -5,10 +5,14 @@
 
 package com.github.tvbox.osc.ui.page
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -219,6 +223,13 @@ class HistoryViewModel : ViewModel() {
     }
 }
 
+// 退出动画期间旧内容仍按旧快照渲染:进度/集数快照已清空时,淡出中的卡片不会丢进度条
+private data class HistoryContent(
+    val items: List<VodInfo>,
+    val episodeTotals: Map<String, Int>,
+    val playedPercents: Map<String, Int>,
+)
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun HistoryPage(
@@ -291,47 +302,63 @@ fun HistoryPage(
                 ContainedLoadingIndicator(Modifier.size(64.dp))
             }
 
-            items.isEmpty() -> LoadStateBox(
-                state = LoadState.Empty,
-                emptyText = stringResource(R.string.history_empty),
-                errorText = "",
-                retryText = "",
-                emptyIconRes = R.drawable.ic_empty_record,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(top = topPad),
-            )
-
-            else -> LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(
-                    start = 16.dp + navStart,
-                    end = 16.dp,
-                    top = topPad + 8.dp,
-                    bottom = 8.dp + navBottom,
-                ),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                items(items, key = { HistoryViewModel.key(it) }) { item ->
-                    HistoryRow(
-                        item = item,
-                        totalEpisodes = episodeTotals[EpisodeTotals.key(item.sourceKey, item.id)],
-                        playedPercent = playedPercents[PlaybackProgress.key(item.sourceKey, item.id)],
-                        modifier = Modifier.animateItem(
-                            fadeInSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                            placementSpec = if (placementAnim) {
-                                spring(stiffness = Spring.StiffnessMediumLow)
-                            } else {
-                                null
-                            },
-                            fadeOutSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                        ),
-                        onClick = {
-                            context.jumpToDetail(item.id, item.sourceKey, item.name, item.pic)
-                        },
-                        onLongClick = { deleteTarget = item },
+            else -> AnimatedContent(
+                targetState = HistoryContent(items, episodeTotals, playedPercents),
+                contentKey = { it.items.isEmpty() },
+                transitionSpec = {
+                    fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) togetherWith
+                        fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMediumLow))
+                },
+                label = "historyContent",
+            ) { content ->
+                if (content.items.isEmpty()) {
+                    LoadStateBox(
+                        state = LoadState.Empty,
+                        emptyText = stringResource(R.string.history_empty),
+                        errorText = "",
+                        retryText = "",
+                        emptyIconRes = R.drawable.ic_empty_record,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(top = topPad),
                     )
+                } else {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(
+                            start = 16.dp + navStart,
+                            end = 16.dp,
+                            top = topPad + 8.dp,
+                            bottom = 8.dp + navBottom,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        items(content.items, key = { HistoryViewModel.key(it) }) { item ->
+                            HistoryRow(
+                                item = item,
+                                totalEpisodes = content.episodeTotals[
+                                    EpisodeTotals.key(item.sourceKey, item.id),
+                                ],
+                                playedPercent = content.playedPercents[
+                                    PlaybackProgress.key(item.sourceKey, item.id),
+                                ],
+                                modifier = Modifier.animateItem(
+                                    fadeInSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                                    placementSpec = if (placementAnim) {
+                                        spring(stiffness = Spring.StiffnessMediumLow)
+                                    } else {
+                                        null
+                                    },
+                                    fadeOutSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                                ),
+                                onClick = {
+                                    context.jumpToDetail(item.id, item.sourceKey, item.name, item.pic)
+                                },
+                                onLongClick = { deleteTarget = item },
+                            )
+                        }
+                    }
                 }
             }
         }

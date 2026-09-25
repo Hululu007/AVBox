@@ -4,6 +4,7 @@ package com.github.tvbox.osc.ui.activity
 
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
@@ -613,30 +614,44 @@ private fun SearchIdleContent(
                         .fillMaxWidth()
                         .padding(vertical = 8.dp),
                 )
-            } else if (history.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.search_history_empty),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp),
-                )
             } else {
-                FlowRow(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp, bottom = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    history.forEach { word ->
-                        HistoryChip(
-                            word = word,
-                            onClick = { onSearch(word) },
-                            onLongClick = { onRemoveHistory(word) },
+                AnimatedContent(
+                    targetState = history,
+                    contentKey = { it.isEmpty() },
+                    transitionSpec = {
+                        (
+                            fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) togetherWith
+                                fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMediumLow))
+                            ).using(SizeTransform(clip = false))
+                    },
+                    label = "searchHistory",
+                ) { list ->
+                    if (list.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.search_history_empty),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
                         )
+                    } else {
+                        FlowRow(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp, bottom = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            list.forEach { word ->
+                                HistoryChip(
+                                    word = word,
+                                    onClick = { onSearch(word) },
+                                    onLongClick = { onRemoveHistory(word) },
+                                )
+                            }
+                        }
                     }
                 }
             }

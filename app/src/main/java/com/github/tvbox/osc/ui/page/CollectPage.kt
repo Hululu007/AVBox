@@ -5,8 +5,12 @@
 
 package com.github.tvbox.osc.ui.page
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -170,57 +174,68 @@ fun CollectPage(
                 ContainedLoadingIndicator(Modifier.size(64.dp))
             }
 
-            items.isEmpty() -> LoadStateBox(
-                state = com.github.tvbox.osc.ui.components.LoadState.Empty,
-                emptyText = stringResource(R.string.collect_empty),
-                errorText = "",
-                retryText = "",
-                emptyIconRes = R.drawable.ic_empty_record,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(top = topPad),
-            )
-
-            else -> BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-            val gridColumns = WindowSize.gridColumns(
-                availableWidthDp = (maxWidth - 32.dp - navStart).value.toInt(),
-                minColumns = 2,
-            )
-            LazyVerticalGrid(
-                state = listState,
-                columns = GridCells.Fixed(gridColumns),
-                modifier = Modifier.fillMaxSize(),
-                
-                contentPadding = PaddingValues(
-                    start = 16.dp + navStart,
-                    end = 16.dp,
-                    top = topPad + 8.dp,
-                    
-                    bottom = 8.dp + navBottom,
-                ),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                items(items, key = { it.id }) { item ->
-                    CollectCard(
-                        item = item,
-                    
-                        modifier = Modifier.animateItem(
-                            fadeInSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                            placementSpec = if (placementAnim) {
-                                spring(stiffness = Spring.StiffnessMediumLow)
-                            } else {
-                                null
-                            },
-                            fadeOutSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                        ),
-                        onClick = {
-                            context.jumpToDetail(item.vodId, item.sourceKey, item.name, item.pic, collect = true)
-                        },
-                        onLongClick = { deleteTarget = item },
+            else -> AnimatedContent(
+                targetState = items,
+                contentKey = { it.isEmpty() },
+                transitionSpec = {
+                    fadeIn(animationSpec = spring(stiffness = Spring.StiffnessMediumLow)) togetherWith
+                        fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMediumLow))
+                },
+                label = "collectContent",
+            ) { list ->
+                if (list.isEmpty()) {
+                    LoadStateBox(
+                        state = com.github.tvbox.osc.ui.components.LoadState.Empty,
+                        emptyText = stringResource(R.string.collect_empty),
+                        errorText = "",
+                        retryText = "",
+                        emptyIconRes = R.drawable.ic_empty_record,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(top = topPad),
                     )
+                } else {
+                    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                        val gridColumns = WindowSize.gridColumns(
+                            availableWidthDp = (maxWidth - 32.dp - navStart).value.toInt(),
+                            minColumns = 2,
+                        )
+                        LazyVerticalGrid(
+                            state = listState,
+                            columns = GridCells.Fixed(gridColumns),
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(
+                                start = 16.dp + navStart,
+                                end = 16.dp,
+                                top = topPad + 8.dp,
+                                bottom = 8.dp + navBottom,
+                            ),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            items(list, key = { it.id }) { item ->
+                                CollectCard(
+                                    item = item,
+                                    modifier = Modifier.animateItem(
+                                        fadeInSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                                        placementSpec = if (placementAnim) {
+                                            spring(stiffness = Spring.StiffnessMediumLow)
+                                        } else {
+                                            null
+                                        },
+                                        fadeOutSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                                    ),
+                                    onClick = {
+                                        context.jumpToDetail(
+                                            item.vodId, item.sourceKey, item.name, item.pic, collect = true,
+                                        )
+                                    },
+                                    onLongClick = { deleteTarget = item },
+                                )
+                            }
+                        }
+                    }
                 }
-            }
             }
         }
     }

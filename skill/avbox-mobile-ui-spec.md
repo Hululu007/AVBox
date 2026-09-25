@@ -82,6 +82,7 @@
 - **视觉**:标题行 = 左上角「历史」/「收藏」大标题(`headlineSmall` 24sp/700;2026-09-09 由 titleLarge 18sp 改,用户定稿)+ 右侧「管理」;下方:历史 = 单列卡片列表(2026-09-09 用户定稿:每条观看记录用 **28dp 圆角卡片容器**包裹(`cardContainer` 底色,距屏幕边 16dp,卡片间距 12dp);卡内左 2:3 海报缩略图,右侧文字**三段垂直分布**(2026-09-09 用户定稿:名称上/集数「上次看到第X集」中/影视源下,列与海报等高 SpaceBetween;源名取 ApiConfig.getSource(sourceKey).name,无则回退 sourceKey;原观看时间不再显示));收藏 = 双列 2:3 海报网格(与首页卡片同风格)。点击进详情。
 - **删除交互**:多选管理模式——顶部「管理」进入多选,长按条目亦可直接进入并选中该条;批量删除(收藏=取消收藏,历史=删除记录),历史另含「清空全部」;退出模式用「完成」。
 - **刷新**:沿用 RoomDataManger(Room)+ EventBus TYPE_HISTORY_REFRESH。
+- **列表 ↔ 空态的过渡(2026-09-26)**:删到空 / 清空全部时,列表整块淡出、空态淡入(`AnimatedContent`,`contentKey` = `isEmpty`,spring `StiffnessMediumLow`);列表内部增删不做整块过渡,仍由 `Modifier.animateItem` 负责。⚠️ 过渡期退场内容读外层状态会拿到"已被清空"的值,`targetState` 必须携带渲染所需的完整快照(历史页的 `HistoryContent`:items + 集数/百分比)—— 同 `ConfigManagePage` 的 `PendingSwitch` 教训。
 
 ### 4.3 设置 tab(定稿)
 
@@ -151,6 +152,7 @@
 
 顶部 TextField + 系统输入法(删自绘键盘 SearchKeyboard);搜索历史 chips;各源结果分区;快搜功能已删除(2026-09-09,删除清单见 `history/features.md`),同名/换源需求由详情页换源行承担。**求解中进度 = 波浪线不定长 `LinearWavyProgressIndicator`**(2026-09-11 用户要求,替代 LinearProgressIndicator;左右 16dp 与搜索框对齐、上下各 12dp 留白,不贴搜索控件与下方卡片)。**结果源筛选**(2026-09-11 用户要求):进度条下方**横向滑动 FilterChip 行**(「全部」+ 所有有结果的源,单选;再点已选中的源 = 取消筛选回「全部」;仅 1 个源时整行不显示),仅过滤下方分区显示,不触发重搜;发起新搜索(含历史 chip/热搜/外部带标题进入)时筛选重置为「全部」。**空态文案居中**(2026-09-11 用户要求):「搜索历史」卡片的「暂无搜索历史」与「热搜榜」卡片的「暂无热搜数据」由靠左改居中(`Modifier.fillMaxWidth()` + `textAlign = TextAlign.Center`)。
 
+- **搜索记录区内部可以有过渡(2026-09-26)**:「记录 chips ↔ 暂无搜索历史」之间用 `AnimatedContent`(`contentKey` = `isEmpty`,`SizeTransform(clip = false)`)交叉淡入淡出,清空 / 删到最后一条不再硬切。⚠️ 与上一条的分区级硬切换**不冲突**:这里只在「搜索历史」卡片内部、且只在"有记录 ↔ 无记录"这一次跃迁时叠绘,不是两棵全屏子树;真机上若仍见卡顿感,按上条口径退回硬切。**列表内部删单条(chips 仍在)无动画** —— `FlowRow` 非 lazy,没有 `animateItem` 等价物,做逐条淡出/位移需引入 `LookaheadScope + animatePlacement`(项目内暂无先例)。
 - **内容分区不做过渡动画(2026-09-21 用户定稿)**:「闲置区(历史+热搜+联想)↔ 结果区」保持 `if/else` **直接切换**。当天曾用 `AnimatedContent` 试过两版(fade+slide+spring / 纯 alpha 交叉淡入淡出),用户以「效果不好 + 卡顿」为由要求**整体删除、改回硬切换** —— 结论是这里**不要加过渡**:① 搜索页不换 Activity,首帧结果区只有左侧源栏 + 波浪进度条,给整屏内容做位移/淡入都缺少可衔接的视觉主体;② 任何 `AnimatedContent` 都会把**两棵全屏子树**(闲置区 FlowRow chips + 结果区 LazyColumn)同时留在组合树里,叠绘 + 双份绘制本身就是卡顿源。过程与两版实现细节见 `history/features.md`。
 - **结果展示方式:默认竖排(2026-09-21 用户改定)**:两种排版都实现,`AnimatedContent` 在两者间切(各带一次 spring 位移+淡入,**这处动画保留**,与上面"闲置区↔结果区不加过渡"不冲突):
   - **竖排(默认)** = `RailResults`,左侧 140dp 站点栏(`SearchRailWidth`)+ 右侧结果列表;横排 = `SearchListResults`,各源分区 + 横向卡片行。
