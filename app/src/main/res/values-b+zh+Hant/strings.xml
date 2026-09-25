@@ -103,6 +103,7 @@
     <string name="search_history">搜尋紀錄</string>
     <string name="search_history_clear">清除搜尋紀錄</string>
     <string name="search_history_empty">暫無搜尋紀錄</string>
+    <string name="search_incognito">無痕模式：不顯示搜尋紀錄</string>
     <string name="search_hot_rank">熱搜榜</string>
     <string name="search_suggest">搜尋建議</string>
     <string name="search_hot_empty">暫無熱搜資料</string>
@@ -274,6 +275,7 @@
     <string name="history_title">歷史</string>
     <string name="history_clear">清空歷史</string>
     <string name="history_empty">暫無觀看歷史</string>
+    <string name="history_incognito">無痕模式：不顯示觀看紀錄</string>
     <string name="history_clear_message">將刪除全部觀看歷史紀錄，此操作無法復原</string>
     <string name="history_delete_title">刪除紀錄</string>
     <string name="history_delete_message">刪除「%1$s」的觀看紀錄？</string>

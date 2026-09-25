@@ -15,7 +15,6 @@ import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.base.BaseActivity
 import com.github.tvbox.osc.ui.components.SheetHostScaffold
 import com.github.tvbox.osc.bean.VodInfo
-import com.github.tvbox.osc.cache.CacheManager
 import com.github.tvbox.osc.cache.RoomDataManger
 import com.github.tvbox.osc.dlna.CastVideo
 import com.github.tvbox.osc.event.RefreshEvent
@@ -35,11 +34,12 @@ import com.github.tvbox.osc.ui.music.MusicPlayerState
 import com.github.tvbox.osc.ui.player.PlayerTipBridge
 import com.github.tvbox.osc.ui.theme.AVBoxTheme
 import com.github.tvbox.osc.ui.theme.enableTransparentEdgeToEdge
+import com.github.tvbox.osc.util.EpisodeTotals
 import com.github.tvbox.osc.util.LOG
-import com.github.tvbox.osc.util.MD5
 import com.github.tvbox.osc.util.MusicSettings
 import com.github.tvbox.osc.util.PermissionHelper
 import com.github.tvbox.osc.util.PlayerHelper
+import com.github.tvbox.osc.util.WatchProgressStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -244,7 +244,7 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
         // 必须在 engine.play() 之前(见 PlaybackController.beginSwitchPlayback)
         controller.beginSwitchPlayback()
         if (removeProgress) {
-            controller.progressKey()?.let { CacheManager.delete(MD5.string2MD5(it), 0) }
+            controller.progressKey()?.let { WatchProgressStore.clear(controller.progressOwner(), it) }
         }
         vod.playIndex = index
         list.forEachIndexed { i, series -> series.selected = i == index }
@@ -262,6 +262,8 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
      */
     private fun syncHistory() {
         vod.playNote = queueList().getOrNull(vod.playIndex)?.name.orEmpty()
+        // 音乐页是另一条历史落库路径,集数快照必须跟着一起写(否则纯音频片丢"X/Y 集")
+        EpisodeTotals.putFromVod(vod)
         RoomDataManger.insertVodRecord(historySourceKey, vod)
         EventBus.getDefault().post(RefreshEvent(RefreshEvent.TYPE_HISTORY_REFRESH))
     }
@@ -282,7 +284,7 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
     private fun replayCurrent() {
         // 同 playAt:必须在 engine.play() 之前
         controller.beginSwitchPlayback()
-        controller.progressKey()?.let { CacheManager.delete(MD5.string2MD5(it), 0) }
+        controller.progressKey()?.let { WatchProgressStore.clear(controller.progressOwner(), it) }
         controller.clearTriedLines()
         controller.setReusePlayerOnSwitch(true)
         engine.play(true)

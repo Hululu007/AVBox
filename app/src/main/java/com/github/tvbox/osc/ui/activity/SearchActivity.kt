@@ -569,6 +569,8 @@ private fun SearchIdleContent(
     onClearHistory: () -> Unit,
     onRemoveHistory: (String) -> Unit,
 ) {
+    // 无痕:搜索记录不展示(与历史页空态同口径;清空按钮保留,清的是已被隐藏的那份)
+    val incognito = HistoryHelper.isIncognito()
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -601,7 +603,17 @@ private fun SearchIdleContent(
                     onClick = onClearHistory,
                 )
             }
-            if (history.isEmpty()) {
+            if (incognito) {
+                Text(
+                    text = stringResource(R.string.search_incognito),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                )
+            } else if (history.isEmpty()) {
                 Text(
                     text = stringResource(R.string.search_history_empty),
                     style = MaterialTheme.typography.bodyMedium,

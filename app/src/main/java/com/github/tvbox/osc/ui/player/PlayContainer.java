@@ -53,6 +53,7 @@ import com.github.tvbox.osc.player.state.SubtitleSearchSheetState;
 import com.github.tvbox.osc.player.state.SubtitleSheetState;
 import me.jessyan.autosize.internal.CustomAdapt;
 import com.github.tvbox.osc.util.HawkConfig;
+import com.github.tvbox.osc.util.HistoryHelper;
 import com.github.tvbox.osc.util.PermissionHelper;
 import com.github.tvbox.osc.util.LOG;
 import com.github.tvbox.osc.util.MD5;
@@ -60,6 +61,7 @@ import com.github.tvbox.osc.util.PlayerHelper;
 import com.github.tvbox.osc.util.SubtitleHelper;
 import com.github.tvbox.osc.util.TrackMemory;
 import com.github.tvbox.osc.util.KV;
+import com.github.tvbox.osc.util.WatchProgressStore;
 import com.github.tvbox.osc.viewmodel.SubtitleViewModel;
 import androidx.lifecycle.ViewModelProvider;
 import androidx.lifecycle.ViewModelStoreOwner;
@@ -633,9 +635,10 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
             @Override
             public void playNext(boolean rmProgress) {
                 String preProgressKey = scheduler.progressKey();
+                String preOwner = scheduler.progressOwner();
                 PlayContainer.this.playNext(rmProgress);
                 if (rmProgress && preProgressKey != null)
-                    CacheManager.delete(MD5.string2MD5(preProgressKey), 0);
+                    WatchProgressStore.clear(preOwner, preProgressKey);
             }
 
             @Override
@@ -1598,6 +1601,8 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
     }
 
     private boolean isSamePlaybackOwned(PlaybackSession session) {
+        // 无痕:停着的那份是旧痕迹,不接管(重进从片头起播);正在播的(音频在后台)是活状态,照常接管不打断
+        if (HistoryHelper.isIncognito() && (mVideoView == null || !mVideoView.isPlaying())) return false;
         if (!TextUtils.equals(scheduler.startedPlaybackKey(), session.playbackKey())) return false;
         if (engine.isLiveMode()) return false;
         if (mVideoView == null || mVideoView.getMediaPlayer() == null) return false;

@@ -18,9 +18,8 @@ public class HistoryHelper {
     }
 
     /**
-     * 无痕模式(2026-09-12):开启后不写入搜索历史与观看历史(含播放进度),收藏不受影响。
-     * 判定收敛在这里,所有历史写入侧统一调用 —— 目前是 [setSearchHistory] 与
-     * `RoomDataManger.insertVodRecord`(观看历史 + 进度的唯一落库点)。
+     * 无痕判定,所有判断统一走这里。写侧 = 搜索历史 / 观看历史 / 续播点 / 百分比 / 集数快照;
+     * 读侧 = 续播点 / 详情页续播记录 / 预载起点 / 快照展示;接管侧 = 同片接管;UI = 历史页与搜索页空态。
      */
     public static boolean isIncognito(){
         return KV.get(HawkConfig.INCOGNITO, false);

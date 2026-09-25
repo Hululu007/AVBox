@@ -10,6 +10,7 @@ import androidx.lifecycle.MutableLiveData;
 import com.github.tvbox.osc.cache.CacheManager;
 import com.github.tvbox.osc.util.DefaultConfig;
 import com.github.tvbox.osc.util.HawkConfig;
+import com.github.tvbox.osc.util.HistoryHelper;
 import com.github.tvbox.osc.util.LOG;
 import com.github.tvbox.osc.util.MD5;
 import com.github.tvbox.osc.util.PlayerHelper;
@@ -218,17 +219,20 @@ public final class PreloadCoordinator {
         }
         HashMap<String, String> headers = extractHeaders(info);
         long startPos = snapshot.startSkipMs;
-        try {
-            Object history = CacheManager.getCache(MD5.string2MD5(snapshot.nextKey));
-            long rec = 0;
-            if (history instanceof Long) {
-                rec = (Long) history;
-            } else if (history instanceof String) {
-                rec = Long.parseLong((String) history);
+        // 无痕:预载起点同样不认旧进度,否则自动连播的下一集会带着上次的位置起播
+        if (!HistoryHelper.isIncognito()) {
+            try {
+                Object history = CacheManager.getCache(MD5.string2MD5(snapshot.nextKey));
+                long rec = 0;
+                if (history instanceof Long) {
+                    rec = (Long) history;
+                } else if (history instanceof String) {
+                    rec = Long.parseLong((String) history);
+                }
+                startPos = Math.max(startPos, rec);
+            } catch (Throwable ignored) {
+                LOG.d("PreloadCoordinator", "read saved progress failed, use snapshot start");
             }
-            startPos = Math.max(startPos, rec);
-        } catch (Throwable ignored) {
-            LOG.d("PreloadCoordinator", "read saved progress failed, use snapshot start");
         }
         preloadedKey = snapshot.nextKey;
         LOG.i("echo-preload-resolve-ok: " + url);

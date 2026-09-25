@@ -1,5 +1,7 @@
 package com.github.tvbox.osc.util
 
+import com.github.tvbox.osc.bean.VodInfo
+
 /**
  * 影片总集数快照(历史页进度条用)。
  *
@@ -20,9 +22,13 @@ object EpisodeTotals {
     fun key(sourceKey: String?, vodId: String?): String =
         sourceKey.orEmpty() + "|" + vodId.orEmpty()
 
-    fun snapshot(): Map<String, Int> = read()
-        .mapNotNull { (key, value) -> value.toIntOrNull()?.takeIf { it > 1 }?.let { key to it } }
-        .toMap()
+    fun snapshot(): Map<String, Int> {
+        // 无痕:不展示观看痕迹(与 PlaybackProgress.snapshot 同口径;不靠调用方早退兜住)
+        if (HistoryHelper.isIncognito()) return emptyMap()
+        return read()
+            .mapNotNull { (key, value) -> value.toIntOrNull()?.takeIf { it > 1 }?.let { key to it } }
+            .toMap()
+    }
 
     /**
      * 可数的集数:集名必须带"集序号"(01 / 第1集 / EP01);网盘电影常把同一集的多个语言/码率版本铺成
@@ -49,6 +55,49 @@ object EpisodeTotals {
 
     fun put(sourceKey: String?, vodId: String?, total: Int?) {
         if (sourceKey.isNullOrEmpty() || vodId.isNullOrEmpty()) return
+        // 无痕:不新增观看痕迹(集数快照只服务历史卡片)
+        if (HistoryHelper.isIncognito()) return
+        putInternal(sourceKey, vodId, total)
+    }
+
+    /** 用户删历史时的移除入口(owner = 源|片id):主动操作不受无痕拦截 */
+    @Synchronized
+    fun remove(owner: String) {
+        val map = read()
+        if (map.remove(owner) == null) return
+        KV.put(KEY, map)
+    }
+
+    /**
+     * 与索引同口径:只保留这些 owner 的快照,理由同 `PlaybackProgress.retain`
+     * ([LIMIT] 那道按 HashMap 迭代序淘汰,挑的不是最旧的)。
+     */
+    @Synchronized
+    fun retain(owners: Set<String>) {
+        val map = read()
+        val kept = HashMap<String, String>(map.size)
+        for ((id, value) in map) {
+            if (owners.contains(id)) kept[id] = value
+        }
+        if (kept.size == map.size) return
+        KV.put(KEY, kept)
+    }
+
+    /** 清空历史:整张快照清掉 */
+    @Synchronized
+    fun removeAll() {
+        KV.delete(KEY)
+    }
+
+    /** 按当前线路的集名快照集数(历史卡片 "X/Y 集");集名不可数时清掉旧快照 */
+    fun putFromVod(vod: VodInfo) {
+        val list = vod.playFlag?.let { vod.seriesMap?.get(it) }
+        put(vod.sourceKey, vod.id, list?.let { episodeCount(it.map { series -> series.name }) })
+    }
+
+    /** 加锁:详情页主线程写入与历史页 IO 协程的级联移除会并发读改写 */
+    @Synchronized
+    private fun putInternal(sourceKey: String, vodId: String, total: Int?) {
         val id = key(sourceKey, vodId)
         val map = read()
         if (total == null || total <= 1) {

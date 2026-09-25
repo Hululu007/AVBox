@@ -31,12 +31,14 @@ import com.github.tvbox.osc.server.ControlManager;
 import com.github.tvbox.osc.util.DefaultConfig;
 import com.github.tvbox.osc.util.FileUtils;
 import com.github.tvbox.osc.util.HawkConfig;
+import com.github.tvbox.osc.util.HistoryHelper;
 import com.github.tvbox.osc.util.ImgUtil;
 import com.github.tvbox.osc.util.KV;
 import com.github.tvbox.osc.util.LOG;
 import com.github.tvbox.osc.util.LanguageManager;
 import com.github.tvbox.osc.util.MD5;
 import com.github.tvbox.osc.util.PlayerHelper;
+import com.github.tvbox.osc.util.WatchProgressStore;
 import com.github.tvbox.osc.util.thunder.Jianpian;
 import com.github.tvbox.osc.util.thunder.Thunder;
 import com.github.tvbox.osc.ui.player.PlayerTipBridge;
@@ -79,6 +81,8 @@ public class PlaybackController {
 
     /** 当前集进度键(源+片+线路+集+集名) */
     private String progressKey;
+    /** 进度键的归属(源|片id),与 progressKey 同处更新;进度键取 MD5 后无法反推归属 */
+    private String progressOwner;
     /** 当前集字幕缓存键 */
     private String subtitleCacheKey;
     private String playSubtitle;
@@ -194,6 +198,8 @@ public class PlaybackController {
     public long getSavedProgress(String url) {
         int st = (playerCfg == null) ? 0 : playerCfg.optInt("st", 0);
         long skip = st * 1000L;
+        // 无痕:旧记录连读都不读 —— 只拦写的话,重进仍会从上次留下的位置接着播,隐身等于没开
+        if (HistoryHelper.isIncognito()) return skip;
         Object theCache = CacheManager.getCache(MD5.string2MD5(url));
         if (theCache == null) {
             return skip;
@@ -225,17 +231,17 @@ public class PlaybackController {
     /** 把"接着看"的进度写进新键(仅当新键无历史);无论结果如何都清掉待继承状态 */
     public void inheritProgressIfNeeded() {
         try {
-            if (TextUtils.isEmpty(inheritProgressKey) || TextUtils.isEmpty(progressKey)) return;
-            if (TextUtils.equals(inheritProgressKey, progressKey)) return;
-            if (inheritProgress <= 0) return;
-            Object targetCache = CacheManager.getCache(MD5.string2MD5(progressKey));
-            if (targetCache == null) {
-                CacheManager.save(MD5.string2MD5(progressKey), inheritProgress);
-            }
+            WatchProgressStore.inherit(progressOwner(), inheritProgressKey, progressKey, inheritProgress);
         } finally {
             inheritProgressKey = null;
             inheritProgress = 0;
         }
+    }
+
+    /** 进度索引的归属键(源|片id):与 {@link #progressKey()} 成对,未起播过则为 null(此时只落进度、不维护索引) */
+    @Nullable
+    public String progressOwner() {
+        return progressOwner;
     }
 
     // 线路/剧集匹配见 EpisodeMatcher
@@ -380,6 +386,8 @@ public class PlaybackController {
 
     public void setProgressKey(String progressKey) {
         this.progressKey = progressKey;
+        // 归属与键同处更新:换片时先 release 旧内核(那一刻视图里还是旧键),此处若按当前 vod 归属会把旧片的键记到新片名下
+        this.progressOwner = WatchProgressStore.ownerOf(vod);
     }
 
     @Nullable
@@ -1379,7 +1387,7 @@ public class PlaybackController {
             if (reusePlayer) {
                 long previousPosition = view.currentPosition();
                 if (previousPosition > 0 && !TextUtils.isEmpty(progressKey())) {
-                    CacheManager.save(MD5.string2MD5(progressKey()), previousPosition);
+                    WatchProgressStore.save(progressOwner(), progressKey(), previousPosition, view.duration());
                 }
                 view.clearVideoFrame();
             } else {
@@ -1389,6 +1397,8 @@ public class PlaybackController {
         ImgUtil.clearMemoryCache();
         setSubtitleCacheKey(vod().sourceKey + "-" + vod().id + "-" + vod().playFlag + "-" + vod().playIndex + "-" + vs.name + "-subt");
         setProgressKey(vod().sourceKey + vod().id + vod().playFlag + vod().playIndex + vs.name);
+        // 这一集是真的重新起播:删除时下的"作废"到此为止(否则用户重看一遍也不再记进度)
+        WatchProgressStore.onPlayStart(progressKey());
         startResolvePlayUrlTimeout();
         // 换源点击即停前记下的进度:新源进度键不同,写进新键缓存接着看(新键已有历史记录则不覆盖);
         // 回滚原源时键相同,停播 release 已落盘,该方法会直接跳过
@@ -1400,7 +1410,10 @@ public class PlaybackController {
         st.pendingInheritProgress = 0;
         // 重新播放清除现有进度
         if (reset) {
-            CacheManager.delete(MD5.string2MD5(progressKey()), 0);
+            // 重播不消费待继承进度,留着会被下一次非重播播放写进别的集
+            inheritProgressKey = null;
+            inheritProgress = 0;
+            WatchProgressStore.clear(progressOwner(), progressKey());
             CacheManager.delete(MD5.string2MD5(subtitleCacheKey()), 0);
         } else {
             inheritProgressIfNeeded();

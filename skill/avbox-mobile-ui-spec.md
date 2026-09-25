@@ -197,7 +197,7 @@
 - **禁用手势控制(2026-09-13)**:开关行 = `SettingsSwitchRow(title="禁用手势控制", subtitle="开启后将禁用手势控制亮度和音量")`,值存 KV `HawkConfig.GESTURE_CONTROL_DISABLED`(`"gesture_control_disabled"`,默认关);位置 = 独立分组中间(2026-09-17 起与无痕模式/禁用导航动画同组)。判定统一走 `GestureHelper.isControlDisabled()`,**点播与直播两侧共用一份实现**。
   - ⚠️ **只禁"上下滑调亮度/音量",不要顺手禁掉别的**:两个控制器里该判定必须是独立方法(`canChangeBrightnessVolume`),**不能并进 `canHandleGesture`** —— 点播侧 `isPortraitEpisodeSwipe`(竖屏上下滑切集)内部也调 `canHandleGesture`,并进去会连切集一起禁掉。单击显隐、双击播放/暂停、横滑进度、左右快滑切台、竖屏上下滑切集全部不受影响。
   - 关闭该开关后竖向滑动**静默忽略**(不调亮度音量,也不弹任何提示),避免"以为坏了"。
-- **无痕模式(2026-09-12)**:开关行 = `SettingsSwitchRow(title="无痕模式")`(**无副标题** —— 2026-09-13 用户要求删掉「不记录搜索与观看历史」那行),值存 KV `HawkConfig.INCOGNITO`(`"incognito"`,默认关)。开启后**只拦写入、不隐藏已有数据**:①搜索历史 `HistoryHelper.setSearchHistory()` 直接 return;②观看历史 + 播放进度 `RoomDataManger.insertVodRecord()` 直接 return(该方法是观看历史的**唯一落库点**,片头/切集/进度同步都汇聚于此,拦一处即全覆盖)。**不受影响**:手动收藏(`insertVodCollect` 链路)、清空/删除历史、卸载式的用户主动操作。判定统一走 `HistoryHelper.isIncognito()`(照上游 FongMi 的 `Setting.isIncognito()` + `VodHistoryPolicy` 在策略层拦截的写法;区别是 FongMi 只覆盖观看历史,本项目按用户要求把搜索历史也纳入)。
+- **无痕模式(2026-09-12)**:开关行 = `SettingsSwitchRow(title="无痕模式")`(**无副标题** —— 2026-09-13 用户要求删掉「不记录搜索与观看历史」那行),值存 KV `HawkConfig.INCOGNITO`(`"incognito"`,默认关)。开启后**不写也不读观看痕迹**(2026-09-26 由"只拦写入"扩展为四侧,详见 §6.16):①搜索历史 `HistoryHelper.setSearchHistory()` / 观看历史 + 播放进度 `RoomDataManger.insertVodRecord()`(该方法是观看历史的**唯一落库点**)直接 return;②续播点、历史页百分比与集数快照不写、也不展示;③详情页不读旧记录(不恢复"上次看到第几集/哪条线路/该片播放配置");④停着的播放内容不做同片接管(正在播的不打断);⑤历史页(观看历史)与搜索页(搜索记录)各显示无痕空态而非条目。**不受影响**:手动收藏(`insertVodCollect` 链路)、清空/删除历史、已有数据本身(关掉开关即恢复)。判定统一走 `HistoryHelper.isIncognito()`。
 - **留白**:内容末尾 `Spacer(64.dp)`,与设置页一致。
 
 ### 4.10 音乐播放页(2026-09-19 定稿)
@@ -385,12 +385,14 @@
 - 内容留白按「**顶栏内容下沿**」计算,不是整行高度(行内内容垂直居中会产生余量):各页相对差值 = 设置 `-12`、历史/收藏/配置/主题 `-8+28`、首页 `+8`、搜索/栏目 `-8`。
 
 ### 6.7 键值存储(KV = MMKV,2026-09-13 取代 Hawk)
-- **唯一入口 `util/KV`**(`get` / `put` / `contains` / `delete`),内部 MMKV `avbox_kv` 单进程不加密;`App.initParams` → `KV.init(this)` 必须在任何 KV 读写之前执行(迁移见下条)。
+- **唯一入口 `util/KV`**(`get` / `put` / `contains` / `delete` / `keys(prefix)`),内部 MMKV `avbox_kv` 单进程不加密;`App.initParams` → `KV.init(this)` 必须在任何 KV 读写之前执行(迁移见下条)。**`keys(prefix)` 只服务孤儿清理类冷路径**(进度索引遍历、`track_mem_*` 批量删除):它每次都把整张键表取一遍,勿在热路径调用。
 - **复杂键(集合 / Map / JsonArray)必须在 `util/kv/KVKeySpec` 登记显式类型**:Java 泛型擦除后,`new ArrayList()` / `new HashMap<>()` / `null` 默认值都带不来元素类型,按它们解码会得到元素为 `LinkedTreeMap` 的集合 → 取值 `ClassCastException` 或写回时元素类型被写坏。**禁止用匿名 `TypeToken` 捕获类型变量**推元素类型 —— 那正是旧 Hawk 在 gson 2.13+ 下"集合键整体读不出"的根因。
 - **无 Hawk、无数据迁移**(2026-09-13 起):应用未发布、无存量用户,`com.orhanobut:hawk` 与 Conceal 已从依赖树移除,首装即原生 MMKV;`proguard` 的 hawk keep 规则一并删除。**gson 版本约束随之解除**,可自由升级。
 - **失败不再静默**:`put` 返 false 且打 `echo-kv` 日志;集合读取区分"键不存在"(返回默认值,正常)与"解不出类型"(打日志 + 返回默认值)。取真机日志:`adb shell run-as com.github.avbox.osc cat files/preload_debug.log`(该 ROM 吞 logcat,`FILE_LOG_PREFIXES` 已含 `echo-kv`)。
 - **⚠️ 存在性判定 != 取默认值**:`KV.contains(key)` 才是判存在,`KV.get(key, def)` 拿到的 def 分不清"键不存在"与"存的就是这个值"。两个已踩过的坑:① `Hawk.get(key, def)` 在旧库迁移时把 def 当值写入了 KV,`search_threads=0` 直接崩在 `Semaphore(0)`;② MMKV `getValueSize` 对不存在的键返回 **0 而非 -1**(`size_t` 语义),拿它判存在会恒不成立并刷日志。**迁移/统计类代码务必核对键数量守恒**(老库键数 ≈ 新库键数),数量对不上就是数据写坏的第一个信号。
 - **全仓无 SharedPreferences(2026-09-15)**:原有 2 处独立 SP 已补迁入 KV —— ①雷电标识 `thunder_imei`/`thunder_mac`(键常量 `HawkConfig.THUNDER_IMEI`/`THUNDER_MAC`,替代 SP 文件 `rand_thunder_id`);②轨道记忆(2026-09-25 起为 `track_mem_<sourceKey>@<vodId>_audio|video|text`,动态键;旧 `audio_track_<progressKey>_*` 已废弃、不再读写,见 §6.1 与 `history/features.md` 同日条目;替代 SP 文件 `audio_track_prefs`;`TrackMemory` 为无状态静态工具类,不持 Context/单例)。
+
+- **观看痕迹类动态键(2026-09-26)**:`playback_progress` / `episode_totals`(均为 `源|片id` → String 的整表 map)与 `progress_index_<源>|<片id>`(String JSON 载荷 `{at,eps}`)。三者沿用动态键约定(同 `track_mem_*`:不登记 `KVKeySpec`,**调用侧必须带具体默认值**)—— 默认值一旦写成 `null` 或省略,读侧就拿不到元素类型、退化成 `JsonElement` 节点树。写入与清理口径见 §6.16。
 
 ### 6.8 权限(2026-09-13 梳理,最终 15 条)
 
@@ -480,7 +482,7 @@
 ### 6.14 观看历史的落库时机(2026-09-23 补,由实机误判得出)
 
 - ⚠️ **观看历史不得在"页面建会话"处落库**:`DetailViewModel.preparePlaySession()` / `syncPlayingVodInfo()` 只是"登记要播什么"(取流可能失败、也可能没起播就退出)⇒ 在那里落库会让误点、线路全挂都进历史,且条目与进度条对不上。唯一写入口是 `DetailViewModel.onPlaybackStarted()`,由 `PlaybackProgress` 发的 `RefreshEvent.TYPE_PLAYBACK_STARTED` 触发。
-- ⚠️ **判据必须是"播放头累计平滑推进",不是"位置 > 0"**:起播起始位置来自上次进度(`player/src/.../VideoView.java` 的 `setStartPosition` 与 `onPrepared` 回退 `seekTo`)⇒ 缓冲期位置就是非 0,取流失败时 `flush()` 也带着它;跳变(> `MAX_STEP_MS`)与回拖都不计入,累计过 `MIN_ADVANCE_MS` 才发信号。`PlaybackProgress.stepAdvanceMs` / `shouldMarkWatched` 是这条口径的单一事实来源,改动必须同步 `PlaybackProgressTest`。
+- ⚠️ **判据必须是"播放头累计平滑推进 + 真看进去了"**,不是"位置 > 0":起播起始位置来自上次进度(`player/src/.../VideoView.java` 的 `setStartPosition` 与 `onPrepared` 回退 `seekTo`)⇒ 缓冲期位置就是非 0,取流失败时 `flush()` 也带着它;跳变(> `MAX_STEP_MS`)与回拖都不计入,累计过 `MIN_ADVANCE_MS` 后**还要过 `WatchProgressRules` 的记录阈值**(2026-09-26 起,见 §6.16),否则"进详情页自动起播的竖屏预览看几秒"就会把片写进历史、把 30 条上限冲爆。`PlaybackProgress.markWatched` 是这条口径的唯一实现处(平滑推进部分由 `stepAdvanceMs` / `shouldMarkWatched` 承担),改动必须同步 `PlaybackProgressTest`。
 
 ### 6.15 本地源可读性判据(2026-09-25 补,真机取证)
 
@@ -488,6 +490,20 @@
 - ⚠️ **判据 = `PermissionHelper.isStorageGranted()` 或 `LocalSourceTree.covers()`**(已持久化的目录授权,本地服务有 SAF 兜底);两者都不成立就把路径交回 `ConfigManageActivity.settleUnreachableSource` 去争「所有文件访问」,拿不到再退 `OpenDocumentTree`(可持久化)。**选文件前仍不预检权限**(见 §4 本地文件选择):预检会让"真持久可读"的设备白跳一次设置页。
 - ⚠️ **只信应用内埋点,且要连着看两行**:`echo-local-src path granted=… src=…` 后面紧跟的 `echo-local-src import … direct=true/false` 才是判据结果(`direct=true` = 交回调用方争授权);`adb run-as` 的读测与进程内结论不一致,不能当证据(见 §4 同处注)。
 - ⚠️ **本地/局域网源在加载时也不吃 filesDir 快照**:`ApiConfig` 的 `useCache` 分支只对 http(s) 生效(`isRemoteSource`),否则失效的本地源会被旧快照长期掩盖(点播侧由 `AppBootstrap.useCachedConfig` 已挡住,直播侧 `loadLiveConfig(true)` 原先没有)。
+
+### 6.16 观看进度记忆(2026-09-26 补,两批改造;违反会复发"垃圾痕迹 / 删不掉 / 误删")
+
+- ⚠️ **进度只有 `util/WatchProgressStore` 一个写入/清除出口**:`PlaybackEngine.progressManager`、`PlaybackController`(切集前落盘 / 换源继承 / 重播清理)、`PlayContainer.playNext`、`MusicPlayerActivity`(切歌 / 重播)全部经它。新增任何落盘点都必须走门面并**带上 owner**,否则阈值、无痕、片级索引三件事一起漏。
+- ⚠️ **owner(`源|片id`)与进度键必须同处更新**(`PlaybackController.setProgressKey` 里一起写):进度键是"源+片+线路+集+集名"无分隔符拼接后取 MD5,**反推不出归属**;若改成在落盘时按当前 `vod()` 推导,换片那一刻(先 `releasePlayer()` 落盘、后换键)会把**上一部片**的键记进新片的索引 ⇒ 日后删新片历史会误删旧片的续播点。`progressOwner()` 只在键变更时更新,且视图侧的键只能来自控制器。
+- ⚠️ **阈值只写一处**:`util/WatchProgressRules`(`MIN_RESUME_MS` = 30 秒、`MIN_RESUME_PERCENT` = 30、`FINISHED_PERCENT` = 95,时长未知按绝对值;取"30 秒与 30% 更小者"是为了让短视频也留得下续播点)。续播点、历史页百分比、"进历史"三通道共用它 —— 分开定阈值会出"卡片显示看过、点进去却从头"这类自相矛盾;边界由 `WatchProgressRulesTest` 锁定。
+- ⚠️ **"释放内核"那条落盘路径读不到时长**:`VideoView.release()` 先置空 `mMediaPlayer` 再 `saveProgress()`,那一刻 `getDuration()` 恒为 0 ⇒ 判据退化成只剩绝对 30 秒,会把"看完即清"的续播点以片尾位置写回。门面用 `noteDuration`(`PlaybackProgress.onProgress` 每秒喂一次真实时长)兜底;**新增任何依赖 duration 的判据都要回来核这条**。
+- ⚠️ **无痕只拦"写新的",清除一律执行**(`save` 的无痕判断只在 `SAVE` 分支):放错位置会让"看完了"也清不掉旧续播点,而百分比通道却清了 ⇒ "卡片没进度条、点开却跳片尾"。`TrackMemory`(轨道/字幕来源记忆)与字幕/歌词缓存**刻意不拦**(前者是用户显式选择,后者是缓存)。
+- ⚠️ **级联只在用户主动操作时发生**:删单条 / 清空历史(`HistoryPage`)、索引片数超 `WatchProgressIndex.MAX_TITLES`(= 100)的容量淘汰(按 `at` 淘汰最旧,且**排除 `justSavedOwner` 与当前正在看的片**)。**历史被条数上限自动裁掉(`RoomDataManger.reserver`)与历史合并去重都不级联** —— 两者都是常态,清了会把正常续播点误删。删单条的 owner 取自历史记录的 `sourceKey` —— 该字段在 `switchSource → loadDetail` 时与 `vodId` 一起同步成新源,故**与进度 owner 始终一致**,单条删除清这一份就够;换源**之前**那份(旧源 + 旧 id)的进度与索引会留成孤儿,属非用户主动操作,未级联(按 `vodId` 猜跨源级联有"跨源同 id 误删"风险,不做)。
+- ⚠️ **作废登记(`WatchProgressStore.discardedKeys`)必须按 MD5 存且必须成套闭合**:存储键是 `MD5(进度键)`,故登记、命中、解除三处都用 MD5(`discard` / `discardHashed` / `onPlayStart`);`clearAll` 的兜底扫描只拿得到 MD5 ⇒ 需要 `discardHashed` 这条入口。解除点唯一 = `PlaybackController.play()`(该集真正重新起播),所以**任何"跳过起播"的路径都必须先解除接管归属**(删单条 / 清空 / 容量淘汰三处都调 `PlaybackEngine.discardStartedContentOf`),否则被登记的片之后写的进度会被一直丢弃。
+- ⚠️ **接管归属与它关联的字段只在主线程读写**:`PlaybackEngine.discardStartedContentOf` 会被历史页 IO 协程调用 ⇒ 内部先 `main.post` 回主线程再改,直接跨线程写 `session`/`startedPlaybackKey` 会丢更新(表现为"删了历史,重进仍被接管")。
+- ⚠️ **两张快照与索引同口径回收**:`PlaybackProgress.retain` / `EpisodeTotals.retain` 在容量淘汰流程里按"索引内 owner + 正在看的片"裁剪(60 秒节流)。不这么做的话,两张快照各留 300 条且按 HashMap 迭代序淘汰 ⇒ 会删掉刚看的、留下记录已被回收的孤儿。`LIMIT`(= 300)至此只是防御性安全阀。代价:索引之外的存量快照会在首次回收时被清掉(卡片上的"已看 X%/X/Y 集"消失,续播点与历史条目不受影响)。
+- ⚠️ **无痕的读侧/接管侧/展示侧各有落点**:`PlaybackController.getSavedProgress`(续播点)、`DetailViewModel.onDetailResult`(集数/线路/播放配置)、`PreloadCoordinator`(预载起点)、`PlaybackProgress.snapshot` + `EpisodeTotals.snapshot`(展示)、`PlayContainer.isSamePlaybackOwned`(**仅在内容未在播时**拒绝接管)、`HistoryPage`(`incognito` 空态 + 不读库 + 跳过去重删库)、`SearchActivity`(搜索记录区显示无痕提示,清空按钮保留)。新增任何读旧进度/旧历史/旧搜索记录的地方都必须带上判断,判定统一走 `HistoryHelper.isIncognito()`。
+- ⚠️ **索引载荷只增不删的两种情形**:`MAX_EPS_PER_TITLE`(= 300)裁剪与载荷损坏降级都会让个别进度键失去索引 ⇒ 那些集只能等容量淘汰整片;改动索引格式时必须保留"损坏载荷降级为无索引、不抛异常"的行为。
 
 ## 7. 未决 / 待细化清单
 
@@ -520,7 +536,7 @@
 | 文件 | 内容 | 什么时候查 |
 | --- | --- | --- |
 | `history/steps.md` | Step 0–7 改造实施记录、Step 1 删除清单实际对账、各步决策与验证记录 | 想知道"某个类 / 布局 / 依赖当初为什么删"、"某步的架构决策与验证点" |
-| `history/features.md` | 2026-09-09 起功能迭代记录:首页下拉刷新、隧道模式 + AAC 优先、配置管理页、主题设置页、顶部应用栏改造全过程、选集网格溢出修复、快搜删除、卡片点击分发 + 网盘下钻、音乐播放页底部胶囊改版 + 详情页音乐页入口 + 歌词(ASS)/封面/历史三处修复 + 音乐后台播放通知消失(会话闩锁)修复、切音轨报「视频播放出错」(双音频渲染器时钟冲突)及同族四缺陷修复、小窗转全屏底栏字号突变(mm 档脱离 AutoSize)修复 | 想知道"某功能当初怎么实现 / 为什么这么定 / 踩过什么坑" |
+| `history/features.md` | 2026-09-09 起功能迭代记录:首页下拉刷新、隧道模式 + AAC 优先、配置管理页、主题设置页、顶部应用栏改造全过程、选集网格溢出修复、快搜删除、卡片点击分发 + 网盘下钻、音乐播放页底部胶囊改版 + 详情页音乐页入口 + 歌词(ASS)/封面/历史三处修复 + 音乐后台播放通知消失(会话闩锁)修复、切音轨报「视频播放出错」(双音频渲染器时钟冲突)及同族四缺陷修复、小窗转全屏底栏字号突变(mm 档脱离 AutoSize)修复、影视进度记忆改造(统一记录判据 + 进度写入收口到门面 + 无痕覆盖续播点/百分比/集数 + 删历史级联清理 + 100 部容量兜底,含三轮独立复核) | 想知道"某功能当初怎么实现 / 为什么这么定 / 踩过什么坑" |
 
 **旧章节 → 新位置对应关系**:旧 §5 删除清单 → `history/steps.md`;旧 §7 实施路线 + 旧 §8 Step 记录 → `history/steps.md`;旧 §8 功能小节 → `history/features.md`;旧 §6 视觉细节 → 本文 §5;旧 §9 未决清单 → 本文 §7。
 

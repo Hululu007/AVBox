@@ -90,7 +90,10 @@ public class RoomDataManger {
         VodRecordDao dao = AppDataManager.get().getVodRecordDao();
         Integer index = KV.get(HawkConfig.HISTORY_NUM, 0);
         Integer hisNum = HistoryHelper.getHisNum(index);
-        List<VodRecord> recordList = dao.getAll(Integer.MAX_VALUE);
+        int size = Math.min(limit, hisNum);
+        // 条数下推 SQL:历史条目再多也只读所需条数(全表读 + 逐条反序列化会随条目数恶化)。
+        // 代价:dataJson 读不出的行会占掉一个名额(仍会被下面的 reserver 裁掉)
+        List<VodRecord> recordList = dao.getAll(size);
         List<VodInfo> vodInfoList = new ArrayList<>();
         if (recordList != null) {
             for (VodRecord record : recordList) {
@@ -115,8 +118,7 @@ public class RoomDataManger {
         if (dao.getCount() > hisNum) {
             dao.reserver(hisNum);
         }
-        int size = Math.min(vodInfoList.size(), Math.min(limit, hisNum));
-        return new ArrayList<>(vodInfoList.subList(0, size));
+        return vodInfoList;
     }
 
     public static void insertVodCollect(String sourceKey, VodInfo vodInfo) {

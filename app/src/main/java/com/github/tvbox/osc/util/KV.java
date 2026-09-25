@@ -5,6 +5,9 @@ import android.content.Context;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import com.github.tvbox.osc.util.kv.KVCodec;
 import com.tencent.mmkv.MMKV;
 
@@ -98,6 +101,20 @@ public final class KV {
 
     public static void delete(@NonNull String key) {
         requireStore().removeValueForKey(key);
+    }
+
+    /**
+     * 按前缀列出全部键(传空串即全部,不接受 null);只服务孤儿清理类冷路径 —— MMKV 的 allKeys() 每次都取整张键表。
+     */
+    @NonNull
+    public static List<String> keys(@NonNull String prefix) {
+        String[] all = requireStore().allKeys();
+        List<String> matched = new ArrayList<>();
+        if (all == null) return matched;
+        for (String key : all) {
+            if (key != null && key.startsWith(prefix)) matched.add(key);
+        }
+        return matched;
     }
 
     /** 先于 {@link #init} 调用属编码错误:故意抛异常,避免静默降级成"到处读默认值" */

@@ -98,7 +98,11 @@ fun PreferenceSettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel =
                     SettingsSwitchRow(
                         title = stringResource(R.string.settings_incognito),
                         checked = state.incognito,
-                        onCheckedChange = { vm.put(HawkConfig.INCOGNITO, it) },
+                        onCheckedChange = {
+                            vm.put(HawkConfig.INCOGNITO, it)
+                            // 历史页据此立刻切到"无痕提示"或恢复列表(不必重进页面)
+                            EventBus.getDefault().post(RefreshEvent(RefreshEvent.TYPE_HISTORY_REFRESH))
+                        },
                     )
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {

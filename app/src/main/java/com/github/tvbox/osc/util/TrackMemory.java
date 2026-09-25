@@ -208,6 +208,13 @@ public final class TrackMemory {
         KV.delete(slotKey(contentKey, TYPE_TEXT));
     }
 
+    /** 清空全部轨道记忆(清空观看历史时一并清理,免得留下访问不到的孤儿键) */
+    public static void deleteAll() {
+        for (String key : KV.keys(KEY_PREFIX)) {
+            KV.delete(key);
+        }
+    }
+
     private static String slotKey(String contentKey, int type) {
         return KEY_PREFIX + contentKey + "_" + slot(type);
     }

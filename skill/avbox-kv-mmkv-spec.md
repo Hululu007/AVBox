@@ -104,9 +104,11 @@ public final class KV {
     public static <T> T get(String key, T defaultValue);     // 不存在/失败 → defaultValue
     public static boolean contains(String key);
     public static void delete(String key);
+    public static List<String> keys(String prefix);          // 按前缀列键(孤儿清理冷路径,勿在热路径用)
 }
 ```
 
+- `keys(prefix)`(2026-09-26 新增):按前缀枚举键(MMKV `allKeys()` 过滤),只服务"孤儿清理"类冷路径(进度索引遍历、轨道记忆批量删除)—— **不要在热路径调用**,它每次都把整张键表取一遍。
 - 调用点替换规则:`Hawk.get(key, def)` → `KV.get(key, def)`;`put` / `contains` / `delete` 同理。
 - ⚠️ **`get(key, def)` ≠ 判存在性**:它分不清"键不存在"与"存的就是这个值"(旧 Hawk 同款语义)。要判存在性用 `contains(key)` —— 这条差异曾在迁移代码里造成过一次必崩(见 §9)。
 
@@ -209,6 +211,7 @@ public final class KV {
 | R8 | ——(原方案未提及) | 迁移(已删除)期间暴露的两个真实缺陷被固化修复:`KVMigrate` 必须先判键存在性;`KVCodec` 用 `containsKey` 而非 `getValueSize` 判存在性 | 见 §9。前者随迁移一起删除,后者是**现行代码**的修复,必须保留 |
 | R9 | §7-Q2 隐含"gson 保持 ≤2.12 直到迁移完成" | **gson 2.10.1 → 2.14.0**(用户要求,2026-09-13) | 原约束只服务于 Hawk 的集合读取;Hawk 已彻底移除,约束消失。KV 侧只用稳定 API(`TypeToken.get` / 显式 Type),不碰 gson 内部实现 ⇒ 升级零改动,编译 + 19 例单测通过。**这也是本次迁移的验收点之一(G3 解除 gson 版本枷锁)** |
 | R10 | ——(迁移完成后审查发现) | **修复登记类型与写入类型不一致**:`LIVE_WEB_HEADER` 由 `register(key, "")`(String)改为 `new TypeToken<HashMap<String,String>>(){}`;并新增单测 `KVKeySpecTest.liveWebHeader_roundTripDecodesAsStringMap` 锁死"写入类型 == 登记类型" | `ApiConfig.loadLives` 写入的是 `HashMap<String,String>`(header/ua),登记成 String 会让读取侧 Gson 用 String 解析对象原文抛错,又被 `KV.get(key)`(quiet 副本)静默吞成 null ⇒ **直播源配置的 UA/Referer/header 全部失效**(2026-09-13 全量缺陷审查发现)。教训:新增/修改复杂键必须按"写入值的实际类型"登记 |
+| R11 | §4.2 门面 API 封闭(6 个方法) | 新增 `keys(prefix)` 前缀遍历;新增动态键族 `progress_index_<源>|<片id>`,值刻意用 **String 载荷**(JSON 文本) | 删除观看历史需要级联清理该片进度键,而进度键是"源+片+线路+集+集名"无分隔符拼接后取 MD5,反推不出归属 ⇒ 必须另存片级索引(2026-09-26)。索引值不走复杂类型通道,是因为动态键无法逐键登记 `KVKeySpec`(同 R10 的风险面:登记类型与写入类型不一致会静默读不出) |
 
 ## 9. 2026-09-13 崩溃复盘(教训保留,相关代码已删除)
 

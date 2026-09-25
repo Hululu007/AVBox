@@ -87,6 +87,7 @@ import com.github.tvbox.osc.util.HistoryMerge
 import com.github.tvbox.osc.util.KV
 import com.github.tvbox.osc.util.PlaybackProgress
 import com.github.tvbox.osc.util.TrackMemory
+import com.github.tvbox.osc.util.WatchProgressStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -102,6 +103,9 @@ class HistoryViewModel : ViewModel() {
     val episodeTotals = MutableStateFlow<Map<String, Int>>(emptyMap())
     val playedPercents = MutableStateFlow<Map<String, Int>>(emptyMap())
 
+    /** 无痕:列表与卡片整体不显示(页面仍保留"清空历史"这个主动操作) */
+    val incognito = MutableStateFlow(HistoryHelper.isIncognito())
+
     init {
         EventBus.getDefault().register(this)
         refresh()
@@ -116,6 +120,16 @@ class HistoryViewModel : ViewModel() {
     val placementAnim = MutableStateFlow(false)
 
     fun refresh(scrollToTop: Boolean = false) {
+        // 无痕:不读库也不显示卡片(历史合并的去重删库同样跳过 —— 都不展示了,没必要动库)
+        if (HistoryHelper.isIncognito()) {
+            incognito.value = true
+            loading.value = false
+            items.value = emptyList()
+            episodeTotals.value = emptyMap()
+            playedPercents.value = emptyMap()
+            return
+        }
+        incognito.value = false
         if (items.value.isEmpty()) loading.value = true
         if (scrollToTop) placementAnim.value = false
         viewModelScope.launch(Dispatchers.IO) {
@@ -183,7 +197,8 @@ class HistoryViewModel : ViewModel() {
         placementAnim.value = true
         viewModelScope.launch(Dispatchers.IO) {
             RoomDataManger.deleteVodRecord(item.sourceKey, item)
-            // 记录删了,该片的轨道/字幕记忆一并清掉,免得留下访问不到的孤儿键
+            // 记录删了,该片的进度痕迹与轨道/字幕记忆一并清掉,免得留下访问不到的孤儿键
+            WatchProgressStore.clearOwner(WatchProgressStore.ownerOf(item))
             TrackMemory.delete(TrackMemory.contentKey(item.sourceKey, item.id))
             refresh()
         }
@@ -193,6 +208,8 @@ class HistoryViewModel : ViewModel() {
         placementAnim.value = false
         viewModelScope.launch(Dispatchers.IO) {
             RoomDataManger.deleteVodRecordAll()
+            WatchProgressStore.clearAll()
+            TrackMemory.deleteAll()
             refresh()
         }
     }
@@ -217,6 +234,7 @@ fun HistoryPage(
     val episodeTotals by vm.episodeTotals.collectAsState()
     val playedPercents by vm.playedPercents.collectAsState()
     val placementAnim by vm.placementAnim.collectAsState()
+    val incognito by vm.incognito.collectAsState()
     var showDeleteAllDialog by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<VodInfo?>(null) }
 
@@ -253,6 +271,17 @@ fun HistoryPage(
         },
     ) { topPad, _ ->
         when {
+            incognito -> LoadStateBox(
+                state = LoadState.Empty,
+                emptyText = stringResource(R.string.history_incognito),
+                errorText = "",
+                retryText = "",
+                emptyIconRes = R.drawable.ic_empty_record,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = topPad),
+            )
+
             loading -> Box(
                 modifier = Modifier
                     .fillMaxSize()

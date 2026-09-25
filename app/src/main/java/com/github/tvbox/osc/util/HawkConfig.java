@@ -87,8 +87,8 @@ public class HawkConfig {
     public static final String HOME_HOT = "home_hot";
     public static final String HOME_HOT_DAY = "home_hot_day";
     /**
-     * 无痕模式(2026-09-12):开启后**不写入**搜索历史与观看历史(含播放进度);
-     * 手动收藏、以及删除/清空历史等用户主动操作不受影响。判定统一走 [HistoryHelper.isIncognito]
+     * 无痕模式:不写也不读观看痕迹(搜索历史/观看历史/续播点/百分比/集数快照),不接管播放器里停着的旧内容,
+     * 历史页与搜索页显示无痕空态;手动收藏、删除/清空历史等主动操作不受影响。判定统一走 [HistoryHelper.isIncognito]
      */
     public static final String INCOGNITO = "incognito";
     /**

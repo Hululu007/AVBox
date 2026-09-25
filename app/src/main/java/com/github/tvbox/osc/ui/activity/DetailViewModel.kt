@@ -21,6 +21,7 @@ import com.github.tvbox.osc.event.RefreshEvent
 import com.github.tvbox.osc.player.PlaybackSession
 import com.github.tvbox.osc.ui.player.PlayContainer
 import com.github.tvbox.osc.util.EpisodeTotals
+import com.github.tvbox.osc.util.HistoryHelper
 import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.util.SearchHelper
 import com.github.tvbox.osc.viewmodel.SourceViewModel
@@ -244,7 +245,8 @@ class DetailViewModel : ViewModel() {
             info.sourceKey = mVideo.sourceKey
             sourceKey = mVideo.sourceKey ?: sourceKey
 
-            val record = RoomDataManger.getVodInfo(sourceKey, vodId)
+            // 无痕:旧记录连读都不读 —— 它只剩"看到第几集/哪条线路/该片播放配置"这些痕迹,读了等于没隐身
+            val record = if (HistoryHelper.isIncognito()) null else RoomDataManger.getVodInfo(sourceKey, vodId)
             if (record != null) {
                 info.playIndex = maxOf(record.playIndex, 0)
                 info.playFlag = record.playFlag
@@ -269,11 +271,6 @@ class DetailViewModel : ViewModel() {
                     flag.selected = flag.name == info.playFlag
                 }
             }
-            EpisodeTotals.put(
-                info.sourceKey,
-                info.id,
-                playingList?.let { list -> EpisodeTotals.episodeCount(list.map { it.name }) },
-            )
             vodInfo = info
             if (searchTitle.isEmpty() && !info.name.isNullOrEmpty()) {
                 searchTitle = info.name.trim()
@@ -729,6 +726,8 @@ class DetailViewModel : ViewModel() {
     private fun insertVod() {
         val info = vodInfo ?: return
         refreshPlayNote(info)
+        // 集数快照随"真看过"落库:只浏览详情页不再写,历史卡片才不会出现没看过的片
+        EpisodeTotals.putFromVod(info)
         RoomDataManger.insertVodRecord(firstsourceKey, info)
         EventBus.getDefault().post(RefreshEvent(RefreshEvent.TYPE_HISTORY_REFRESH))
     }

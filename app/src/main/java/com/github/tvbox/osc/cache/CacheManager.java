@@ -6,6 +6,8 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 类描述:
@@ -86,5 +88,23 @@ public class CacheManager {
             return toObject(cache.data);
         }
         return null;
+    }
+
+    /**
+     * 删除全部进度行(反序列化是 Long 的行;字幕/歌词缓存是 String,不受影响),返回被删缓存键供调用方作废后续回写。
+     * 供"清空历史"兜底:没有索引条目的存量进度键是 MD5,反推不出归属,只能这样清。
+     */
+    public static List<String> clearAllProgress() {
+        CacheDao dao = AppDataManager.get().getCacheDao();
+        List<Cache> rows = dao.getAll();
+        List<String> removed = new ArrayList<>();
+        for (Cache row : rows) {
+            if (row == null || row.data == null) continue;
+            if (toObject(row.data) instanceof Long) {
+                dao.delete(row);
+                removed.add(row.key);
+            }
+        }
+        return removed;
     }
 }

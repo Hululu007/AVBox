@@ -103,6 +103,7 @@
     <string name="search_history">Search History</string>
     <string name="search_history_clear">Clear search history</string>
     <string name="search_history_empty">No search history</string>
+    <string name="search_incognito">Incognito: search history hidden</string>
     <string name="search_hot_rank">Trending Searches</string>
     <string name="search_suggest">Suggestions</string>
     <string name="search_hot_empty">No trending data</string>
@@ -274,6 +275,7 @@
     <string name="history_title">History</string>
     <string name="history_clear">Clear history</string>
     <string name="history_empty">No watch history</string>
+    <string name="history_incognito">Incognito: watch history hidden</string>
     <string name="history_clear_message">This will delete all watch history and cannot be undone</string>
     <string name="history_delete_title">Delete record</string>
     <string name="history_delete_message">Delete the watch record for “%1$s”?</string>

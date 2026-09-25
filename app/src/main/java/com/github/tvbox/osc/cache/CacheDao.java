@@ -7,6 +7,8 @@ import androidx.room3.OnConflictStrategy;
 import androidx.room3.Query;
 import androidx.room3.Update;
 
+import java.util.List;
+
 /**
  * 类描述:
  *
@@ -33,6 +35,10 @@ public interface CacheDao {
     //如果是一对多,这里可以写List<Cache>
     @Query("select *from cache where `key`=:key")
     Cache getCache(String key);
+
+    //全表读:只服务"清空历史"时的存量进度清理,勿在热路径用
+    @Query("select *from cache")
+    List<Cache> getAll();
 
     //只能传递对象昂,删除时根据Cache中的主键 来比对的
     @Delete

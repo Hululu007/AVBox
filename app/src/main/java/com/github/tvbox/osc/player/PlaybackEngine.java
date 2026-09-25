@@ -12,19 +12,19 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.view.ContextThemeWrapper;
 
 import com.github.tvbox.osc.R;
-import com.github.tvbox.osc.cache.CacheManager;
 import com.github.tvbox.osc.player.usecase.PlayerSwitchUseCase;
 import com.github.tvbox.osc.ui.player.PlayContainer;
 import com.github.tvbox.osc.ui.player.PreloadCoordinator;
 import com.github.tvbox.osc.util.HawkConfig;
 import com.github.tvbox.osc.util.KV;
 import com.github.tvbox.osc.util.LOG;
-import com.github.tvbox.osc.util.MD5;
+import com.github.tvbox.osc.util.WatchProgressStore;
 
 import org.json.JSONObject;
 
 import java.lang.ref.WeakReference;
 import java.util.HashMap;
+import java.util.List;
 
 import xyz.doikki.videoplayer.player.AbstractPlayer;
 import xyz.doikki.videoplayer.player.ProgressManager;
@@ -83,7 +83,7 @@ public final class PlaybackEngine implements PlaybackHostApi {
     private final ProgressManager progressManager = new ProgressManager() {
         @Override
         public void saveProgress(String url, long progress) {
-            CacheManager.save(MD5.string2MD5(url), progress);
+            WatchProgressStore.save(controller.progressOwner(), url, progress, videoView.getDuration());
             if (controller.webPlayUrl() != null && progress > 0) {
                 controller.markPlaybackStarted();
                 activeView().hideTipOnUiThread();
@@ -456,6 +456,26 @@ public final class PlaybackEngine implements PlaybackHostApi {
         videoView.release();
         // 内核没了 ⇒ 播放器里不再有"属于某个会话的内容":清掉 D6 的接管依据,
         // 否则"换源停播后重进同一部"会被判成同片接管而跳过取流(内容其实已经没了)
+        controller.clearStartedContent();
+    }
+
+    /**
+     * 这些片的历史不再保留(单条删除/清空/容量淘汰):播放器里若还留着其中一份,丢掉"已起播内容"归属。
+     * 同片接管只看归属、不看进度记录,不作废就会接着旧位置播、退出时再把旧位置写回记录(删了等于没删)。
+     */
+    public void discardStartedContentOf(@NonNull List<String> owners) {
+        if (released) return;
+        // 归属字段只在主线程读写:历史页的级联跑在 IO 协程上,必须回主线程改,否则可能丢更新
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            main.post(() -> discardStartedContentOf(owners));
+            return;
+        }
+        PlaybackSession current = session;
+        if (current == null || owners.isEmpty()) return;
+        // owner 约定与 WatchProgressStore.ownerOf / PlaybackProgress.key 同构:源|片id
+        String owner = current.sourceKey() + "|" + current.vod().id;
+        if (!owners.contains(owner)) return;
+        LOG.i("echo-progress discard-session owner=" + owner);
         controller.clearStartedContent();
     }
 
