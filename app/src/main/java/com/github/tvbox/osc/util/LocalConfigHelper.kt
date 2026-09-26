@@ -7,6 +7,8 @@ import android.database.Cursor
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.provider.OpenableColumns
@@ -18,6 +20,8 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStream
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 /**
  * 本地源导入的中间态:调用页 Activity 注册 `OpenDocument`(选 config.json)与 `OpenDocumentTree`
@@ -28,15 +32,27 @@ object LocalConfigHost {
     /** 等待中的结果回调(同一时刻只会有一个导入流程) */
     var pending: ((api: String) -> Unit)? = null
 
-    /** 第一段已算出的地址;要目录授权时挂起,等授权回来再收尾 */
+    /** 复制路线已算出的地址;要补同目录引用时挂起,等目录授权回来再收尾 */
     var pendingApi: String? = null
-
-    /** 直引路线:缺授权的原文件路径(授权只是让本地服务读得到原目录,文件一个都不用搬) */
-    var pendingDirectPath: String? = null
 
     /** 复制路线:副本落点 + 还没搬过来的同目录引用 */
     var pendingDir: File? = null
     var pendingRefs: List<String> = emptyList()
+
+    /** 原文件所在目录;只用于判断"这个落点系统永不允许授权" */
+    var pendingSourceDir: String? = null
+}
+
+/** 收尾要碰 UI,申请权限还得起 Activity,只能在主线程 */
+private val mainHandler: Handler by lazy { Handler(Looper.getMainLooper()) }
+
+private fun onMain(work: () -> Unit) {
+    mainHandler.post(work)
+}
+
+/** 读盘一律走它(上限 32MB/64MB,挂主线程会卡界面);单线程串行也保证"同一时刻只有一个导入流程" */
+private val importWorker: ExecutorService by lazy {
+    Executors.newSingleThreadExecutor { runnable -> Thread(runnable, "local-config-import") }
 }
 
 /** 启动系统文件选择器;挂载见 `ConfigManageActivity.localConfigLauncher` */
@@ -49,113 +65,129 @@ fun startLocalConfig(
 }
 
 /**
- * SAF 结果入口:选中的 Uri 转成 clan:// 地址。
+ * SAF 结果入口:选中的 Uri 转成 clan:// 地址。读盘在 [importWorker],结果回主线程才动 UI / 权限页 / 挂起态。
+ * **导入不因权限中断**:读得到就直引原文件,读不到就复制进应用私有目录,地址一定会交回。
  *
- * @return true = 还差一次目录授权,调用方**必须**接着收尾:先争一次存储权限(拿到就能直引原目录),
- * 拿不到再拉目录选择器。
+ * @param onFinish 主线程回调:true = 复制后仍缺同目录引用,调用方先争一次存储权限(拿到多半直接改成直引)、拿不到再拉目录选择器补齐;地址此刻已可用,取消也照样完成导入
  */
-fun handleLocalConfigResult(activity: Activity, uri: Uri): Boolean {
-    val callback = LocalConfigHost.pending
+fun handleLocalConfigResult(activity: Activity, uri: Uri, onFinish: (Boolean) -> Unit) {
+    val callback = LocalConfigHost.pending ?: return
     LocalConfigHost.pending = null
-    if (callback == null) return false
-    val result = importLocalConfig(activity, uri)
-    if (result == null) {
-        Toast.makeText(activity, activity.getString(R.string.toast_local_config_read_failed), Toast.LENGTH_SHORT).show()
-        return false
+    // 后台只拿 applicationContext:它活得比 Activity 久,别把 Activity 一起兜进去
+    val context = activity.applicationContext ?: activity
+    importWorker.execute {
+        // 意外异常必须自己兜住:后台线程抛出去只会静默丢掉这次导入(主线程会崩,后台不会)
+        val result = try {
+            importLocalConfig(context, uri)
+        } catch (th: Throwable) {
+            th.printStackTrace()
+            null
+        }
+        onMain {
+            // 读盘期间页面可能已经走了:此时弹 Toast / 拉权限页 / 交付地址都作用不到用户身上
+            if (activity.isFinishing || activity.isDestroyed) {
+                LOG.i("echo-local-src drop, page gone uri=" + uri)
+                return@onMain
+            }
+            if (result == null) {
+                Toast.makeText(activity, activity.getString(R.string.toast_local_config_read_failed), Toast.LENGTH_SHORT).show()
+                onFinish(false)
+                return@onMain
+            }
+            LOG.i(
+                "echo-local-src import api=" + result.api + " missing=" + result.missingRefs.size +
+                    " direct=" + result.direct + " uri=" + uri,
+            )
+            // 直引绑的是原文件,读不读得到只看权限/目录授权,不在手就顺手要一次;不阻断 —— 拒绝只影响重启后是否还读得到(拉取失败时由 ApiConfig 报错)
+            if (result.direct && !PermissionHelper.isStorageGranted(activity)) {
+                PermissionHelper.requestStorage(activity) { _, _ -> }
+            }
+            if (result.missingRefs.isEmpty()) {
+                callback(result.api)
+                onFinish(false)
+                return@onMain
+            }
+            LocalConfigHost.pending = callback
+            LocalConfigHost.pendingApi = result.api
+            LocalConfigHost.pendingDir = result.dir
+            LocalConfigHost.pendingRefs = result.missingRefs
+            LocalConfigHost.pendingSourceDir = result.sourceDir
+            val tip = if (PermissionHelper.isStorageGranted(activity)) {
+                activity.getString(R.string.toast_local_missing_files_hint, result.missingRefs.size)
+            } else {
+                activity.getString(R.string.toast_local_missing_files_all_files, result.missingRefs.size)
+            }
+            Toast.makeText(activity, tip, Toast.LENGTH_LONG).show()
+            onFinish(true)
+        }
     }
-    LOG.i(
-        "echo-local-src import api=" + result.api + " missing=" + result.missingRefs.size +
-            " direct=" + (result.directPath != null) + " uri=" + uri,
-    )
-    if (result.directPath == null && result.missingRefs.isEmpty()) {
-        callback(result.api)
-        return false
-    }
-    LocalConfigHost.pending = callback
-    LocalConfigHost.pendingApi = result.api
-    LocalConfigHost.pendingDirectPath = result.directPath
-    LocalConfigHost.pendingDir = result.dir
-    LocalConfigHost.pendingRefs = result.missingRefs
-    val tip = when {
-        result.directPath != null -> activity.getString(R.string.toast_local_direct_grant_hint)
-        !PermissionHelper.isStorageGranted(activity) ->
-            activity.getString(R.string.toast_local_missing_files_all_files, result.missingRefs.size)
-
-        else -> activity.getString(R.string.toast_local_missing_files_hint, result.missingRefs.size)
-    }
-    Toast.makeText(activity, tip, Toast.LENGTH_LONG).show()
-    return true
 }
 
 /**
- * 第二段结果:直引路线只记住这次目录授权(地址不变、文件不搬),复制路线把挂起的引用文件搬进副本目录,
- * 最后把地址交回。用户取消 / 选错目录时按路线给不同结论,不静默。
+ * 第二段结果:把没搬过来的同目录引用从授权目录搬进副本目录,再交回地址(SAF 读盘走 [importWorker])。
+ * 取消 / 选错目录按"受限目录"给结论,不静默;地址此刻已可用,补不齐也不影响导入。
  */
 fun handleLocalSourceTreeResult(activity: Activity, tree: Uri?) {
     val callback = LocalConfigHost.pending
     val api = LocalConfigHost.pendingApi
-    val directPath = LocalConfigHost.pendingDirectPath
     val dir = LocalConfigHost.pendingDir
     val refs = LocalConfigHost.pendingRefs
+    val sourceDir = LocalConfigHost.pendingSourceDir
     LocalConfigHost.pending = null
     LocalConfigHost.pendingApi = null
-    LocalConfigHost.pendingDirectPath = null
     LocalConfigHost.pendingDir = null
     LocalConfigHost.pendingRefs = emptyList()
+    LocalConfigHost.pendingSourceDir = null
     if (callback == null) return
-    if (directPath != null) {
-        val picked = tree
-        val grantedPath = if (picked == null) null else LocalSourceTree.remember(activity, picked)
-        LOG.i("echo-local-src tree direct=" + grantedPath + " need=" + directPath)
-        if (picked == null || grantedPath == null || relativeUnder(grantedPath, directPath) == null) {
-            // 配置落在系统永不允许授权的目录(存储根 / Download 根 / Android/data)时,"再点一次"不会成,得给条出路
-            val root = Environment.getExternalStorageDirectory().absolutePath
-            val tip = if (isUngrantableDir(File(directPath).parent, root)) {
-                R.string.toast_local_tree_forbidden
-            } else {
-                R.string.toast_local_tree_denied
-            }
-            Toast.makeText(activity, activity.getString(tip), Toast.LENGTH_LONG).show()
-            return
+    if (tree == null || dir == null) {
+        // 配置落在系统永不允许授权的目录(存储根 / Download 根 / Android/data)时,"再点一次"不会成,得给条出路
+        val tip = if (isUngrantableDir(sourceDir, Environment.getExternalStorageDirectory().absolutePath)) {
+            R.string.toast_local_tree_forbidden
+        } else {
+            R.string.toast_local_tree_denied
         }
-        if (!LocalSourceTree.isPersisted(activity, picked)) {
-            Toast.makeText(activity, activity.getString(R.string.toast_local_grant_not_persisted), Toast.LENGTH_LONG).show()
-        }
-        callback(api ?: return)
+        Toast.makeText(activity, activity.getString(tip), Toast.LENGTH_LONG).show()
+        if (!api.isNullOrEmpty()) callback(api)
         return
     }
-    val missing = if (tree == null || dir == null) refs else copyRefsFromTree(activity, tree, dir, refs)
-    LOG.i("echo-local-src tree missing=" + missing.size + " of=" + refs.size)
-    if (missing.isNotEmpty()) {
-        Toast.makeText(
-            activity,
-            activity.getString(R.string.toast_local_refs_missing, missing.size),
-            Toast.LENGTH_LONG,
-        ).show()
+    val context = activity.applicationContext ?: activity
+    importWorker.execute {
+        // 记住这次授权:本地服务(/file/)也能靠它读这个目录
+        LocalSourceTree.remember(context, tree)
+        // 异常按"全没搬过来"收尾:缺文件必须让用户看到,不能静默
+        val missing = try {
+            copyRefsFromTree(context, tree, dir, refs)
+        } catch (th: Throwable) {
+            th.printStackTrace()
+            refs
+        }
+        onMain {
+            if (activity.isFinishing || activity.isDestroyed) return@onMain
+            LOG.i("echo-local-src tree missing=" + missing.size + " of=" + refs.size)
+            if (missing.isNotEmpty()) {
+                Toast.makeText(
+                    activity,
+                    activity.getString(R.string.toast_local_refs_missing, missing.size),
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+            if (!api.isNullOrEmpty()) callback(api)
+        }
     }
-    if (!api.isNullOrEmpty()) callback(api)
 }
 
-/**
- * 导入结果:[api] 可用地址;[dir] + [missingRefs] 复制路线要补的同目录引用;
- * [directPath] 直引路线缺的那次目录授权(原文件真实路径),非空时调用方必须先拿到授权。
- */
+/** 导入结果:可用地址、是否直引原文件、副本落点 + 还缺的同目录引用、原文件所在目录(只用于受限目录判定) */
 private class LocalConfigImport(
     val api: String,
+    val direct: Boolean,
     val dir: File?,
     val missingRefs: List<String>,
-    val directPath: String?,
+    val sourceDir: String?,
 )
 
 /**
- * 配置 Uri → clan:// 接口地址:**优先直引原文件**(原目录改动立刻生效、不占空间),算不出原目录地址才复制到
- * 外置私有 `files/config/`。
- *
- * 直引判据 = 可读性能否活过进程重启,不是"此刻读得到":选文件拿到的临时 SAF 授权会让 `File.canRead()` 为真,
- * 但进程一重启就失效、直引地址当场变死链(源看着还在、内容永不更新)。判据取「所有文件访问」或已持久化的目录授权。
- *
- * 为什么执着于直引:配置里 `./x.jar`、`../lib/x.js` 这类同目录引用会被重写成"配置文件所在目录"的 http 前缀,
- * 复制路线只带 json 过去时这些引用会 404,得靠目录授权把兄弟文件一个个搬过来。
+ * 配置 Uri → clan:// 地址:读得到原文件就直引(原目录改动立刻生效、不占空间),读不到才复制到外置私有 `files/config/`。
+ * 判据只认"此刻真读得到":权限查询在部分 ROM 上与真实可读性不一致,拿它当前提会把读得到的文件也拦下来。
  */
 private fun importLocalConfig(context: Context, uri: Uri): LocalConfigImport? {
     val displayName = safeFileName(getDisplayName(context, uri))
@@ -166,17 +198,12 @@ private fun importLocalConfig(context: Context, uri: Uri): LocalConfigImport? {
     val storageRoot = Environment.getExternalStorageDirectory().absolutePath
     val path = getPathFromUri(context, uri)
     val source = readablePath(path)
-    val granted = PermissionHelper.isStorageGranted(context)
-    LOG.i("echo-local-src path granted=" + granted + " src=" + source + " uri=" + uri)
-    if (source != null && (granted || LocalSourceTree.covers(context, source))) {
-        toClanApi(source, storageRoot)?.let { return LocalConfigImport(it, null, emptyList(), null) }
-    }
-    if (path != null) {
-        val direct = toClanApi(path, storageRoot)
-        if (direct != null) {
-            if (LocalSourceTree.covers(context, path)) return LocalConfigImport(direct, null, emptyList(), null)
-            return LocalConfigImport(direct, null, emptyList(), path)
-        }
+    LOG.i(
+        "echo-local-src path granted=" + PermissionHelper.isStorageGranted(context) +
+            " src=" + source + " uri=" + uri,
+    )
+    if (source != null) {
+        toClanApi(source, storageRoot)?.let { return LocalConfigImport(it, true, null, emptyList(), null) }
     }
     val data = readBytes(context, uri, MAX_CONFIG_SIZE) ?: return null
     val refs = relativeRefs(String(data, Charsets.UTF_8))
@@ -184,10 +211,11 @@ private fun importLocalConfig(context: Context, uri: Uri): LocalConfigImport? {
     val dir = if (refs.isEmpty()) configDir else File(configDir, MD5.encode(uri.toString()))
     val file = File(dir, if (refs.isEmpty()) copyFileName(context, uri) else getDisplayName(context, uri))
     if (!writeBytes(file, data)) return null
-    val sourceDir = source?.let { File(it).parentFile }
+    // 原路径可能读不到(所以走了复制),但父目录要留着:File API 能读时兄弟文件就在这里
+    val sourceDir = path?.let { File(it).parentFile }
     val missing = if (refs.isEmpty() || sourceDir == null) refs else copyRefs(sourceDir, dir, refs)
     val api = toClanApi(file.absolutePath, storageRoot) ?: return null
-    return LocalConfigImport(api, if (missing.isEmpty()) null else dir, missing, null)
+    return LocalConfigImport(api, false, if (missing.isEmpty()) null else dir, missing, sourceDir?.absolutePath)
 }
 
 /**
@@ -210,7 +238,7 @@ private fun importLocalPySpider(context: Context, uri: Uri, pyName: String): Loc
     if (!writeBytes(configFile, config.toByteArray(Charsets.UTF_8))) return null
     val api = toClanApi(configFile.absolutePath, storageRoot) ?: return null
     LOG.i("echo-local-src py-pack name=" + pyName + " py=" + pyFile.absolutePath + " api=" + api)
-    return LocalConfigImport(api, null, emptyList(), null)
+    return LocalConfigImport(api, false, null, emptyList(), null)
 }
 
 /** 直引前校验存在且可读:MediaStore 的 DATA 列可能指向已删除/已移动的文件,直引会让整个源拉取失败 */

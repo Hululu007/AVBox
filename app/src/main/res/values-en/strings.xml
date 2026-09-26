@@ -494,12 +494,10 @@
     <string name="toast_ads_removed">Removed %1$d video ads</string>
     <string name="cast_device_offline">Device offline</string>
     <string name="toast_local_config_read_failed">Failed to read the local config</string>
-    <string name="toast_local_direct_grant_hint">To reference the original folder for a local source, grant folder access once: select the folder containing this config</string>
     <string name="toast_local_missing_files_hint">%1$d files in the same folder have not been copied. Select the folder containing this config</string>
     <string name="toast_local_missing_files_all_files">%1$d files in the same folder have not been copied. Select the folder containing this config (with “All files access”, the original folder can be referenced directly)</string>
     <string name="toast_local_tree_denied">Folder access for this config was not granted, import cancelled (tap again to retry)</string>
     <string name="toast_local_tree_forbidden">This config sits in a folder the system never allows granting (storage root / Download / Android). Move it into a folder you created (e.g. Phone storage/AVBox/) and import again.</string>
-    <string name="toast_local_grant_not_persisted">Folder access could not be kept permanently; this source may stop working after a restart (enabling “All files access” is recommended)</string>
     <string name="toast_local_refs_missing">%1$d referenced files in the same folder have not been copied, so this source may not work (re-import to fix)</string>
     <string name="player_channel_mono">Mono</string>
     <string name="player_channel_stereo">Stereo</string>

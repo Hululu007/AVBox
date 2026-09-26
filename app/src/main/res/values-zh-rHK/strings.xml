@@ -49,7 +49,6 @@
     <string name="toast_local_config_read_failed">讀取本地設定失敗</string>
     <string name="toast_local_source_unreadable">本地源檔案讀不到\n請開啟「所有檔案存取」後重試（或重新匯入本地源）</string>
     <string name="toast_local_source_missing">本地源檔案已不存在\n可能已在檔案管理員裡被刪除或改名，請重新匯入本地源</string>
-    <string name="toast_local_direct_grant_hint">本地源要直引原目錄，得給一次目錄授權：請選擇該設定所在的文件夾</string>
     <string name="toast_local_missing_files_hint">還有 %1$d 個同目錄檔案沒搬過來，請選擇該設定所在的文件夾</string>
     <string name="toast_local_missing_files_all_files">還有 %1$d 個同目錄檔案沒搬過來，請選擇該設定所在的文件夾（開啟「所有檔案存取」後可直接引用原目錄，不必搬檔案）</string>
     <string name="toast_local_tree_denied">沒取得該設定所在文件夾的授權，已取消匯入（可再點一次重試）</string>

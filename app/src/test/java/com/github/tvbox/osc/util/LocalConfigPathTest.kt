@@ -65,7 +65,7 @@ class LocalConfigPathTest {
 
     @Test
     fun treeDocPathAcceptsVolumeRoots() {
-        // 选中整个卷(冒号后为空):只按文件形态解析会返回 null ⇒ 用户选对了文件夹也被判成"没拿到授权"
+        // 选中整个卷(冒号后为空)也要映射得出:本地服务靠它把 /file/ 请求落到授权目录上
         assertEquals(root, treeDocPath("primary:", root))
         assertEquals("/storage/ABCD-1234", treeDocPath("ABCD-1234:", root))
         // 有相对部分时与文件形态同解

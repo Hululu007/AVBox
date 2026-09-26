@@ -24,9 +24,12 @@ class ConfigManageActivity : BaseActivity() {
         }
     }
 
+    /** 导入读盘在后台跑,收尾(权限页 / 目录选择器)由回调触发 */
     private val localConfigLauncher =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            if (uri != null && handleLocalConfigResult(this, uri)) settleUnreachableSource(uri)
+            if (uri != null) {
+                handleLocalConfigResult(this, uri) { needTree -> if (needTree) settleUnreachableSource(uri) }
+            }
         }
 
     private val sourceTreeLauncher =
@@ -39,18 +42,18 @@ class ConfigManageActivity : BaseActivity() {
         startLocalConfig(localConfigLauncher) { api -> onResult(api) }
     }
 
-    /**
-     * 读不到原文件:先争一次「所有文件访问」(只有它能救存储根 / Download 根这类落点),
-     * 拿到就重试导入;拿不到则用上一次已挂起的结果接着要目录授权。
-     */
+    /** 复制后还缺同目录引用:先争「所有文件访问」(拿到多半直接改成直引),拿不到再要目录授权;地址已可用,取消也照样完成导入 */
     private fun settleUnreachableSource(uri: Uri) {
         if (PermissionHelper.isStorageGranted(this)) {
             sourceTreeLauncher.launch(null)
             return
         }
         PermissionHelper.requestStorage(this) { granted, _ ->
-            if (granted.isNullOrEmpty()) sourceTreeLauncher.launch(null)
-            else if (handleLocalConfigResult(this, uri)) sourceTreeLauncher.launch(null)
+            if (granted.isNullOrEmpty()) {
+                sourceTreeLauncher.launch(null)
+            } else {
+                handleLocalConfigResult(this, uri) { needTree -> if (needTree) sourceTreeLauncher.launch(null) }
+            }
         }
     }
 

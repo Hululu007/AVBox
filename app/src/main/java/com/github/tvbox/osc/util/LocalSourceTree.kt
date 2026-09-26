@@ -11,9 +11,8 @@ import java.io.InputStream
 /**
  * 本地源目录授权(SAF `OpenDocumentTree`,持久化)的驻留与解析。
  *
- * 应用读不到源目录时(没开「所有文件访问」/ ROM 限制),由用户给一次目录授权并记住,本地服务
- * (见 `RemoteServer` 的 `/file/`)再用它把原目录的文件读出来 —— 源地址因此可以指向原目录(直引),
- * 不必把文件复制进应用目录。单文件授权拿不到同目录的兄弟文件,只有目录授权可以。
+ * 用途只有一处:复制路线补不齐同目录引用(`./x.jar` 这类 File API 读不到原目录)时,靠它把兄弟文件搬进副本目录;
+ * 授权同时被记住,本地服务(`RemoteServer` 的 `/file/`)也能靠它读该目录。单文件授权拿不到兄弟文件。
  */
 object LocalSourceTree {
 
@@ -23,7 +22,7 @@ object LocalSourceTree {
         try {
             context.contentResolver.takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         } catch (th: Throwable) {
-            // 少数 ROM 不给持久化授权:本次会话内仍可读,重启后失效;调用方按 [isPersisted] 决定要不要提示
+            // 少数 ROM 不给持久化授权:本次会话内仍可读,重启后失效(补同目录引用这一次不依赖它)
             th.printStackTrace()
         }
         val trees = ArrayList(remembered(context))
@@ -37,21 +36,7 @@ object LocalSourceTree {
     fun remembered(context: Context): List<String> =
         KV.get(HawkConfig.LOCAL_SOURCE_TREES, arrayListOf<String>())
 
-    /** 授权是否已持久化(未持久化时本次会话可用、重启后失效) */
-    fun isPersisted(context: Context, tree: Uri): Boolean = try {
-        context.contentResolver.persistedUriPermissions.any { it.uri == tree && it.isReadPermission }
-    } catch (ignored: Throwable) {
-        false
-    }
-
-    /** 该路径是否已被某个**已持久化**的授权目录覆盖(重复导入同一源时省掉再选一次目录) */
-    fun covers(context: Context, path: String): Boolean = remembered(context).any { text ->
-        val uri = Uri.parse(text)
-        val tree = treePath(context, uri) ?: return@any false
-        isPersisted(context, uri) && path.startsWith("$tree/")
-    }
-
-    /** 本地服务此刻能否靠已记住的授权目录读到 [path];与 [covers] 不同:会话级授权也算(同 [open] 口径) */
+    /** 本地服务此刻能否靠已记住的授权目录读到 [path](会话级授权也算,与 [open] 同口径) */
     fun serves(context: Context, path: String): Boolean = remembered(context).any { text ->
         val tree = treePath(context, Uri.parse(text)) ?: return@any false
         relativeUnder(tree, path) != null
@@ -60,7 +45,7 @@ object LocalSourceTree {
     /** 按"外置存储相对路径"从授权目录里打开文件(本地服务用);没有匹配的目录/文件返回 null */
     fun open(context: Context, relativePath: String): InputStream? {
         val target = Environment.getExternalStorageDirectory().absolutePath + "/" + relativePath
-        // 不按 isPersisted 过滤:会话级授权(未持久化成)本次照样能读,读不动的那次自然跳过
+        // 不按"是否持久化"过滤:会话级授权本次照样能读,读不动的那次自然跳过
         for (text in remembered(context)) {
             val tree = Uri.parse(text)
             val path = treePath(context, tree) ?: continue

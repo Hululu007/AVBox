@@ -2724,3 +2724,17 @@ echo-exo-player-error: code=ERROR_CODE_UNSPECIFIED, msg=Unexpected runtime error
 - **已知取舍**:列表内部删单条(chips 仍在)仍无动画 —— FlowRow 没有 `animateItem` 等价物,要逐条淡出/位移得引入 `LookaheadScope + animatePlacement`(项目内暂无先例),本次不引入。
 - **踩坑**:`ContentTransform.using(SizeTransform(...))` 的 `using` 是 `ContentTransform` 的**成员函数**,写 `import androidx.compose.animation.using` 会编译报 `Unresolved reference 'using'`。
 - **验证**:`:app:assembleDebug` BUILD SUCCESSFUL;`:app:testDebugUnitTest` **343 用例 / 0 失败**;已装机。**真机走查待用户**:①长按删到空 → chips 整块淡出 + 空态淡入、卡片高度平滑;②点清空同上;③删中间一条(仍有记录)按已知取舍仍无动画;④搜索页整体操作无卡顿感(重点盯 §4.6 那条定稿的顾虑)。
+
+## 本地源导入:判据退回"此刻读得到",导入不再因权限中断(2026-09-26,用户"判据退回 canRead,我用 fongmi 真机测试过了")
+
+- **触发**:小米设备上"从本地选择"导入源弹「本地源要直引原目录,得给一次目录授权:请选择该配置所在的文件夹」后无法完成导入(对方的 fongmi 同机可用)。用户拍板:判据退回 `canRead`,按 fongmi 的行为对齐。
+- **对照结论(实读 `示例文件/TV-fongmi`)**:`FileChooser.resolveFileUri` = `getLocalFile(uri)`(docId→真实路径 + `isFile && canRead`)成立就用**原文件**,否则 `materialize` **复制进 `cacheDir/chooser/<md5>/`**;全程无 `OpenDocumentTree`、无 `takePersistableUriPermission`,地址一律 `file://`(根相对 / 私有目录拿绝对路径),加载前若 url 以 `file` 开头才要一次「所有文件访问」。⇒ 它**没有任何"必须成立"的权限前提**,读不到也照样产出一条可用地址。另注:它的 `getLocalPath` 仍带 `DocumentsContract.isDocumentUri` 前置闸门,包可见性/部分 ROM 上判 false 时会掉进 `getDataColumn` → null → **正好进复制分支**(活路);我们 09-17 把该闸门去掉后"解析更准",反倒更多文件落进直引分支 —— 而直引分支正是权限门所在。
+- **改法(4 文件)**:
+  1. `LocalConfigHelper.importLocalConfig`:直引判据 = `readablePath(path)`(`isFile && canRead`),不再要求 `isStorageGranted() || LocalSourceTree.covers()`;**读不到 / 算不出路径一律复制兜底**(优先用 SAF 文档流读 json;`sourceDir` 改用算得出的原路径,好在 File API 能读时顺手搬兄弟文件),导入绝不因权限中断。
+  2. `handleLocalConfigResult`:直引路线交付后,若权限查询为 false **顺手要一次**「所有文件访问」(同 fongmi 的加载前请求,非阻断 —— 把选择器给的临时可读换成真可读,压掉"重启后死链");收尾分支只剩"复制后仍缺同目录引用"。
+  3. `handleLocalSourceTreeResult`:删"直引待授权"分支(判据改后不再产生该状态);复制分支改为"没拿到授权 → 按 `isUngrantableDir` 给受限目录出路;拿到 → 搬引用 + `LocalSourceTree.remember`"。
+  4. `LocalSourceTree`:删 `covers`/`isPersisted`(随判据一起失去调用方);`remember` 只在补引用那一次调用,授权仍供本地服务 `/file/` 的 SAF 兜底与 `ApiConfig.serves`。
+- **文案**:删 `toast_local_direct_grant_hint`、`toast_local_grant_not_persisted`(四语;港层只有前一条);`missing_files_hint`/`missing_files_all_files`/`tree_denied`/`tree_forbidden`/`refs_missing` 全部仍在用。
+- **行为变化与代价**:①读得到原文件时**不再弹任何授权**(直引,原目录改动即时生效);②读不到时**一律得到可用地址**(副本在 `Android/data/<pkg>/files/config/`,任何 ROM 都读得到),代价是改原 json 不再自动生效、同目录引用可能缺(缺时提示,可给一次目录授权补齐);③"临时授权带来的重启后死链"仍在 —— 靠 ②(重导入转复制)与 `ApiConfig.isLocalSourceUnreadable` 的明确报错兜底,不再静默。
+- **补(同日,对齐 fongmi 的第二处)**:读盘搬后台线程 —— `handleLocalConfigResult` / `handleLocalSourceTreeResult` 的路径解析、读配置(≤32MB)、SAF 搬引用(≤64MB)改走 `LocalConfigHelper` 的 `importWorker`(单线程 `local-config-import`,同 fongmi `FileChooser.getFileUri` 的 `Task.execute`),Toast / 权限页 / 挂起态 / 交付回调经 `mainHandler` 回主线程并只拿 `applicationContext`;`handleLocalConfigResult` 的 `Boolean` 返回值换成 `onFinish(needTree)` 主线程回调,`ConfigManageActivity` 两个调用点(选择器结果、拿到权限后的重试)同步改。**副作用**:调用方不能再同步判断"是否要拉目录选择器",流程改由回调驱动。
+- **验证**:`:app:assembleDebug` BUILD SUCCESSFUL;`:app:testDebugUnitTest` **343 用例 / 0 失败**。**真机待走查(用户)**:①vivo(「所有文件访问」在手)导入应直接成功、零弹窗;②关掉权限后导入:读得到就直引并顺手跳一次设置页、读不到就静默走复制(地址含 `files/config/`);③带 `./jar/1.jar` 的本地包:File API 读不到源目录时给一次目录授权应能把引用补齐,取消也照样导入成功。埋点判据:`echo-local-src path granted=… src=…` 紧跟 `echo-local-src import … direct=true/false`。
