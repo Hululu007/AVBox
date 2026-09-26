@@ -48,6 +48,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -370,6 +372,19 @@ private fun SheetOverlay(
                 .fillMaxSize()
                 .graphicsLayer { alpha = 1f - collapse.value }
                 .background(scrimColor)
+                // 遮罩要吃掉"拖拽"：clickable 只消费点击，进场动画期间它还是禁用的，
+                // 落在播放器覆盖层里时拖动会穿透到 dkplayer 的进度/音量手势
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            // 只吃"拖动"(有位移的 change),点击留给下面的 clickable
+                            if (event.changes.any { it.positionChanged() }) {
+                                event.changes.forEach { it.consume() }
+                            }
+                        }
+                    }
+                }
                 .clickable(
                     // 不可关闭时仍要吃掉触摸(保持模态),只是什么都不做
                     enabled = entered,

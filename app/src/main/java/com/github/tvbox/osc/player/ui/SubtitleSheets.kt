@@ -41,12 +41,6 @@ import com.github.tvbox.osc.player.state.SubtitleSheetState
 import com.github.tvbox.osc.util.SubtitleHelper
 import com.github.tvbox.osc.viewmodel.SubtitleViewModel
 
-/** 字幕面板:本地/在线字幕选择与搜索(入口 SubtitleSheet / SubtitleSearchSheet) */
-
-// ---------------------------------------------------------------------------
-// 字幕设置
-// ---------------------------------------------------------------------------
-
 @Composable
 fun SubtitleSheet(sheet: SubtitleSheetState, onDismiss: () -> Unit) {
     val context = LocalContext.current

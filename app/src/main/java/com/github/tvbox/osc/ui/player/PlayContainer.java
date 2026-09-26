@@ -157,6 +157,11 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
         this.pageHost = host;
     }
 
+    /** 详情页选集面板显隐(面板状态在 DetailViewModel,这里只做投影,供底栏冻结自动收起用) */
+    public void setEpisodeSheetOpen(boolean open) {
+        if (mController != null) mController.getUiState().setEpisodeSheetOpen(open);
+    }
+
     private final PlaybackViewBridge viewBridge = new PlaybackViewBridge() {
         @Override
         public boolean isPageAlive() {

@@ -35,18 +35,10 @@ import com.github.tvbox.osc.R
 import com.github.tvbox.osc.player.state.PlayerActions
 import com.github.tvbox.osc.player.state.PlayerUiState
 
-/**
- * 顶部应用栏（照搬旧 tv_top_l_container / tv_top_r_container 布局与显隐规则）。
- * 阶段 3 直接修复：补 scrim 渐变，亮画面下白字不再糊在视频上。
- *
- * 显隐规则（§4.3，逐条逆向自旧 msg 1002/1003）：
- * - 左块（片名+分辨率）= 底栏可见 OR 竖屏切集临时标题(3s)；暂停时强制隐藏
- * - 右块（网速/进度/系统时间）= 屏显开关 OR 底栏可见（一旦显示过就保持可见）
- */
 @Composable
 fun PlayerTopBar(state: PlayerUiState, actions: PlayerActions) {
     val anyVisible = state.topLeftVisible || state.topRightVisible
-    // 左右边距按窗口宽度分档（竖屏预览 16dp / 横屏全屏与平板 24dp，见 playerEdgePadding）
+    // 左右边距按窗口宽度分档（竖屏预览 16dp / 横屏全屏与平板 48dp，见 playerEdgePadding）
     val edge = playerEdgePadding()
     // 顶部安全区避让（2026-09-14 用户反馈：竖屏全屏/贴顶预览态下固定 12dp 的顶栏被摄像头挖孔遮挡）：
     // 顶栏贴近窗口顶部时，把 safeDrawing 顶部（状态栏 + 挖孔）尚未被自身位置覆盖的差值补进 top；

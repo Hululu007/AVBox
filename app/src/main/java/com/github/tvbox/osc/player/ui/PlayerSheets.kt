@@ -231,13 +231,15 @@ internal fun SheetTitle(text: String) {
     )
 }
 
-/** 面板按钮:M3 选项样式 —— `surfaceBright` 底、选中 `primaryContainer`;触摸点按。*/
+/** 面板按钮:M3 选项样式 —— `surfaceBright` 底、选中 `primaryContainer`;触摸点按。
+ *  [contentPadding] 给"宽度随内容"的 chips 用(默认 0 = 沿用调用方的宽度/权重)。 */
 @Composable
 internal fun SheetButton(
     text: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     selected: Boolean = false,
+    contentPadding: Dp = 0.dp,
 ) {
     val container = if (selected) {
         MaterialTheme.colorScheme.primaryContainer
@@ -247,6 +249,7 @@ internal fun SheetButton(
     val m = modifier
         .background(container, ItemShape)
         .pointerInput(onClick) { detectTapGestures(onTap = { onClick() }) }
+        .padding(horizontal = contentPadding)
         .height(playerDim(R.dimen.vs_50))
     Box(modifier = m, contentAlignment = Alignment.Center) {
         Text(

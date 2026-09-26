@@ -103,8 +103,6 @@
             android:name=".ui.activity.PlaySettingsActivity" />
         <activity
             android:name=".ui.activity.PreferenceSettingsActivity" />
-        <activity
-            android:name=".ui.activity.PreloadSettingsActivity" />
 
         <service
             android:name=".dlna.DLNACastService"

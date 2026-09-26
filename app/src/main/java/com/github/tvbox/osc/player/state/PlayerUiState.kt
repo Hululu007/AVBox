@@ -95,11 +95,7 @@ class PlayerUiState {
     var sessionVod: VodInfo? by mutableStateOf(null)
     /** 详情页竖屏预览态（setPreviewMode 写入）：呼出控件栏时只显示进度行，不显示菜单行 */
     var previewMode: Boolean by mutableStateOf(false)
-    var playerBtnText: String by mutableStateOf("")
-    var scaleBtnText: String by mutableStateOf("")
-    var speedBtnText: String by mutableStateOf("")
-    var ijkBtnText: String by mutableStateOf("")
-    /** 片头/片尾按钮文案:初始为空,由控制器写入资源文案 */
+    /** 片头/片尾已设值(mm:ss);未设置为空串(参数面板显示为「未设置」) */
     var timeStartText: String by mutableStateOf("")
     var timeEndText: String by mutableStateOf("")
     /** 解析列表版本号：setDefaultParse 后自增以驱动重绘 */
@@ -107,6 +103,9 @@ class PlayerUiState {
 
     /** 尺寸/倍速/播放器选择弹窗（阶段 7：替代 View 版 SelectDialog），null = 不显示 */
     var selectDialog: SelectDialogState? by mutableStateOf(null)
+
+    /** 播放参数抽屉（倍速/解码/片头尾/内核/比例/搜弹幕的统一入口），null = 不显示 */
+    var paramsSheet: ParamsSheetState? by mutableStateOf(null)
 
     // —— 加载/错误遮罩（由 PlayerTipBridge 经页面桥入，见 PlayContainer.onTipStateChanged） ——
     var tipMsg: String by mutableStateOf("")
@@ -133,6 +132,14 @@ class PlayerUiState {
     var subtitleSearchSheet: SubtitleSearchSheetState? by mutableStateOf(null)
     /** 投屏设备面板 */
     var castSheet: CastSheetState? by mutableStateOf(null)
+    /** 详情页选集面板在屏（面板状态归 DetailViewModel，这里只收一个投影） */
+    var episodeSheetOpen: Boolean by mutableStateOf(false)
+
+    /** 有覆盖层面板在屏：面板期间冻结底栏的 10s 自动收起（见 ComposeVideoController.idleHideRunnable） */
+    val overlayPanelOpen: Boolean
+        get() = selectDialog != null || paramsSheet != null || danmuSettingSheet != null ||
+                danmuSearchSheet != null || subtitleSheet != null || subtitleSearchSheet != null ||
+                castSheet != null || episodeSheetOpen
 
     // —— 衍生可见性（照搬 updatePortraitMenu 的逐按钮规则；与方向无关，预览态由菜单行/解析行的 previewMode 守卫） ——
 
@@ -140,7 +147,6 @@ class PlayerUiState {
     val ijkBtnVisible: Boolean get() = playerType == 1 || playerType == 2
     val trackBtnVisible: Boolean get() = playerType == 1 || playerType == 2
     val danmuBtnVisible: Boolean get() = danmuOpen
-    val danmuSearchBtnVisible: Boolean get() = danmuSearchAvailable
 
     /** 选集入口可见:当前线路剧集数 >1(面板只列剧集,单集时点开没有可选项);数据未就绪按不可见处理 */
     val episodeBtnVisible: Boolean
@@ -192,6 +198,32 @@ class SelectDialogState(
     val items: List<String>,
     val defaultIndex: Int,
     val onSelected: (Int) -> Unit,
+)
+
+/** 参数面板里的一组档位（档位文案 + 当前下标 + 选择回调）；渲染成 chips 还是滑块由面板决定 */
+class ParamsChoice(
+    val options: List<String>,
+    val selected: Int,
+    val onSelect: (Int) -> Unit,
+)
+
+/**
+ * 播放参数抽屉状态（替代原底栏那批「文字即状态值」的按钮）。
+ * 选项与当前下标由控制器在打开与每次选择后重建，保证选中态实时刷新。
+ */
+class ParamsSheetState(
+    val speed: ParamsChoice,
+    val decode: ParamsChoice,
+    val player: ParamsChoice,
+    val scale: ParamsChoice,
+    /** 已设片头/片尾(mm:ss);空串 = 未设置 */
+    val timeStartText: String,
+    val timeEndText: String,
+    val onSetTimeStart: () -> Unit,
+    val onSetTimeEnd: () -> Unit,
+    val onResetTime: () -> Unit,
+    /** 弹幕搜索入口;订阅源不支持时为 null（该组不显示） */
+    val onSearchDanmu: (() -> Unit)?,
 )
 
 /** 弹幕设置面板状态（Step 6 替代 View 版 DanmuSettingDialog） */
@@ -274,6 +306,8 @@ interface PlayerActions {
     fun onDanmuSearchClicked()
     fun onDanmuSearchLongClicked()
     fun onRotateClicked()
+    /** 打开播放参数抽屉（右侧竖排入口） */
+    fun onParamsClicked()
     fun onScreenDisplayClicked()
     fun onBackClicked()
     fun onLockClicked()

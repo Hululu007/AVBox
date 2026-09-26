@@ -150,7 +150,15 @@
     <string name="player_menu_video_track">Video</string>
     <string name="player_menu_danmu">Danmaku</string>
     <string name="player_menu_search_danmu">Search Danmaku</string>
+    <string name="player_menu_params">Playback settings</string>
     <string name="player_menu_parse">Parse</string>
+
+    <!-- 播放参数面板 -->
+    <string name="player_params_speed">Speed</string>
+    <string name="player_params_time">Opening &amp; ending</string>
+    <string name="player_params_player">Player</string>
+    <string name="player_params_set_start">Set opening</string>
+    <string name="player_params_set_end">Set ending</string>
 
     <!-- Music player page -->
     <string name="music_queue">Queue</string>
@@ -383,8 +391,6 @@
     <string name="settings_play">Playback Settings</string>
     <string name="settings_play_subtitle">Playback engine and decoding mode</string>
     <string name="settings_preference_subtitle">Change the app preferences</string>
-    <string name="settings_preload">Preload Settings</string>
-    <string name="settings_preload_subtitle">Preload while playing videos</string>
     <string name="settings_default_page">Default Start Page</string>
     <string name="settings_default_page_subtitle">Where the app opens on launch</string>
     <string name="settings_history_limit">History Limit</string>

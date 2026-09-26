@@ -150,7 +150,15 @@
     <string name="player_menu_video_track">视轨</string>
     <string name="player_menu_danmu">弹幕</string>
     <string name="player_menu_search_danmu">搜弹幕</string>
+    <string name="player_menu_params">播放参数</string>
     <string name="player_menu_parse">解析</string>
+
+    <!-- 播放参数面板 -->
+    <string name="player_params_speed">调整倍速</string>
+    <string name="player_params_time">片头片尾</string>
+    <string name="player_params_player">播放器</string>
+    <string name="player_params_set_start">设为片头</string>
+    <string name="player_params_set_end">设为片尾</string>
 
     <!-- 音乐播放页 -->
     <string name="music_queue">播放队列</string>
@@ -383,8 +391,6 @@
     <string name="settings_play">播放设置</string>
     <string name="settings_play_subtitle">播放核心和解码方式</string>
     <string name="settings_preference_subtitle">修改应用的使用偏好</string>
-    <string name="settings_preload">预载设置</string>
-    <string name="settings_preload_subtitle">播放视频时预加载</string>
     <string name="settings_default_page">默认启动页</string>
     <string name="settings_default_page_subtitle">首次打开应用的所在位置</string>
     <string name="settings_history_limit">历史记录上限</string>

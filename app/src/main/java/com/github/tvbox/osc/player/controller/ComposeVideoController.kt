@@ -24,6 +24,8 @@ import com.github.tvbox.osc.bean.ParseBean
 import com.github.tvbox.osc.bean.SourceBean
 import com.github.tvbox.osc.event.RefreshEvent
 import com.github.tvbox.osc.player.state.LockVisibility
+import com.github.tvbox.osc.player.state.ParamsChoice
+import com.github.tvbox.osc.player.state.ParamsSheetState
 import com.github.tvbox.osc.player.state.PlayerActions
 import com.github.tvbox.osc.player.state.PlayerUiState
 import com.github.tvbox.osc.util.GestureHelper
@@ -136,7 +138,13 @@ class ComposeVideoController @JvmOverloads constructor(
     private val idleHideMillis = 10000L
 
     private val uiHandler by lazy { Handler(Looper.getMainLooper()) }
-    private val idleHideRunnable by lazy { Runnable { hideBottom() } }
+    private val idleHideRunnable by lazy {
+        Runnable {
+            // 面板在屏时续期而不是收起:面板会吃掉点击(玩家不会收到 onSingleTapConfirmed),不续期就会
+            // 在用户盯着面板时把底栏收掉,与"面板期间不收底栏"矛盾
+            if (state.overlayPanelOpen) keepControlsAlive() else hideBottom()
+        }
+    }
     private val lockHideRunnable by lazy { Runnable { state.lockState = LockVisibility.HIDDEN } }
     private val keySeekCommitRunnable by lazy { Runnable { commitKeySeek() } }
     private val speedRetryRunnable by lazy { Runnable { applySpeedWhenReady() } }
@@ -647,21 +655,154 @@ class ComposeVideoController @JvmOverloads constructor(
         try {
             val playerType = cfg.getInt("pl")
             state.playerType = playerType
-            state.playerBtnText = PlayerHelper.getPlayerName(playerType)
-            state.scaleBtnText = PlayerHelper.getScaleName(cfg.getInt("sc"))
-            // 解码文案按当前内核读各自的键(2026-09-17):IJK 读 cfg.ijk,EXO 读 cfg.exo
-            val codecName = cfg.optString(if (playerType == 2) "exo" else "ijk", "硬解码") // i18n: keep
-            state.ijkBtnText = when (codecName) {
-                // i18n: keep —— 解码取值是数据键,只显示走资源
-                "硬解码" -> context.getString(R.string.player_decode_hard_short)
-                "软解码" -> context.getString(R.string.player_decode_soft_short) // i18n: keep
-                else -> codecName
-            }
-            state.speedBtnText = cfg.getDouble("sp").toString() + "x"
             val start = cfg.getInt("st")
             val end = cfg.getInt("et")
-            state.timeStartText = if (start == 0) context.getString(R.string.player_time_start) else PlayerUtils.stringForTime(start * 1000)
-            state.timeEndText = if (end == 0) context.getString(R.string.player_time_end) else PlayerUtils.stringForTime(end * 1000)
+            // 未设置留空串：参数面板据此显示「未设置」，而不是把「片头」当值显示一遍
+            state.timeStartText = if (start == 0) "" else PlayerUtils.stringForTime(start * 1000)
+            state.timeEndText = if (end == 0) "" else PlayerUtils.stringForTime(end * 1000)
+            // 配置一变(含换集/换源)就同步参数面板，否则面板会停在旧值
+            refreshParamsSheet()
+        } catch (e: JSONException) {
+            e.printStackTrace()
+        }
+    }
+
+    // —— 播放参数面板（底栏状态类控件的统一入口） ——
+
+    /** 倍速档位（参数面板与倍速弹窗共用同一份，避免两处漂移） */
+    private val speedOptions = floatArrayOf(0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 3.0f)
+
+    /** 倍速档位下标；配置值不在档位表里时兜底到 1.0x（参数面板与倍速弹窗共用同一口径） */
+    private fun speedIndex(value: Float): Int {
+        val idx = speedOptions.indexOfFirst { it == value }
+        return if (idx >= 0) idx else speedOptions.indexOfFirst { it == 1.0f }
+    }
+
+    /** 参数面板里播放器的展示顺序:exo 在左、ijk 在右,其余保持原顺序跟在其后 */
+    private fun sheetPlayerOrder(types: List<Int>): List<Int> {
+        val head = listOf(2, 1)
+        return head.filter { types.contains(it) } + types.filter { it !in head }
+    }
+
+    /** 面板打开时按当前配置现算；选项或选中值变化后重算，保证 chips 选中态实时刷新 */
+    private fun buildParamsSheet(): ParamsSheetState? {
+        val cfg = playerConfig ?: return null
+        val speed = cfg.optDouble("sp", 1.0).toFloat()
+        val playerType = cfg.optInt("pl", 2)
+        val players = sheetPlayerOrder(PlayerHelper.getExistPlayerTypes())
+        val scaleType = cfg.optInt("sc", 0)
+        return ParamsSheetState(
+            speed = ParamsChoice(
+                options = speedOptions.map { "${it}x" },
+                selected = speedIndex(speed),
+                onSelect = { applySpeed(speedOptions[it]) },
+            ),
+            decode = decodeChoice(cfg, playerType),
+            player = ParamsChoice(
+                options = players.map { PlayerHelper.getPlayerName(it) },
+                selected = players.indexOf(playerType).coerceAtLeast(0),
+                onSelect = { applyPlayer(players[it]) },
+            ),
+            scale = ParamsChoice(
+                options = (0..5).map { PlayerHelper.getScaleName(it) },
+                selected = scaleType.coerceIn(0, 5),
+                onSelect = { applyScale(it) },
+            ),
+            timeStartText = state.timeStartText,
+            timeEndText = state.timeEndText,
+            onSetTimeStart = { markTimeStart() },
+            onSetTimeEnd = { markTimeEnd() },
+            onResetTime = { onTimeResetClicked() },
+            onSearchDanmu = if (state.danmuSearchAvailable) {
+                { onDanmuSearchClicked() }
+            } else {
+                null
+            },
+        )
+    }
+
+    /** 面板未打开时是 no-op（别把 null 写回去，那等于"打开面板"） */
+    private fun refreshParamsSheet() {
+        if (state.paramsSheet == null) return
+        state.paramsSheet = buildParamsSheet()
+    }
+
+    /** 解码选项：EXO 只有硬/软两档，IJK 取配置里的 codes 列表 */
+    private fun decodeChoice(cfg: JSONObject, playerType: Int): ParamsChoice {
+        if (playerType == 2) {
+            val isSoft = cfg.optString("exo", "硬解码") == "软解码" // i18n: keep
+            return ParamsChoice(
+                options = listOf(
+                    context.getString(R.string.player_decode_hard_short),
+                    context.getString(R.string.player_decode_soft_short),
+                ),
+                selected = if (isSoft) 1 else 0,
+                onSelect = { applyDecode(playerType, if (it == 1) "软解码" else "硬解码") }, // i18n: keep
+            )
+        }
+        val names = ApiConfig.get().ijkCodes.map { it.name }
+        return ParamsChoice(
+            options = names,
+            selected = names.indexOf(cfg.optString("ijk")).coerceAtLeast(0),
+            onSelect = { applyDecode(playerType, names[it]) },
+        )
+    }
+
+    private fun applySpeed(value: Float) {
+        keepControlsAlive()
+        try {
+            val cfg = playerConfig ?: return
+            cfg.put("sp", value.toDouble())
+            updatePlayerCfgState()
+            listener?.updatePlayerCfg()
+            speedOld = value
+            mControlWrapper?.setSpeed(value)
+        } catch (e: JSONException) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun applyScale(index: Int) {
+        keepControlsAlive()
+        try {
+            val cfg = playerConfig ?: return
+            cfg.put("sc", index)
+            updatePlayerCfgState()
+            listener?.updatePlayerCfg()
+            mControlWrapper?.setScreenScaleType(index)
+        } catch (e: JSONException) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun applyPlayer(playerType: Int) {
+        keepControlsAlive()
+        try {
+            val cfg = playerConfig ?: return
+            if (playerType == cfg.optInt("pl", 2)) return
+            cfg.put("pl", playerType)
+            // ⚠️ 必须先于 updatePlayerCfg():它会让"自动切内核"态作废,否则本次落库会被回填成自动切换前的内核
+            listener?.setAllowSwitchPlayer(false)
+            updatePlayerCfgState()
+            listener?.updatePlayerCfg()
+            listener?.replay(false)
+        } catch (e: JSONException) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun applyDecode(playerType: Int, value: String) {
+        keepControlsAlive()
+        try {
+            val cfg = playerConfig ?: return
+            cfg.put(if (playerType == 2) "exo" else "ijk", value)
+            // 按内核各记一个显式选择标记:否则设置页的新值会被播放记录里的旧值压住
+            cfg.put(if (playerType == 2) "exoSet" else "ijkSet", 1)
+            // 用户显式选过解码:本次播放不再自动回退软解
+            listener?.setAllowDecodeFallback(false)
+            updatePlayerCfgState()
+            listener?.updatePlayerCfg()
+            listener?.replay(false)
         } catch (e: JSONException) {
             e.printStackTrace()
         }
@@ -875,14 +1016,7 @@ class ComposeVideoController @JvmOverloads constructor(
     override fun onScaleLongClicked() {
         keepControlsAlive()
         if (!fastClickAllowed("scale_long")) return
-        try {
-            playerConfig?.put("sc", 0)
-            updatePlayerCfgState()
-            listener?.updatePlayerCfg()
-            mControlWrapper?.setScreenScaleType(0)
-        } catch (e: JSONException) {
-            e.printStackTrace()
-        }
+        applyScale(0)
     }
 
     override fun onSpeedClicked() {
@@ -893,40 +1027,23 @@ class ComposeVideoController @JvmOverloads constructor(
     override fun onSpeedLongClicked() {
         keepControlsAlive()
         if (!fastClickAllowed("speed_long")) return
-        try {
-            playerConfig?.put("sp", 1.0)
-            updatePlayerCfgState()
-            listener?.updatePlayerCfg()
-            speedOld = 1.0f
-            mControlWrapper?.setSpeed(1.0f)
-        } catch (e: JSONException) {
-            e.printStackTrace()
-        }
+        applySpeed(1.0f)
     }
 
     override fun onPlayerClicked() {
         keepControlsAlive()
-        try {
-            val cfg = playerConfig ?: return
-            var playerType = cfg.getInt("pl")
-            val existPlayerTypes = PlayerHelper.getExistPlayerTypes()
-            var playerTypeIdx = 0
-            for (i in existPlayerTypes.indices) {
-                if (playerType == existPlayerTypes[i]) {
-                    playerTypeIdx = if (i == existPlayerTypes.size - 1) 0 else i + 1
-                }
+        val cfg = playerConfig ?: return
+        val existPlayerTypes = PlayerHelper.getExistPlayerTypes()
+        if (existPlayerTypes.isEmpty()) return
+        val current = cfg.optInt("pl", 2)
+        var nextIdx = 0
+        for (i in existPlayerTypes.indices) {
+            if (current == existPlayerTypes[i]) {
+                nextIdx = if (i == existPlayerTypes.size - 1) 0 else i + 1
             }
-            playerType = existPlayerTypes[playerTypeIdx]
-            cfg.put("pl", playerType)
-            // ⚠️ 必须先于 updatePlayerCfg():它会让"自动切内核"态作废,否则本次落库会被回填成自动切换前的内核
-            listener?.setAllowSwitchPlayer(false)
-            updatePlayerCfgState()
-            listener?.updatePlayerCfg()
-            listener?.replay(false)
-            hideBottom()
-        } catch (e: JSONException) {
-            e.printStackTrace()
         }
+        applyPlayer(existPlayerTypes[nextIdx])
+        hideBottom()
     }
 
     override fun onPlayerLongClicked() {
@@ -949,19 +1066,10 @@ class ComposeVideoController @JvmOverloads constructor(
                 items = names,
                 defaultIndex = defaultPos,
                 onSelected = { pos ->
-                    try {
-                        val thisPlayType = players[pos]
-                        if (thisPlayType != playerType) {
-                            cfg.put("pl", thisPlayType)
-                            // ⚠️ 必须先于 updatePlayerCfg()(同上:让自动切内核态作废,用户选择才能落库)
-                            listener?.setAllowSwitchPlayer(false)
-                            updatePlayerCfgState()
-                            listener?.updatePlayerCfg()
-                            listener?.replay(false)
-                            hideBottom()
-                        }
-                    } catch (e: Exception) {
-                        e.printStackTrace()
+                    // 选中的就是当前内核时什么都不做(含不收底栏):与 applyPlayer 的同值早退同一口径
+                    if (players[pos] != playerType) {
+                        applyPlayer(players[pos])
+                        hideBottom()
                     }
                 },
             )
@@ -971,97 +1079,78 @@ class ComposeVideoController @JvmOverloads constructor(
     }
 
     override fun onIjkClicked() {
-        try {
-            val cfg = playerConfig ?: return
-            val playerType = cfg.optInt("pl", 2)
-            if (playerType == 2) {
-                // EXO(2026-09-17):硬解/软解两个取值直接互切;软解 = 系统软件解码器(c2.android.*)优先,
-                // 不看 ApiConfig.ijkCodes —— 那是 IJK 的 options 列表,与 media3 的选择器无关
-                val current = cfg.optString("exo", "硬解码") // i18n: keep
-                cfg.put("exo", if (current == "软解码") "硬解码" else "软解码") // i18n: keep
-            } else {
-                var ijk = cfg.getString("ijk")
-                val codecs = ApiConfig.get().ijkCodes
-                for (i in codecs.indices) {
-                    if (ijk == codecs[i].name) {
-                        ijk = if (i >= codecs.size - 1) codecs[0].name else codecs[i + 1].name
-                        break
-                    }
-                }
-                cfg.put("ijk", ijk)
-            }
-            // 按剧记忆标记(2026-09-15;2026-09-17 拆成两内核各一个):只有用户**在该内核下**显式选过解码方式,
-            // 记录里对应的解码键才优先;否则设置页的新值会一直被播放记录里的旧值压住(见 PlaybackController.initPlayerCfg)
-            cfg.put(if (playerType == 2) "exoSet" else "ijkSet", 1)
-            // 用户显式选了解码:本次播放不再自动回退软解,自动软解态作废(用户的值要能落库;见 setAllowDecodeFallback)
-            listener?.setAllowDecodeFallback(false)
-            updatePlayerCfgState()
-            listener?.updatePlayerCfg()
-            listener?.replay(false)
-            hideBottom()
-        } catch (e: JSONException) {
-            e.printStackTrace()
+        val cfg = playerConfig ?: return
+        val playerType = cfg.optInt("pl", 2)
+        val next = if (playerType == 2) {
+            // EXO:硬解/软解两取值互切;软解 = 系统软件解码器(c2.android.*)优先,
+            // 不看 ApiConfig.ijkCodes —— 那是 IJK 的 options 列表,与 media3 的选择器无关
+            if (cfg.optString("exo", "硬解码") == "软解码") "硬解码" else "软解码" // i18n: keep
+        } else {
+            // 配置里没有 ijk 键就什么都不做(缺键时 getString 会抛异常,这里不用异常做控制流)
+            if (!cfg.has("ijk")) return
+            val codecs = ApiConfig.get().ijkCodes
+            val idx = codecs.indexOfFirst { it.name == cfg.optString("ijk") }
+            // 值不在码表里时保持原值不动
+            if (idx < 0) cfg.optString("ijk") else codecs[(idx + 1) % codecs.size].name
         }
+        applyDecode(playerType, next)
+        hideBottom()
     }
 
     override fun onTimeStartClicked() {
         keepControlsAlive()
-        try {
-            val cfg = playerConfig ?: return
-            val wrapper = mControlWrapper ?: return
-            val current = PlayerUtils.safeTimeMs(wrapper.currentPosition)
-            val duration = PlayerUtils.safeTimeMs(wrapper.duration)
-            if (current > duration / 2) return
-            cfg.put("st", current / 1000)
-            updatePlayerCfgState()
-            listener?.updatePlayerCfg()
-        } catch (e: JSONException) {
-            e.printStackTrace()
-        }
+        markTimeStart()
     }
 
     override fun onTimeStartLongClicked() {
-        try {
-            playerConfig?.put("st", 0)
-            updatePlayerCfgState()
-            listener?.updatePlayerCfg()
-        } catch (e: JSONException) {
-            e.printStackTrace()
-        }
+        setTimeMark("st", 0)
     }
 
     override fun onTimeEndClicked() {
         keepControlsAlive()
-        try {
-            val cfg = playerConfig ?: return
-            val wrapper = mControlWrapper ?: return
-            val current = PlayerUtils.safeTimeMs(wrapper.currentPosition)
-            val duration = PlayerUtils.safeTimeMs(wrapper.duration)
-            if (current < duration / 2) return
-            cfg.put("et", (duration - current) / 1000)
-            updatePlayerCfgState()
-            listener?.updatePlayerCfg()
-        } catch (e: JSONException) {
-            e.printStackTrace()
-        }
+        markTimeEnd()
     }
 
     override fun onTimeEndLongClicked() {
-        try {
-            playerConfig?.put("et", 0)
-            updatePlayerCfgState()
-            listener?.updatePlayerCfg()
-        } catch (e: JSONException) {
-            e.printStackTrace()
-        }
+        setTimeMark("et", 0)
     }
 
     override fun onTimeResetClicked() {
         keepControlsAlive()
         try {
             val cfg = playerConfig ?: return
-            cfg.put("et", 0)
             cfg.put("st", 0)
+            cfg.put("et", 0)
+            updatePlayerCfgState()
+            listener?.updatePlayerCfg()
+        } catch (e: JSONException) {
+            e.printStackTrace()
+        }
+    }
+
+    /** 把当前位置设为片头;位置已过半程时不设(那时它更可能是片尾) */
+    private fun markTimeStart() {
+        val wrapper = mControlWrapper ?: return
+        val current = PlayerUtils.safeTimeMs(wrapper.currentPosition)
+        if (current > PlayerUtils.safeTimeMs(wrapper.duration) / 2) return
+        setTimeMark("st", current / 1000)
+    }
+
+    /** 把当前位置到结尾的时长设为片尾;位置未过半程时不设 */
+    private fun markTimeEnd() {
+        val wrapper = mControlWrapper ?: return
+        val current = PlayerUtils.safeTimeMs(wrapper.currentPosition)
+        val duration = PlayerUtils.safeTimeMs(wrapper.duration)
+        if (current < duration / 2) return
+        setTimeMark("et", (duration - current) / 1000)
+    }
+
+    /** 写 st/et 并落库(0 = 清除) */
+    private fun setTimeMark(key: String, seconds: Int) {
+        keepControlsAlive()
+        try {
+            val cfg = playerConfig ?: return
+            cfg.put(key, seconds)
             updatePlayerCfgState()
             listener?.updatePlayerCfg()
         } catch (e: JSONException) {
@@ -1072,7 +1161,8 @@ class ComposeVideoController @JvmOverloads constructor(
     override fun onEpisodeClicked() {
         if (!fastClickAllowed("episode")) return
         listener?.showEpisodes()
-        hideBottom()
+        // 面板在屏时不收底栏(与播放参数/弹幕面板一致),只续期自动收起计时
+        keepControlsAlive()
     }
 
     override fun onCastClicked() {
@@ -1082,7 +1172,7 @@ class ComposeVideoController @JvmOverloads constructor(
     override fun onSubtitleClicked() {
         if (!fastClickAllowed("zimu")) return
         listener?.selectSubtitle()
-        hideBottom()
+        keepControlsAlive()
     }
 
     override fun onSubtitleLongClicked() {
@@ -1096,13 +1186,13 @@ class ComposeVideoController @JvmOverloads constructor(
     override fun onAudioTrackClicked() {
         if (!fastClickAllowed("audio")) return
         listener?.selectAudioTrack()
-        hideBottom()
+        keepControlsAlive()
     }
 
     override fun onVideoTrackClicked() {
         if (!fastClickAllowed("video")) return
         listener?.selectVideoTrack()
-        hideBottom()
+        keepControlsAlive()
     }
 
     override fun onDanmuSettingClicked() {
@@ -1136,6 +1226,11 @@ class ComposeVideoController @JvmOverloads constructor(
             if (toPortrait) ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
             else ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         hideBottom()
+    }
+
+    override fun onParamsClicked() {
+        keepControlsAlive()
+        state.paramsSheet = buildParamsSheet()
     }
 
     override fun onScreenDisplayClicked() {
@@ -1297,16 +1392,7 @@ class ComposeVideoController @JvmOverloads constructor(
                 tip = context.getString(R.string.player_select_scale),
                 items = scales,
                 defaultIndex = scaleType.coerceIn(0, 5),
-                onSelected = { index ->
-                    try {
-                        cfg.put("sc", index)
-                        updatePlayerCfgState()
-                        listener?.updatePlayerCfg()
-                        mControlWrapper?.setScreenScaleType(index)
-                    } catch (e: JSONException) {
-                        e.printStackTrace()
-                    }
-                },
+                onSelected = { index -> applyScale(index) },
             )
         } catch (e: JSONException) {
             e.printStackTrace()
@@ -1317,34 +1403,12 @@ class ComposeVideoController @JvmOverloads constructor(
         try {
             val cfg = playerConfig ?: return
             val speed = cfg.getDouble("sp").toFloat()
-            val speedOptions = floatArrayOf(0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 3.0f)
-            val speeds = ArrayList<String>()
-            for (value in speedOptions) {
-                speeds.add(value.toString() + "x")
-            }
-            var defaultPos = 1
-            for (i in speedOptions.indices) {
-                if (speedOptions[i] == speed) {
-                    defaultPos = i
-                    break
-                }
-            }
+            val speeds = speedOptions.map { "${it}x" }
             state.selectDialog = SelectDialogState(
                 tip = context.getString(R.string.player_select_speed),
                 items = speeds,
-                defaultIndex = defaultPos,
-                onSelected = { index ->
-                    try {
-                        val value = speedOptions[index]
-                        cfg.put("sp", value.toDouble())
-                        updatePlayerCfgState()
-                        listener?.updatePlayerCfg()
-                        speedOld = value
-                        mControlWrapper?.setSpeed(value)
-                    } catch (e: JSONException) {
-                        e.printStackTrace()
-                    }
-                },
+                defaultIndex = speedIndex(speed),
+                onSelected = { index -> applySpeed(speedOptions[index]) },
             )
         } catch (e: JSONException) {
             e.printStackTrace()

@@ -66,7 +66,6 @@ import com.github.tvbox.osc.ui.components.SettingsRow
 import com.github.tvbox.osc.ui.activity.ConfigManageActivity
 import com.github.tvbox.osc.ui.activity.PlaySettingsActivity
 import com.github.tvbox.osc.ui.activity.PreferenceSettingsActivity
-import com.github.tvbox.osc.ui.activity.PreloadSettingsActivity
 import com.github.tvbox.osc.ui.activity.ThemeSettingsActivity
 import com.github.tvbox.osc.util.FileUtils
 import com.github.tvbox.osc.util.HistoryHelper
@@ -277,20 +276,12 @@ fun SettingsPage(
                         onClick = { PlaySettingsActivity.start(context) },
                     )
                 }
-                SettingsCard(SettingsCardPosition.MIDDLE) {
+                SettingsCard(SettingsCardPosition.LAST) {
                     SettingsRow(
                         title = stringResource(R.string.settings_preference_title),
                         subtitle = stringResource(R.string.settings_preference_subtitle),
                         iconRes = R.drawable.ic_settings_preference,
                         onClick = { PreferenceSettingsActivity.start(context) },
-                    )
-                }
-                SettingsCard(SettingsCardPosition.LAST) {
-                    SettingsRow(
-                        title = stringResource(R.string.settings_preload),
-                        subtitle = stringResource(R.string.settings_preload_subtitle),
-                        iconRes = R.drawable.ic_settings_preload,
-                        onClick = { PreloadSettingsActivity.start(context) },
                     )
                 }
             }

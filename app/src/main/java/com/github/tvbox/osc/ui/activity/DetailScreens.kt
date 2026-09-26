@@ -686,6 +686,8 @@ private fun removeHtmlTag(info: String?): String {
 private fun EpisodeSheet(vm: DetailViewModel, revision: Int, slideFromEnd: Boolean) {
     @Suppress("UNUSED_EXPRESSION") revision
     val show by vm.episodeSheet.collectAsState()
+    // 面板在屏时冻结底栏自动收起（见 PlayerUiState.overlayPanelOpen）
+    LaunchedEffect(show) { vm.playContainerRef?.setEpisodeSheetOpen(show) }
     if (!show) return
     val info = vm.vodInfo ?: return
     val flags = info.seriesFlags.orEmpty()

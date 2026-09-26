@@ -2789,3 +2789,198 @@ echo-exo-player-error: code=ERROR_CODE_UNSPECIFIED, msg=Unexpected runtime error
 - **审查(同日,SKILL 两轴记账,第二轮补做)**:①**入口普查** —— `setFullScreen(true)` 全仓共两处(`DetailScreens.kt:198` 预览区 expand 图标、`DetailViewModel.kt:671` 点当前清晰度),都经 `LaunchedEffect(full) → applyFullscreen` 统一判定方向,无绕过路径;`PlayContainer` 只被 `DetailActivity` 实例化(已 grep),直播页走自己的 `applyFullscreen` 不受影响。②**本次引入、已修** —— 判据最初直接写在 `MyVideoView.isPortraitVideo()`(Android View 子类)里,而现有测试集是纯 JVM、拿不到该类型 ⇒ 抽成 `VideoOrientation.isPortrait` 并补单测,锁定"尺寸未就绪/正方形 → 非竖屏 ⇒ 兜底横屏"这一行为契约。③**既有/不改** —— `LivePlayActivity` 的 `rotating = (full != (orientation == LANDSCAPE))` 有**同款坑**(竖屏全屏下用户转横屏会让 `isFullBox()` 翻成非全屏),用户本次指定只做点播详情页,记为既有问题;`prune_imports.py` 在 4 个文件上报 105 条未使用 import(DetailActivity 1 / DetailViewModel 2 / PlayContainer 82 / MyVideoView 20),已核实**全部是改动前既有**(本轮只增代码、未删任何使用点;其中 `DetailActivity.kt` 的 `androidx.compose.foundation.layout.size`、`DetailViewModel.kt` 的 `android.os.Bundle`/`LazyRow` 与本次改动无关),未顺手清理以免超出范围。
 - **第三轮(同日,用户"别编译release,你写了注释吗,写了就删了,然后根据SKILL.md审查")**:①**停止 release 构建** —— 该构建在 R8 阶段被中断、未产出新包(旧包仍是 09-25 的),按用户要求不再编译 release;②**删除本轮全部新增注释**(7 处:`VideoOrientation`、`MyVideoView`、`PlayContainer`×2、`DetailViewModel`、`DetailActivity`、`VideoOrientationTest`×2),按 SKILL.md「通用代码规范 · 注释」条(禁止描述代码表面行为、单条 ≤2 行、自查"删掉它是否影响理解")逐条判定后清空 —— 代码靠命名自解释(`isPortrait` / `isPortraitVideo` / `landTarget`);③**审查新增验证项(全部通过)**:doikki `BaseVideoController` 的自动旋转(`mOrientationHelper`)**不会启用** —— `mEnableOrientation` 默认 false 且项目零调用 `enableOrientation(true)`,`mControlWrapper.isFullScreen()` 恒 false(`mIsFullScreen` 只在 `VideoView.startFullScreen()` 置位,项目零调用)⇒ 不会覆盖我们设的 `SENSOR_PORTRAIT`;`BaseActivity.hideSysBar()` 是纯 SystemUiVisibility、与方向无关;`playerEdgePadding()` 按 `screenWidthDp` 分档(竖屏 16dp)、与方向/previewMode 无关 ⇒ 竖屏全屏的底栏边距与预览态一致;`BaseVideoController.onBackPressed()` 返回 false ⇒ "先收控件、再退全屏"的两步退出成立;`PlayContainer.onBackPressed()` 唯一调用方是 `DetailActivity.kt:83`;④重跑 `:app:assembleDebug` + `:app:testDebugUnitTest` —— BUILD SUCCESSFUL / **350 用例 0 失败**。**本轮无新增发现**(无阻断/高/中级),按 SKILL.md 的收敛线可收尾。
 - **真机待走查(用户)**:①竖屏短剧源(1080×1920)点预览区 expand,应**直接竖屏全屏、无旋转动画**;②竖屏全屏下按返回:先收控件、再按退回竖屏预览(不应转成横屏);③横屏视频点 expand 的行为与改动前一致;④竖屏全屏时把手机转横屏,画面与布局不应"翻掉"(应为不动);⑤起播中(尺寸未就绪)点 expand 会兜底横屏 —— 属预期,不是 bug。
+
+## 特性:播放器底栏改造 —— 左下角图标胶囊 + 播放参数抽屉(2026-09-26,用户"图标用 .tubiao 文件夹里的,界面左下角是黑色的半透明圆角胶囊…")
+
+- **需求(用户口述)**:①图标取仓库根 `.tubiao/`;②左下角黑色半透明圆角胶囊,从左往右 = 刷新 / 选集 / 投屏 / 字幕 / 音轨 / 视轨 / 弹幕;③**旋转控件的上方**放「播放参数」,点开抽屉里有调整倍速 / 解码方式 / 片头片尾 / 播放器选择。
+- **四个追问的拍板**:①面板形态 = **横屏右侧滑出、竖屏底部滑出,与选集面板一致**;②进度条在上、胶囊在下;③「画面比例」放进抽屉(用户没提,提出来后确认);「搜弹幕」用户反问"有这个控件吗" ⇒ 按可用时显示收进抽屉;④预览态**不显示**胶囊。
+- **素材现状(关键,大幅降低工作量)**:`.tubiao/` 里已有 12 个 Material Symbols 风格 SVG(24px / `viewBox="0 -960 960 960"`),与底栏按钮几乎一对一;投屏已有 `drawable/ic_detail_cast.xml`(来自 `.tubiao/投屏.svg`)。转换范式 = `viewportWidth/Height=960` + `<group android:translateY="960">` 抵消负 viewBox、`fillColor` 改 `#FFFFFFFF`,脚本批量产出 12 个 `player_ic_*.xml`。
+- **为什么不能"纯图标"**:图二(YouTube)那排点赞/踩/评论/收藏/分享是**无状态动作**,图标即全部信息;本项目原底栏 14 个里 **6 个的文字本身就是当前值**(`scaleBtnText` 画面比例 / `speedBtnText` 倍速 / `playerBtnText` 内核 / `ijkBtnText` 解码 / `timeStartText` / `timeEndText`),纯图标化会丢状态 ⇒ 状态类全部收进抽屉,用 chips 的选中态承载"当前值"。
+- **改法(9 文件 + 12 新图标)**:
+  1. 新增 12 个 `res/drawable/player_ic_*.xml`(脚本从 `.tubiao/*.svg` 批量转)。
+  2. `player/ui/PlayerOverlay.kt`:新增 `PlayerPillIconButton`(胶囊内图标按钮,`vs_40` 盒 / `vs_24` 图标,`contentDescription` 复用既有文案);`PlayerLockButton` 调用点改 `PlayerSideButtons`;渲染 `state.paramsSheet`(按窗口方向选 `PlayerDialogVariant.END/BOTTOM`)。
+  3. `player/ui/PlayerBottomBar.kt`:删掉 FlowRow 文字菜单行(14 个 `PlayerMenuButton`),换 `PlayerActionPill`(黑色 45% 圆角胶囊 + 7 图标);连删 `ExperimentalLayoutApi`/`FlowRow` import 与 `@OptIn`。
+  4. `player/ui/PlayerLayers.kt`:`PlayerLockButton` → `PlayerSideButtons`,三颗等距(播放参数 / 旋转 / 锁),抽 `BoxScope.SideButton` 消重复。
+  5. `player/ui/PlayerSheets.kt`:`PlayerDialog` 加 `variant`(`PlayerDialogVariant` CENTER/BOTTOM/END,END 用 translationX、BOTTOM 用 translationY);`SheetButton` 加 `contentPadding`(默认 0,供"宽度随内容"的 chips 用)。
+  6. 新增 `player/ui/PlayerParamsSheet.kt`:5 组 chips(倍速 / 解码 / 片头片尾 / 播放器 / 画面比例)+ 可选搜弹幕项;尺寸按 `variant` 决定(横屏 `min(640dp, 屏宽×0.45)` 全高贴右;竖屏 `min(640dp, 屏宽)` 贴底)。
+  7. `player/state/PlayerUiState.kt`:加 `paramsSheet` + `ParamsChoice`/`ParamsSheetState`;`PlayerActions` 加 `onParamsClicked()`;`timeStartText`/`timeEndText` 语义改为「未设置 = 空串」。
+  8. `player/controller/ComposeVideoController.kt`:实现 `onParamsClicked` / `buildParamsSheet` / `refreshParamsSheet` / `decodeChoice`;抽 `applySpeed`/`applyScale`/`applyPlayer`/`applyDecode`/`markTimeStart`/`markTimeEnd`/`setTimeMark` 为私有方法,**原 `onScaleLongClicked`/`onSpeedLongClicked`/`onPlayerClicked`/`onPlayerLongClicked`/`onIjkClicked`/`onTime*Clicked` 改为复用它们**(消重复);`speedOptions` 提为类成员(参数面板与倍速弹窗共用)。
+  9. 四语文案:新增 `player_menu_params` + 5 个 `player_params_*`;**复用** `common_not_set`(未设置)/ `live_group_scale`(画面比例)/ `settings_play_decode`(解码方式)/ `common_clear`(清空)—— 初版新加了这 4 个同值 key,`i18n_check_keys.py` 报 `SAME-VALUE-MULTI-KEY(4)`,按项目「能复用既有 key 就必须复用」全部改回复用。
+- **两个自查发现并修掉的问题(都在重新构建前)**:①**搜弹幕会叠两层 Dialog** —— 面板里点"搜弹幕"属"关掉本面板并打开下一个面板",必须走 `LocalPlayerSheetDismissThen`(先播退场再执行动作),否则两个面板窗口重叠;②**面板操作期间底栏会被 idle 计时器收掉** —— 每个 `applyXxx` / `setTimeMark` 里补 `keepControlsAlive()`,用户改参数即刷新自动收起计时。
+- **保留但暂无 UI 调用点的既有方法**:`onScaleClicked`/`onSpeedClicked`/`onPlayerLongClicked`/`onDanmuSearch*`/`onScreenDisplayClicked` 等(底栏文字按钮撤掉后失去调用点)一律**保留**(接口完整,不做超出范围的重构);`showScaleDialog`/`showSpeedDialog` 仍被 `onScaleClicked`/`onSpeedClicked` 调用。
+- **验证**:`:app:assembleDebug` BUILD SUCCESSFUL;`:app:testDebugUnitTest` **350 用例 / 0 失败**(本次未加单测,数量与改动前一致);`i18n_gate.py` ui+非 ui 均 0;`i18n_check_keys.py` 声明 444 / 引用 443(差的 `toast_permission_required` 是既有死键)、`SAME-VALUE-MULTI-KEY(0)`;`i18n_align.py` en / b+zh+Hant / zh-rHK --subset 三者全 PASS;`prune_imports.py` 7 个改动文件仅 `PlayerBottomBar.kt` 报 1 个**既有**未使用 import(`StrokeCap`,改动前就只有 import 行,未顺手清理)。**未真机验证**。
+- **构建过程踩的坑(PowerShell 重定向折行)**:`& .\gradlew.bat ... > "$env:TEMP\log" 2>&1` 在 PowerShell 5.1 下**会把长行按控制台宽度折断**(本次 80 列),Kotlin 错误 `e: file:///...kt:683:16 Unresolved reference 'X'.` 被截成 `...kt:6` 完全看不清 ⇒ 必须 `$PSDefaultParameterValues['Out-File:Width'] = 5000` 后再重定向(或 `| Out-File -Width 5000`)。另:`Select-Object -First N` 会提前终止上游管道,而**把长字符串直接输出到控制台也会被折行**,要看全量错误得先落盘再用 Read 读。
+- **真机待走查(用户)**:①全屏下左下角胶囊 7 个图标是否齐全、按压反馈正常;②右侧三颗(播放参数/旋转/锁)间距是否均匀、点击热区是否够大;③横屏点播放参数应从右侧滑出、竖屏应从底部滑出;④抽屉里 5 组 chips 的选中态是否与当前配置一致;⑤切倍速/解码/内核后面板是否仍停留且选中态刷新;⑥片头片尾「设为片头/设为片尾/清空」三键与下方"片头 xx:xx · 片尾 xx:xx"是否同步;⑦搜弹幕(源支持时)是否先收面板再开搜索面板、不叠窗;⑧**竖屏全屏**(竖屏视频点全屏)下胶囊是否完整不溢出、图标是否等比缩小。
+
+### 补丁(同日,审查阶段自查发现):竖屏全屏下胶囊溢出 + 面板刷新收敛
+
+- **本次引入的回归(已修)**:`playerDim` 按窗口**长边**缩放,而竖屏全屏时长边 = 屏高 ⇒ 1080×2400 机型上 `vs_40` 会算成 75dp,7 图标 + 8 间距的胶囊要 **597dp**,而屏幕可用宽只有 **361dp**(1080px / 2.75 - 2×16dp) ⇒ **右侧图标被挤出屏幕**。原文字菜单行用 `FlowRow` 会自动换行,所以这个坑从来没暴露过;改成单行 Row 胶囊后必然踩到。修法:`PlayerPillIconButton` 的尺寸改由调用方传入,`PlayerActionPill` 用 `BoxWithConstraints` 取 `minOf(playerDim(vs_40), (maxWidth - gap×8) / 7).coerceAtLeast(1.dp)`;图标 = 盒 × 0.6(照搬原 `vs_24`/`vs_40` 比例)。横屏全屏与分屏小窗都验算过不会触发钳制(比例恒定),只有竖屏全屏会。
+- **面板刷新收敛(顺带)**:原 `applySpeed`/`applyScale`/`applyPlayer`/`applyDecode`/`setTimeMark`/`onTimeResetClicked` 各自调一次 `refreshParamsSheet()` ⇒ 与 `updatePlayerCfgState()` 里的重复,且**换集/换源导致的配置变化覆盖不到**(面板会停在旧值,例如一集播完自动切下一集时)。现统一收进 `updatePlayerCfgState()` 末尾一处,上述六处全部删掉;`refreshParamsSheet()` 自带 `if (state.paramsSheet == null) return` 守卫,初始化路径无副作用。另删掉 `onSetTimeStart`/`onSetTimeEnd` 外层多余的 `refreshParamsSheet()`(它们调的 `markTimeStart`/`markTimeEnd` 最终走 `setTimeMark` → `updatePlayerCfgState`)。
+- **验证**:BUILD SUCCESSFUL;350 用例 / 0 失败;`refreshParamsSheet` 全文件仅 2 处(定义 + `updatePlayerCfgState` 内调用)。
+
+### 尺寸标定(同日,用户"左下角的胶囊这么小怎么操作,改成图二这种比例")
+
+- **实测口径(两张截图分辨率不同,必须先归一化到屏宽再比)**:用户给的实现截图 **2800×1260**、YouTube 参照图 **1920×864**(都是 20:9)。用 PIL 按"白色像素逐行 / 逐列计数"量出:实现侧图标图形宽 = **1.46% 屏宽**、图形间隙 **2.14%**;YouTube 侧 = **2.40%** / **3.59%** ⇒ **整体 ×1.65**。
+- **改动**:`PlayerActionPill` 的盒 `vs_40` → **`vs_70`**(1.75×)、内距与间距 `vs_5` → **`vs_8`**(1.6×),宁大勿小;图标仍 = 盒 × 0.6。
+- ⚠️ **踩坑(值得记)**:第一次直接用了 `vs_70`/`vs_8` 编译失败 —— 查可用档位时 grep 的是**全仓库** `--include=dimens.xml`,把 `示例文件/` 下别的项目的 dimens.xml 也算了进来(那边档位更全)。**本项目 app 模块实际档位只有 `vs_2/5/10/12/15/20/24/30/40/50/60/120/140/200/410/480/520/640/960`**,已补 `vs_8`/`vs_70` 两档(只加不改)。**查档位必须限定 `app/src/main/res/values/dimens.xml`。**
+- **放大后的连带**:`vs_70` 下这台 2800×1260 设备的胶囊已占 **96% 屏宽** ⇒ 竖屏全屏时**必须**走 `BoxWithConstraints` 的宽度钳制(上一轮那条修复从"保险"变成了"必需")。
+- **验证**:BUILD SUCCESSFUL;350 用例 / 0 失败。**未真机验证**(需用户确认放大后的观感是否到位)。
+
+### 二次微调(同日,用户"胶囊本身改为0.2f,然后高度矮一点,进度条距离胶囊的距离空隙小一点。进度条的时间放在进度条左上角被圆角胶囊包裹")
+
+- **四个改动点**:
+  1. 胶囊底色透明度 `0.45f` → **`0.2f`**(抽常量 `OVERLAY_PILL_ALPHA` 供动作胶囊与新增的时间胶囊共用);
+  2. 胶囊"高度矮一点" —— 内距由四边等值 `vs_8` 改为 **水平 `vs_8` / 垂直 `vs_2`**,高度 86 档 → 74 档(**减 14%**,图标盒 `vs_70` 不动,避免又变小);
+  3. 进度条与胶囊的间距 `8.dp` → **`4.dp`**;
+  4. **时间移到进度条左上角的圆角胶囊**:新增 `PlayerTimePill`(底色/圆角与动作胶囊一致,内距 `vs_10`/`vs_5`)+ `TimeRangeText`(文本 = `当前 / 总时长`,单独成 scope 保持"拖拽期只重组本 Text"的既有优化);**全屏态进度条改为整行**(两侧不再留时间,`horizontal` 内距 8dp → 0),**预览态完全不变**(仍是「播放钮 + 当前时间 - 进度条 - 总时长」一行)。
+- **为什么预览态不改**:预览态是详情页 16:9 小窗,空间不足以再插一行;且 §4.4 有"暂停钮/进度条/全屏钮三者水平中心线统一"的既有约定,加行会破坏它。用户本次给的参照图是横屏全屏。
+- **验证**:BUILD SUCCESSFUL;350 用例 / 0 失败。**未真机验证**。
+
+### 手感统一(同日,用户"播放参数面板和选集面板的手感怎么不一样的" → "改吧")
+
+- **差异根因**:两个面板走的是**两套实现体系** —— 播放参数用 `PlayerDialog`(平台 Dialog 窗口),选集用 `AVBoxBottomSheet`(Compose 内嵌覆盖层)。参数差异:进出场 **220ms vs 280ms**、滑动距离基准 **整屏高 vs 面板自身高度**、遮罩 **平台 dim 瞬现 vs Compose scrim 0.32 随动画淡入**、**无拖拽关闭 vs 可拖拽关闭**(拖过 25% 或速度 >1400)。
+- **为什么播放器面板原来用 Dialog**:`PlayerDialog` 的注释写着"独立窗口 = 天然屏蔽播放器手势" —— 播放器的进度/音量手势是 dkplayer 在 View 层处理的。
+- **⚠️ 修正我先前的错误判断**:我最初说"内嵌遮罩会穿透成拖进度条",查证后**不准确**。`ComposeVideoController.onTouch` 收到 down 只是喂给 `GestureDetector`、无副作用;而遮罩的 `clickable` 会 `down.consume()`,于是 `GestureDetector` 拿不到 down、后续 move 到了也没效果。**真正有穿透风险的只有进场动画那 280ms**(`clickable(enabled = entered)` 此时禁用)。
+- **改法(3 文件)**:
+  1. `ui/components/BottomSheet.kt` 的 `SheetOverlay`:遮罩加一层 `pointerInput`,**只消费有位移的 change**(`positionChanged()`),点击仍留给 `clickable` 关闭面板 —— 进场期间的拖动也就被吃掉了;
+  2. `player/ui/PlayerParamsSheet.kt` 重写:改用 `AVBoxBottomSheet(slideFromEnd = ...)`,删掉自建的 `Surface`/尺寸计算(交给 `AVBoxBottomSheet` 自己管),搜弹幕的"先关再开"从 `LocalPlayerSheetDismissThen` 换成 `LocalSheetDismissThen`(后者**不会**自动调 `onDismissRequest`,所以 action 里要手动 `onDismiss()`);
+  3. `player/ui/PlayerOverlay.kt`:调用参数 `variant = PlayerDialogVariant.X` → `slideFromEnd = 横屏`。
+- **未动**:其余播放器面板(字幕/音轨/弹幕/投屏/尺寸选择)仍走 `PlayerDialog`;`PlayerDialog` 与 `PlayerDialogVariant` 保留(仍被那些面板使用)。
+- **编译踩坑(值得记)**:①`detectDragGestures` 在当前 Compose 版本(composeBom 2026.09.00)签名对不上(`None of the following candidates is applicable`),换成底层 `awaitPointerEventScope` 写法;②`awaitPointerEventScope` 是 `PointerInputScope` 的**成员函数**,给它写 `import androidx.compose.ui.input.pointer.awaitPointerEventScope` 会报 `UNRESOLVED_IMPORT`(该包路径不存在);③`Modifier.pointerInput` 与 `PointerInputChange.positionChanged` **是**扩展函数,需要 import。三样一起错时错误信息是连锁的,要一次看全再改。
+- **验证**:BUILD SUCCESSFUL;350 用例 / 0 失败。**未真机验证** —— 需用户确认拖拽关闭、遮罩淡入、以及在面板/遮罩上拖动不会误触播放器手势。
+
+### 播放参数面板重排 + 倍速改滑块(2026-09-26,用户"内容从上往下改为:播放器(左 exo 右 ijk),解码方式,调整倍速(改成范围滑块有步长),片头片尾,画面比例")
+
+- **改动 3 处**:
+  1. `player/ui/PlayerParamsSheet.kt`:组顺序改为 播放器 → 解码方式 → 调整倍速 → 片头片尾 → 画面比例(搜弹幕仍在最末);新增 `ParamsSliderGroup`(标签行左侧文案 + 右侧当前档位 + 下方 `Slider`),倍速由 chips 改滑块。
+  2. `player/controller/ComposeVideoController.kt`:新增 `sheetPlayerOrder()`(`head = [2, 1]` 过滤后拼上其余),`buildParamsSheet()` 的 `players` 走它 —— 面板里 **exo 在左、ijk 在右**。
+  3. `player/state/PlayerUiState.kt`:`ParamsChoice` 的 KDoc 由"一组选项"改为"一组档位…渲染成 chips 还是滑块由面板决定"(该类被两种形态复用,未新增状态类)。
+- **用户口径(两处都是我提问后才动手的)**:①倍速**不规则步长**,就按现有 7 档 `0.75 / 1.0 / 1.25 / 1.5 / 1.75 / 2.0 / 3.0`(不是等步长滑块);②播放器组**仅调顺序**,保持胶囊左对齐(不做"各占半行")。
+- **非等步长怎么落到 Slider 上**:**滑块的值 = 档位下标**(0..6,轨道上等分),`valueRange = 0f..6f`、`steps = 5`,显示文案取 `speedOptions[下标]`。这样 7 个档位在轨道上等距、视觉上仍是"有步长"的滑块,而实际倍速保留原有的非等步长分布。档位表复用 `speedOptions`(与倍速弹窗同一份,不新建数组)。
+- **提交时机 = 松手**:`onValueChange` 只改本地 `index`(`remember(choice)` 持有),`onValueChangeFinished` 才 `choice.onSelect(stop)` → `applySpeed`。拖动中逐档提交会反复 `cfg.put("sp")` + `updatePlayerCfgState()` + `mControlWrapper.setSpeed()`,而且每档都触发 `refreshParamsSheet()` 重建 `ParamsChoice`(新的对象标识 ⇒ `remember(choice)` 复位),拖到一半手就被打断。`remember(choice)` 的键是 `ParamsChoice` 实例(无 `equals` ⇒ 按标识比),面板打开期间该实例稳定,只有真提交后才换新。
+- **未动**:倍速弹窗(`showSpeedDialog`,长按/点击倍速走的 `SelectDialogState` 列表)、底栏「播放器」按钮的循环切换顺序(`onPlayerClicked` 仍按 `getExistPlayerTypes()` 原序,即 ijk → exo)。用户本次只要求改弹窗。
+- **已知**:新代码触发一条 `Slider(value, onValueChange, …)` 弃用告警(M3 建议改用 `SliderState` 重载)—— 与项目既有 4 处 Slider 用法(`SettingsSliderRow`/`ThemeColorPickerSheet`/`LiveScreens`/`ThemeSettingsPage`)同一重载,属既有风格,未单方面改写法。
+- **验证**:BUILD SUCCESSFUL;`:app:testDebugUnitTest` 全绿(41 个测试类 / 0 失败 0 错误);`prune_imports.py` 三个改动文件均 0 个未使用 import。**未真机验证** —— 待用户确认:①面板顺序与 exo/ijk 左右位置;②滑块拖动时右侧倍速文案实时跟随、松手后内核倍速真的变了;③滑块与面板的**竖直拖拽关闭**手势是否互相打架(滑块是水平拖,预期不冲突);④7 档在横屏侧滑面板里是否都点得到(滑块两端贴近面板内边距 vs_30)。
+
+### 面板在屏期间不再收底栏(2026-09-26,用户报"我点击选集后进度条和控件会消失,这是bug吗,点击字幕也会这样")
+
+- **诊断(先只读查证,再按用户口径改)**:不是 bug,是显式写死 —— `ComposeVideoController` 的 `onEpisodeClicked` / `onSubtitleClicked` / `onAudioTrackClicked` / `onVideoTrackClicked` 在开面板后各调一次 `hideBottom()`,spec §4.4 也记着「点击后面板弹出、底栏同时收起」。但**两处站不住**:①同一个胶囊里手感不一致 —— 选集/字幕/音轨/视轨收底栏,刷新/投屏/弹幕/播放参数不收(尤其弹幕设置与播放参数走的是同一套 `AVBoxBottomSheet`);②**面板关掉后底栏不会自己回来** —— `DetailViewModel.dismissEpisodeSheet()` 只置 `episodeSheet=false`、`PlayerOverlay` 只置 `subtitleSheet=null`,没有任何一处补 `showBottom()`,而 `hideBottom()` 又把 10s 空闲计时 `removeCallbacks` 掉,于是只能靠"再点一下画面"(`onSingleTapConfirmed → toggleControls`)恢复 —— 用户感知的"控件消失了"主要是这一条。
+- **用户口径(两个追问的拍板)**:①**全部都统一为不收起底栏**(不是只改选集);②顶栏(返回/标题/网速)跟底栏一起保留。
+- **改动(4 文件)**:
+  1. `ComposeVideoController`:上述 4 处 `hideBottom()` → `keepControlsAlive()`;`idleHideRunnable` 加守卫 —— `if (state.overlayPanelOpen) keepControlsAlive() else hideBottom()`。
+  2. `PlayerUiState`:新增 `episodeSheetOpen` + 计算属性 `overlayPanelOpen`(7 个 sheet/弹窗状态 + `episodeSheetOpen`)。
+  3. `PlayContainer.setEpisodeSheetOpen(boolean)`:`mController.getUiState().setEpisodeSheetOpen(open)` 的投影入口。
+  4. `DetailScreens.EpisodeSheet`:`LaunchedEffect(show) { vm.playContainerRef?.setEpisodeSheetOpen(show) }`(写在 `if (!show) return` **之前**,否则面板一关就没有组合去把标志复位)。
+- **⚠️ 为什么"只把 hideBottom 换成 keepControlsAlive"不够(本轮最容易漏的一步)**:面板是模态覆盖层,点击被它吃掉 ⇒ 播放器收不到 `onSingleTapConfirmed`、计时不会被自然续期 ⇒ 用户盯着面板 10s,`idleHideRunnable` 照旧把底栏收掉,与刚定下的口径自相矛盾。所以必须**冻结**计时。冻结用"到点续期"而不是"removeCallbacks":前者不需要在每个面板的 dismiss 路径补 `keepControlsAlive()`,面板一关下一次到点就自动恢复 `hideBottom()`(8 个面板状态分散在 PlayerUiState 与 DetailViewModel 两处,逐个补必然漏)。
+- **`episodeSheetOpen` 为什么要投影**:选集面板的状态是 `DetailViewModel.episodeSheet`(StateFlow),不在 `PlayerUiState` 上,而判据要在控制器(Java/Kotlin 混合层)里读 —— 只能把"在屏"这个布尔投影回 `PlayerUiState`。`vm.playContainerRef` 已存在(DetailScreens 第 111 行 `remember { activity.ensurePlayContainer().also { vm.playContainerRef = it } }`),`EpisodeSheet` 在同一次组合里位于其后,所以不需要改任何函数签名。
+- **本轮有意未动**:`onSubtitleLongClicked`(关字幕 + Toast)、`onDanmuSettingLongClicked`(切弹幕开关 + Toast)、`onScreenDisplayClicked`、`onParseSelected`、旋转/锁/返回 —— 它们不开面板,保持与既有「长按 + Toast 即让出画面」一致。用户若要一并改,是独立的一刀。
+- **验证**:BUILD SUCCESSFUL;`:app:testDebugUnitTest` 350 用例 / 0 失败 / 0 错误;无新增编译告警。**未真机验证** —— 待用户确认:①点选集/字幕后面板弹出时底栏与进度条仍在;②**在面板上停留超过 10 秒,底栏不会自己收掉**;③关掉面板后底栏仍在(不用再点画面);④横屏侧滑选集面板下底栏与面板并存是否可接受;⑤选集面板关闭后再点画面,单击显隐仍正常(没有"要按两次"的感觉)。
+
+### 片头片尾的当前值移到标签行右侧(2026-09-26,用户"将播放参数弹窗里的片头未设置,片尾未设置这一行放在片头片尾这里右对齐")
+
+- **改动 1 文件**(`player/ui/PlayerParamsSheet.kt`):抽 `ParamsLabelRow(labelRes, valueText)` —— 组名 `onSurfaceVariant` 在左占 `weight(1f)`、当前值 `onSurface` 贴右 + `Spacer(vs_10)`;`ParamsSliderGroup` 与 `ParamsTimeGroup` 都改用它(原先滑块组内联了一份同结构的 Row),`ParamsGroupLabel` 保留给无值的 chips 组。`ParamsTimeGroup` 删掉三键下方那行独立 `Text`,拼接串改由 `ParamsLabelRow` 的 `valueText` 承载;**三键行上方的 `Spacer(vs_10)` 随之删除**(标签行自带),组的收尾仍是 `Spacer(vs_30)`。
+- **为什么抽组件**:这是"带值的标签行"第二次出现(倍速滑块先做的),抽出来顺带保证两组同款 —— 用户这次的要求本质就是"让片头片尾这行和倍速那行一样"。
+- **宽度验算(未真机)**:`weight(1f)` 在左 + 右侧 wrap 的组合,Row 会**先测量无 weight 的右侧**再分配剩余给左侧,所以窄面板(横屏侧滑 = `min(640dp, 屏宽×0.45)`)下右侧长串不会被左标签挤掉;按 `ts_20` 估「片头 未设置 · 片尾 未设置」约 210dp、左标签约 64dp,远小于可用宽(这台 2800×1260 设备侧滑面板约 410dp)。
+- **验证**:BUILD SUCCESSFUL;350 用例 / 0 失败 / 0 错误;`prune_imports` 该文件 0 个未使用 import(仅剩一条既有 Slider 重载弃用告警)。**未真机验证** —— 待用户确认:①标签行右对齐的观感;②窄面板(横屏侧滑)下这一行不溢出、不把左标签压没;③已设值后(`片头 01:23 · 片尾 02:30`)长度变化时仍贴右。
+
+### 全量未提交改动审查 + 修复(2026-09-26,用户"审查一下所有未提交的改动，是否有错误遗漏和引入新回归，详情查看SKILL.md")
+
+- **范围**:17 个已跟踪改动文件 + 13 个新增文件(PlayerParamsSheet.kt + 12 个 `player_ic_*.xml`)。基线:BUILD SUCCESSFUL、350 用例 / 0 失败 0 错误、`i18n_gate` 0、`i18n_check_keys` 444/443(仅既有死键 `toast_permission_required`)、`i18n_align` 三语 PASS、`prune_imports` 除 1 条既有告警外全 0。
+- **结论:无 阻断 / 高 / 中 级发现**,共 8 条低级(7 条本次引入、1 条既有)。用户选择**全部修掉**。
+- **清死代码(3 类)**:
+  1. 删 5 个零引用 drawable —— `player_ic_decode` / `player_ic_player` / `player_ic_speed` / `player_ic_time_start` / `player_ic_time_end`(对应"状态类控件图标化"的旧方案,最终改用 chips/滑块)。源 SVG 仍在 `.tubiao/`,可随时重生成。
+  2. 删 `PlayerDialogVariant` 整个枚举 + `PlayerDialog` 的 `variant` 参数与两个分支(6 个调用点全走默认 CENTER;该枚举是为参数面板加的,而参数面板后来改用 `AVBoxBottomSheet` ⇒ 同批改动自己把自己作废)。
+  3. 删 `PlayerUiState` 的 5 个孤儿成员 —— `speedBtnText`/`playerBtnText`/`scaleBtnText`/`ijkBtnText`(删掉底栏文字菜单行后只剩控制器里 4 行赋值)、`danmuSearchBtnVisible`(全仓库零引用);连带删掉 `updatePlayerCfgState()` 里那 4 行赋值与 `codecName` 局部块。顺手清 `PlayerBottomBar.kt` 的 `StrokeCap` 未使用 import(既有)。
+- **修图标等大(用户上次明确提过的诉求)**:**根因 = 钳制只作用于胶囊**。`playerDim` 按窗口长边缩放,竖屏全屏下长边 = 屏高、可用宽却由短边决定 ⇒ 胶囊必须钳;而右侧三颗用的是未钳制的 `playerDim(vs_70) × 0.6` ⇒ 39.8dp vs 46dp(差 ~15%)。**修法 = 把"图标盒"收成唯一事实来源**:新增 `PlayerOverlay.playerIconBox(availableWidth)`,`PlayerOverlay` 根节点改成 `BoxWithConstraints` 取 `maxWidth - playerEdgePadding()×2` 算一次,再作为参数传给 `PlayerBottomBar(..., iconBox)` → `PlayerActionPill` 与 `PlayerSideButtons(..., iconBox)` ⇒ 两处**由构造保证等大**,且 `PILL_MAX_ICONS` 一并收到 `PlayerOverlay`。**为什么不各自算**:胶囊的可用宽 = 屏宽 − 2×edge(在带 padding 的 Column 里),右侧竖排是 `fillMaxSize()`(可用宽 = 屏宽)—— 各自算必然差 2×edge,所以必须把"可用宽"也一并统一。
+- **修重构夹带的行为变化(2 处)**:
+  4. `onIjkClicked`:旧代码 `cfg.getString("ijk")` 缺键会抛 ⇒ 整块中止(什么都不做),值不在 `ijkCodes` 里时也保持原值;重构后变成 `optString` + 兜底 `codecs[0]` ⇒ 会切到第一个码并标记为用户显式选择。已改回:缺键 `if (!cfg.has("ijk")) return`,值不在码表则写回原值(不用异常做控制流)。
+  5. `showSpeedDialog` 的 `defaultPos` 在档位不匹配时从 1(1.0x)变成 0(0.75x);抽 `speedIndex(value)` 统一兜底到 1.0x,`buildParamsSheet` 与倍速弹窗共用同一口径。
+  6. `onPlayerLongClicked` 的 `onSelected`:`hideBottom()` 从 `if (thisPlayType != playerType)` 里被提到无条件 ⇒ 选当前已选中的内核也会收底栏。已收回 if。
+- **刻意未删的 2 个孤儿字段(重要)**:**`ijkBtnVisible` 与 `liveButtonsVisible` 也没有消费方了,但它们编码的是规则不是陈旧状态** —— 前者是「解码按钮只在 EXO/IJK 下显示」,后者是「直播源(duration==0)隐藏倍速/片头尾」,而抽屉里这两组**恒显示** ⇒ ①外部内核(MX/VLC/Kodi)下抽屉会列出无意义的「解码方式」(IJK 码表)且点它会 `replay`;②duration==0 的内容仍显示倍速/片头尾。删字段等于把规则永久丢掉,补实现又是观感/行为决策 ⇒ 已记进 spec §7 未决清单,等用户拍板。
+- **审查中核对过、确认没问题的项**:`PlayerActions.onParamsClicked` 只有 `ComposeVideoController` 一个实现者;`PlayerOverlay` 只被 `ComposeVideoController` 用、`PlayContainer` 只被 `DetailActivity` 用 ⇒ 影响面仅点播详情页,直播(`ComposeLiveController`)与音乐页不受影响;新遮罩 `pointerInput` 只吃有位移的 change 且位于 `clickable` **外层**(Main pass 内层先收)⇒ 点遮罩关闭仍有效、手指微动不会让它失效;`applyPlayer`/`applyDecode` 都保留 `replay(false)`、`applyDecode` 保留 `setAllowDecodeFallback(false)`;`keepControlsAlive()` 的到点续期在面板期间不泄漏(`setLifecyclePaused(true)` 会 `removeCallbacks`);`episodeSheetOpen` 的 `LaunchedEffect` 写在早退之前 ⇒ 面板关闭能复位;12 个新图标全是 960 视口 + `translateY=960`,与 `ic_detail_cast` 视觉重量同源。
+- **修复中踩的坑**:`FloatArray` **没有** `indexOf(element)`(只有 `indexOfFirst`/`indexOfLast`),`speedOptions.indexOf(1.0f)` 报 `UNRESOLVED_REFERENCE` ⇒ 兜底改写成 `indexOfFirst { it == 1.0f }`。
+- **工具坑**:`prune_imports.py` **只支持 .kt**,传 `.java` 会报满屏假的"未使用 import"(`PlayContainer.java` 报了 82 个),别据此改 Java 文件。
+- **验证**:BUILD SUCCESSFUL;350 用例 / 0 失败 / 0 错误;`i18n_gate` 0;`i18n_check_keys` 仍 444/443(删掉 `ijkBtnText` 的赋值没有让 `player_decode_*_short` 变死键,`decodeChoice` 仍在用);`prune_imports` **全部改动文件 0**(含此前那条既有告警);Slider 弃用告警确认为**项目级既有**(LiveScreens/SettingsGroup/ThemeColorPickerSheet/ThemeSettingsPage 同一重载)。**未真机验证**。
+
+### 底栏图标铺满整行 + 右侧「选集 / 播放参数」以竖分隔线归组(2026-09-26,用户"将播放器界面底部的图标控件拉伸铺满对齐进度条，将选集和播放参数放在右边用一条分隔线隔开来"，附效果图)
+
+- **口径(开工前问过,用户选定)**:①右侧分隔线后放**选集 + 播放参数**两颗 —— 选集从胶囊左侧图标列移过来,播放参数**从右侧竖排移入底栏**(竖排不再保留它,只剩旋转 / 锁);②按钮**保持现状**:白色纯图标 + 半透明胶囊底,不加文字标签、不去胶囊底。
+- **改动 3 文件**:
+  1. `PlayerBottomBar.PlayerActionPill`:`fillMaxWidth()` 铺满 + 去掉 `Arrangement.spacedBy`,每颗 `weight(1f)` 等分槽位;左侧顺序 = 刷新 / 投屏 / 字幕 / 音轨 / 视轨 / 弹幕,右侧 = 竖分隔线 → 选集(条件可见) → 播放参数。新增 `PlayerPillDivider`(1dp 宽、白 30%、线高 = 图标盒 × 0.6、两侧各 `vs_8`),常量 `PILL_DIVIDER_ALPHA = 0.3f`。
+  2. `PlayerOverlay.PlayerPillIconButton`:触摸盒与按压圆解耦 —— 外层 Box 只挂 `pointerInput`(由调用方 `weight` 拉宽),内层 Box 按 `box` 定尺寸承载按压圆 + 图标并在槽内居中。不拆这一步,`weight` 会把按压圆拉成整槽宽的胶囊形背景。
+  3. `PlayerLayers.PlayerSideButtons`:删掉「播放参数」那颗;offset 由 `-2gap / 0 / +2gap` 改为 `-gap / +gap`(相邻间距仍是 `2 × gap`,整体仍以屏中为心)。
+- **连带**:`PILL_MAX_ICONS` 7 → 8(左 6 + 右 2),`playerIconBox` 钳制式随之从 `(可用宽 - gap×8) / 7` 变成 `(可用宽 - gap×9) / 8` —— 竖屏全屏下该值 56.4dp → 49.3dp,竖排旋转 / 锁图标同步等比缩小(两处共用一个盒是既有约定);公式仍保守多算一个 gap,所以槽宽恒 ≥ 图标盒。
+- **为什么槽位用 weight 而非 `SpaceBetween`**:两者视觉都"铺满",但 weight 让每颗的**触摸盒等宽**且边界互不重叠;SpaceBetween 下触摸盒仍是图标盒大小、拉开的是空隙,触摸目标没变大。
+- **验证**:BUILD SUCCESSFUL;350 用例 / 0 失败 / 0 错误。**未真机验证** —— 待用户走查:①横屏全屏底栏两端是否与进度条对齐、图标间距是否均匀;②分隔线的粗细 / 高度 / 疏密观感;③右侧竖排剩两颗后的位置是否自然;④竖屏全屏(竖屏视频进全屏)下 8 颗被钳小后的观感;⑤单集内容(选集不可见)时右侧只剩播放参数、分隔线仍成立。
+
+### 顶栏右块改为「电量 │ 时间 │ 网络」一行三段 + UI 层注释清理(2026-09-26,用户"ui层别写注释，删掉；将右上角的时间电量和网络改成图片这样，电量在左边，中间是时间右边是网络，彼此用分隔线隔开，网络的icon图标使用.tubiao文件夹里的")
+
+- **注释清理(用户口径 = UI 层不写注释)**:删掉当天在 `player/ui` 新增的解释性注释(`PILL_DIVIDER_ALPHA` / `PlayerPillDivider` / `PlayerActionPill` / `PILL_MAX_ICONS` 的说明与 weight、requiredSize 两处行内注释);我改写过的既有 KDoc 回退为最小事实同步 —— `PlayerPillIconButton` 恢复原文两行,`PlayerActionPill` 的 KDoc 整个删除,文件头只留一行结构描述。
+- **顶栏右块**:`PlayerTopBar` 由「一行 + 网速第二行」改为一行三段,顺序 = 电量(百分比 + 电池图标) / 时间(`seekTimeText` + `sysTime`) / 网络(`player_ic_network` + `netSpeedTopRight`),段间插 `TopBarDivider`(1dp 宽 / 白 30% / 高 `vs_30` / top `vs_5`)。网速可见性由 `netSpeedSideVisible || netSpeedTopRightVisible` 合并,**原来的第二行删除**。
+- **布局配套**:右块 `Column(weight(1f))` → 按内容包裹的 `Row`;左块(片名/分辨率)weight 3f → 1f。原因:三段并成一行后内容变宽(屏显模式 ≈ 300dp,超过原 1/4 宽),Row 先测无 weight 的子项 ⇒ 右块永不溢出、片名超长仍由 Ellipsis 兜底。
+- **新素材**:`player_ic_network.xml`(源 `.tubiao/网络.svg`,960 视口 + `translateY=960` 平移、白色填充,与既有 12 个 `player_ic_*` 同范式)。
+- **验证**:BUILD SUCCESSFUL;350 用例 / 0 失败 / 0 错误。**未真机验证** —— 待走查:①两段分隔线与文字的间距 / 线高是否同一水平中心;②屏显模式开启时「进度时间 + 系统时间」两段并列是否可接受;③片名很长时左块被压缩的观感;④竖屏预览态下的排布。
+
+### 顶栏右块修正:段间距对称 + 防刷新抖动(2026-09-26 同日,用户真机截图"这间隔不对，而且网络这里每次刷新都会导致那个右上角的三段信息整体移动")
+
+- **间隔**:分隔线原先不带水平内距,而 `TopBarText` 只带 `end = vs_10` ⇒ 线右侧贴死、左右不对称。改为间隙全由分隔线承担(`TopBarDivider(gap = vs_15)`,自带 start/end gap),各段去掉跨段内距 —— 电量段摘掉 `end = vs_10`;`TopBarText` 摘掉自带 end 内距(改由调用方传 `Modifier`,时间组内部由 seekTime 传 `Modifier.padding(end = gap)`);网络段保留末尾 `vs_10` 作右边缘留白。
+- **抖动**:右块是 wrap-content,网速文本宽度每秒都在变(`59B/s` ↔ `264KB/s`)⇒ 整排左移。给两处固定宽度:网速 `Modifier.width(vs_120)`(左对齐、`overflow = Ellipsis` 兜底)、电量百分比 `Modifier.width(vs_50) + TextAlign.End`(数字始终贴电池图标)。
+- **验证**:BUILD SUCCESSFUL;350 用例 / 0 失败 / 0 错误。**未真机验证**(adb 无设备,装不了包) —— 待走查:①两条分隔线左右间距是否一致、与文字是否同一水平中心;②网速在 B/s ↔ KB/s ↔ MB/s 之间跳时三段是否纹丝不动;③`100%` 时数字与电池图标的间距不变。
+
+### 回退:顶栏右块恢复原样(2026-09-26,用户"算了把右上角恢复原样吧",附真机截图)
+
+- **回退范围**:`PlayerTopBar.kt` 整体还原 —— 右块回 `Column(weight(1f), horizontalAlignment = End)`(行内「网速 / 进度时间 / 电量 + 电池图标 / 系统时间」+ 底栏唤出时网速第二行)、左块回 `weight(3f)`、`TopBarText` 恢复自带 `end = vs_10`;删掉 `TopBarDivider` 与随它引入的 import(`height` / `width` / `Dp` / `TextAlign` / `RoundedCornerShape`);删除 `res/drawable/player_ic_network.xml`(全仓已无引用,源 SVG 仍在 `.tubiao/`)。
+- **放弃原因(未追问,从截图看)**:三段并排后右块变宽、左块片名可用宽度被压缩(截图里长文件名已被 Ellipsis 截断),信息密度也不如原来「网速独立一行」。口径 = **顶栏状态区不再按效果图改造**。
+- **验证**:BUILD SUCCESSFUL;350 用例 / 0 失败 / 0 错误。**未真机验证**(adb 无设备)。
+
+### 旋转移到左侧居中 + 胶囊图标加文字标签(2026-09-26,用户"将旋转控件放到左边居中，右边则是上锁控件，底部胶囊的图标下面加上文字")
+
+- **左右两侧控件**:`PlayerLayers.PlayerSideButtons` 的旋转 / 锁由「右侧竖排、offset ±gap」改为**左右各一颗、垂直居中** —— `SideButton` 的 `yOffset: Dp` 换成 `startSide: Boolean`(一处决定 `Alignment.CenterStart/CenterEnd` 与 padding 落点 start/end),删掉 `gap = vs_40/2 + 12dp` 与 offset 计算,`offset` import 因其它浮层仍在用而保留。
+- **胶囊文字标签**:`PlayerOverlay.PlayerPillIconButton` 的 `contentDescription` 参数改名 `label`,内部改为 `Column(图标盒 → 文字 → 按压底)`;文字 `ts_18`、`maxLines = 1` + Ellipsis,Image 的 contentDescription 置 null(朗读交给文字,避免读两遍);按压底由圆形改**胶囊形**并覆盖图标 + 文字,Column 挂 `wrapContentWidth` 收窄到内容宽(否则重量槽位的固定宽度约束会把它撑满);图标盒从 `requiredSize(box)` 改回 `size(box)`(在 Column 里是松约束,可自适应钳制),`requiredSize` import 随之删除。
+- **8 个标签全部复用既有短文案**:刷新 / 投屏 / 字幕 / 音轨 / 视轨 / 弹幕 / 选集 / 播放参数 —— 零新增字符串、四语无需补。
+- **踩坑**:首次构建失败 = `PlayerOverlay.kt` 漏 `Column` import(`Unresolved reference 'Column'` 连带一串 "@Composable invocations can only happen from the context of a @Composable function"),补上即通过。
+- **验证**:BUILD SUCCESSFUL;350 用例 / 0 失败 / 0 错误。**未真机验证** —— 待走查:①竖屏全屏下「播放参数」四字是否被 Ellipsis 截断(槽宽 ≈ 52dp);②按压底的胶囊范围与圆角观感;③左侧旋转钮与屏幕左缘的 dkplayer 手势是否互不影响(控件在 Compose 层、手势在 View 层,且 48dp 边距落在 isEdge 忽略带内)。
+
+### 胶囊标签收紧:去掉图标方盒 + 文字改 Medium(2026-09-26 同日,用户真机截图"图一进度条被抬得很高，字体和图标的空隙太大了，还有字体的字重改为和标题一样的")
+
+- **进度条被顶高的成因**:「图标方盒 58dp(图形只占 60%) + `vs_5` 图标-文字间距 + 按压底 `vs_5` 垂直 padding」把胶囊撑到 ≈95dp,纯图标时代只有 ≈62dp ⇒ 底栏整体长高 30dp+、进度条被推上去;方盒里上下各 ≈11.6dp 的空白也正是"图标与文字空隙太大"的主因。
+- **改法(4 处,均在 `PlayerPillIconButton`)**:①去掉方盒 —— `Image` 直接 `size(box × ICON_TO_BOX_RATIO)`;②图标-文字间距 `vs_5` → `2.dp`;③按压底 padding `vs_5 / vs_5` → `vs_10 / vs_2`;④文字 `fontWeight = FontWeight.Medium`(与顶栏片名同档)。压缩后胶囊总高 ≈61.5dp,与纯图标时代持平 ⇒ 进度条回到改动前的位置。
+- **验证**:BUILD SUCCESSFUL;350 用例 / 0 失败 / 0 错误。**未真机验证** —— 待走查:①进度条是否回到原位、胶囊整体不再显高;②图标与文字间距、按压底观感。
+
+### 底栏动作行去掉胶囊底色(2026-09-26 同日,用户"将胶囊去掉吧")
+
+- **改动 1 行**(`PlayerBottomBar.PlayerActionPill`):删掉 `.background(Color.Black.copy(alpha = OVERLAY_PILL_ALPHA), RoundedCornerShape(50))` —— 图标 + 文字直接浮在底栏既有渐变 scrim 上;水平/垂直 padding、等分槽位、分隔线、按压反馈(胶囊形淡底)全部不变,行高与进度条位置不受影响。
+- **保留项**:时间胶囊(`PlayerTimePill`)与 `PlayerPillDivider` 照旧;`OVERLAY_PILL_ALPHA` 常量因时间胶囊仍在用而保留。
+- **验证**:BUILD SUCCESSFUL;350 用例 / 0 失败 / 0 错误。**未真机验证** —— 待走查:亮画面下纯白文字 + 图标的对比度是否够(现在只靠底栏 scrim)。
+
+### 进度条再下移(2026-09-26 同日,用户真机截图"进度条的位置还能再低一点吗")
+
+- **三处压缩(全屏态)**:①底栏底距 `16dp → 6dp`(预览态仍走 `16dp + vs_30/2 - 40dp/2` 原式子,不受影响);②进度行与动作行的间距 `4dp → 2dp`;③动作行去掉 `vertical = vs_2` 内距。合计下移 ≈ 15.5dp;进度行自身高度(`vs_30` 触摸区)、图标尺寸、图标/文字排布都没动。
+- **验证**:BUILD SUCCESSFUL;350 用例 / 0 失败 / 0 错误。**未真机验证** —— 待走查:①动作行离屏幕底边是否过近(按压底距屏底 ≈ 6dp + 按钮内 `vs_2`);②进度条与动作行的视觉间距是否够。
+
+### 底栏 8 颗图标改常驻(2026-09-27,用户"能否全部都不隐藏，常驻显示")
+
+- **改动**:`PlayerBottomBar.PlayerActionPill` 去掉三处条件渲染(`if (state.trackBtnVisible)` / `if (state.danmuBtnVisible)` / `if (state.episodeBtnVisible)`)⇒ 刷新 / 投屏 / 字幕 / 音轨 / 视轨 / 弹幕 │ 选集 / 播放参数 **8 颗恒定显示**,等分铺满与分隔线不变(`PILL_MAX_ICONS = 8` 本就按"全可见"最坏情况算,无需再调)。
+- **连带**:`PlayerUiState` 的 `trackBtnVisible` / `danmuBtnVisible` / `episodeBtnVisible` 三条派生属性暂无消费方 —— **暂留未删**(若这个"常驻"确认长期有效再清理;`sessionVod` 同理,它现在也只写不读)。
+- **点开是空的场景(不崩,用户已知悉方向)**:单集内容点「选集」= 面板只列一集;弹幕总开关关时点「弹幕」= 进设置面板可开;外部内核(MX/VLC/Kodi)点「音轨 / 视轨」= 走既有判空分支(Toast)。
+- **验证**:BUILD SUCCESSFUL;350 用例 / 0 失败 / 0 错误。**未真机验证** —— 待走查:①8 颗恒显后竖屏全屏下「播放参数」四字是否被 Ellipsis 截断(槽宽 ≈ 52dp、文字宽 ≈ 60dp,必截);②外部内核下音轨/视轨点开的提示是否合理。
+
+### 全量未提交改动审查(2026-09-27,用户"根据SKILL.md审查一下是否有错误遗漏和引入新回归")
+
+- **范围**:全量未提交改动(17 个已跟踪文件 + 8 个新增文件)。按「严重度 × 来源」两轴记账,**无 阻断 / 高 / 中 级发现**。
+- **本次引入(4 条低级,全部已修)**:①`PlayerActionPill` 的 `state: PlayerUiState` 在"8 颗图标改常驻"后无任何引用 ⇒ 删参数 + 同步唯一调用点;②`PlayerPillDivider` 的 KDoc 属"我新增的注释",按用户"UI 层不写注释"口径删掉;③`OVERLAY_PILL_ALPHA` 的注释"动作胶囊与时间胶囊共用"过时(动作行已无底色)⇒ 改为"时间胶囊底色透明度";④底栏"菜单行（左下角图标胶囊）"里的"左下角"过时 ⇒ 措辞同步为"菜单行"。
+- **既有 / 待确认(未改)**:①`PlayerUiState` 的 `trackBtnVisible`/`danmuBtnVisible`/`episodeBtnVisible` 三条派生属性无消费方(`sessionVod`/`danmuOpen` 亦只写不读)—— 已登记 spec §7 未决清单,待"常驻"确认为长期决定后清理;②竖屏全屏下 8 颗标签中「播放参数」会被 Ellipsis 截断(槽宽 ≈ 52dp、文字 ≈ 60dp);③`PlayerBottomBar.kt` 里 3 处既有注释(文件头结构 KDoc、进度行 4 行性能说明、"CurrentTimeText 独立 scope"说明)在当前工作区已不存在,与我的编辑记录对不上(疑为手工清理),**未恢复**;④`PlayerActionPill` 调用处上方残留一个纯空白行(尾随空格,无害未动)。
+- **核对过、确认无问题的项**:①新增字符串(前序会话的 `player_menu_params` + 5 个 `player_params_*`)四语齐全 —— `values-zh-rHK` 是"差异层"子集(未覆盖条目按 locale 匹配回落繁体基础层 `values-b+zh+Hant`),不含这几条属预期、非遗漏;②`PlayerParamsSheet.kt` 0 处中文字面量(i18n 合规);③`PILL_MAX_ICONS = 8` 与"8 颗常驻"一致,`playerIconBox` 的钳制式仍保证槽宽 ≥ 图标盒;④顶栏回退完整(相对 HEAD 只剩 1 行既有注释差异);⑤`player_ic_network.xml` 已删且全仓零引用;⑥构建 0 个 Kotlin 级 warning(仅 2 条既有 Gradle 插件弃用);⑦前序会话的 `BottomSheet` 遮罩吃拖拽、`EpisodeSheet` 投影、`PlayContainer.setEpisodeSheetOpen`、`SheetButton.contentPadding` 四处改动复核无回归。
+- **验证**:BUILD SUCCESSFUL;350 用例 / 0 失败 / 0 错误。**未真机验证**。
+
+### 预载设置整组并入播放设置(2026-09-27,用户"将预载设置里的分组卡片整个搬到播放设置里")
+
+- **搬迁**:`PreloadSettingsPage` 唯一的分组「预载与缓存」(`settings_group_preload_cache`,4 张卡 = 下一集预载开关 / 预载时长滑块 / 边播边缓存开关 / 缓存容量滑块)整组移入 `PlaySettingsPage` 作为**第三组**(排在「内核与画面」「播放行为」之后,组间距沿用 28dp);两个滑块状态(`sliderPreloadDuration` / `sliderCacheSize`)与写 KV 的 `onValueChangeFinished` 逻辑一并搬,`SettingsViewModel` 字段与 `HawkConfig` 键均未动。
+- **删除(零残留)**:`PreloadSettingsPage.kt`、`PreloadSettingsActivity.kt` 整文件;`AndroidManifest` 的 Activity 声明;设置页的「预载设置」入口卡(`SettingsRow` + `ic_settings_preload`);`values` / `values-en` / `values-b+zh+Hant` 的 `settings_preload` + `settings_preload_subtitle`;`drawable/ic_settings_preload.xml`。⚠️ 连带:入口卡原是所在组的 LAST,删除后**「偏好设置」卡由 MIDDLE 改为 LAST**(否则组尾圆角不成对)。
+- **验证**:BUILD SUCCESSFUL;350 用例 / 0 失败 / 0 错误。**未真机验证** —— 待走查:①播放设置页第三组的标题 / 间距 / 圆角与另两组一致;②两个滑块拖动与数值回写(重启后保持);③设置 tab 已无「预载设置」入口、偏好设置为组尾卡。
+
+### 进度条与图标间距回到 ≈3mm(2026-09-27,用户"能改成大概三毫米的空隙吗，稍微大一点点，因为现在拖动进度条的时候容易误触图标")
+
+- **改动 1 行**:`PlayerBottomBar` 里 `PlayerActionPill` 的 `Modifier.padding(top = 2.dp)` → `6.dp` ⇒ 白线底边到图标顶边的视觉间距从 ≈14.8dp(≈2.3mm) 回到 ≈18.8dp(≈3.0mm);代价 = 进度条整体上移 4dp(≈1mm),底距 6dp 未动。
+- **为什么动这里**:误触发生在手指从进度行落到图标触摸盒时,两行之间的 `padding(top)` 是唯一的"安全缓冲带"(这段空隙不属于任何触摸目标);+4dp 即 +1mm 缓冲。进度行自身的 `vs_30` 触摸区未动(再压会拖手感)。
+- **验证**:BUILD SUCCESSFUL;350 用例 / 0 失败 / 0 错误。**未真机验证**。

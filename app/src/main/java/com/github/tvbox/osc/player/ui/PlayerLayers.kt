@@ -2,10 +2,12 @@
 
 package com.github.tvbox.osc.player.ui
 
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -33,6 +35,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.player.state.LockVisibility
@@ -224,65 +227,71 @@ fun PlayerNetSpeedCenter(state: PlayerUiState) {
     }
 }
 
-/** 锁屏按钮（右中；三态照搬 showLockView：非预览态非 TV 才出现，锁定 3s 后隐藏）。UI v3：尺寸缩至 24dp */
+/**
+ * 左右两侧各一颗、垂直居中（左：旋转 / 右：锁）。
+ * 锁屏三态照搬 showLockView：非预览态非 TV 才出现，锁定 3s 后隐藏。
+ * [iconBox] 由 [PlayerOverlay] 统一算出并与动作胶囊共用 ⇒ 两处图标必然等大。
+ */
 @Composable
-fun PlayerLockButton(state: PlayerUiState, actions: PlayerActions) {
-    when (state.lockState) {
-        LockVisibility.GONE -> return
-        LockVisibility.HIDDEN, LockVisibility.SHOWN -> {
-            val shown = state.lockState == LockVisibility.SHOWN
-            // 右边距跟随 window 分档（竖屏预览 16dp / 横屏全屏与平板 24dp，见 playerEdgePadding）
-            val edge = playerEdgePadding()
-            // 间隙中点对齐屏中；必须用 offset——align 后的 padding 会被对齐外框居中吞一半
-            val halfGap = playerDim(R.dimen.vs_40) / 2 + 12.dp
-            Box(Modifier.fillMaxSize()) {
-                Image(
-                    painter = painterResource(
-                        if (state.locked) R.drawable.icon_lock else R.drawable.icon_unlock
-                    ),
-                    contentDescription = stringResource(R.string.player_lock),
-                    alpha = if (shown) 1f else 0f,
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .padding(end = edge)
-                        .offset(y = halfGap)
-                        .size(24.dp)
-                        .then(
-                            if (shown) {
-                                Modifier.pointerInput(Unit) {
-                                    detectTapGestures(onTap = { actions.onLockClicked() })
-                                }
-                            } else {
-                                Modifier
-                            }
-                        )
-                )
-                // 旋转到竖屏/横屏：锁上方隔 vs_40；锁定态隐藏（绕锁旋转无意义）
-                val rotateShown = shown && !state.locked
-                Image(
-                    painter = painterResource(R.drawable.ic_player_rotate),
-                    contentDescription = stringResource(
-                        if (state.isPortrait) R.string.player_rotate_landscape else R.string.player_rotate_portrait
-                    ),
-                    alpha = if (rotateShown) 1f else 0f,
-                    modifier = Modifier
-                        .align(Alignment.CenterEnd)
-                        .padding(end = edge)
-                        .offset(y = -halfGap)
-                        .size(24.dp)
-                        .then(
-                            if (rotateShown) {
-                                Modifier.pointerInput(Unit) {
-                                    detectTapGestures(onTap = { actions.onRotateClicked() })
-                                }
-                            } else {
-                                Modifier
-                            }
-                        )
-                )
-            }
-        }
+fun PlayerSideButtons(state: PlayerUiState, actions: PlayerActions, iconBox: Dp) {
+    if (state.lockState == LockVisibility.GONE) return
+    val shown = state.lockState == LockVisibility.SHOWN
+    // 边距跟随 window 分档（竖屏预览 16dp / 横屏全屏与平板 48dp，见 playerEdgePadding）
+    val edge = playerEdgePadding()
+    val iconSize = iconBox * ICON_TO_BOX_RATIO
+    Box(Modifier.fillMaxSize()) {
+        SideButton(
+            iconRes = R.drawable.ic_player_rotate,
+            contentDescription = stringResource(
+                if (state.isPortrait) R.string.player_rotate_landscape else R.string.player_rotate_portrait
+            ),
+            startSide = true,
+            edge = edge,
+            iconSize = iconSize,
+            // 锁定态隐藏（绕锁旋转无意义）
+            visible = shown && !state.locked,
+            onClick = actions::onRotateClicked,
+        )
+        SideButton(
+            iconRes = if (state.locked) R.drawable.icon_lock else R.drawable.icon_unlock,
+            contentDescription = stringResource(R.string.player_lock),
+            startSide = false,
+            edge = edge,
+            iconSize = iconSize,
+            visible = shown,
+            onClick = actions::onLockClicked,
+        )
     }
+}
+
+@Composable
+private fun BoxScope.SideButton(
+    @DrawableRes iconRes: Int,
+    contentDescription: String,
+    startSide: Boolean,
+    edge: Dp,
+    iconSize: Dp,
+    visible: Boolean,
+    onClick: () -> Unit,
+) {
+    Image(
+        painter = painterResource(iconRes),
+        contentDescription = contentDescription,
+        alpha = if (visible) 1f else 0f,
+        modifier = Modifier
+            .align(if (startSide) Alignment.CenterStart else Alignment.CenterEnd)
+            .padding(start = if (startSide) edge else 0.dp, end = if (startSide) 0.dp else edge)
+            .size(iconSize)
+            .then(
+                if (visible) {
+                    Modifier.pointerInput(Unit) {
+                        detectTapGestures(onTap = { onClick() })
+                    }
+                } else {
+                    Modifier
+                }
+            ),
+    )
 }
 
 /**

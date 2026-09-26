@@ -11,6 +11,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -21,11 +24,13 @@ import com.github.tvbox.osc.ui.components.SettingsCard
 import com.github.tvbox.osc.ui.components.SettingsCardPosition
 import com.github.tvbox.osc.ui.components.SettingsGroup
 import com.github.tvbox.osc.ui.components.SettingsOptionMenuRow
+import com.github.tvbox.osc.ui.components.SettingsSliderRow
 import com.github.tvbox.osc.ui.components.SettingsSwitchRow
 import com.github.tvbox.osc.ui.components.TopBarActionBox
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.MusicSettings
 import com.github.tvbox.osc.util.PlayerHelper
+import kotlin.math.roundToInt
 import xyz.doikki.videoplayer.player.VideoView
 
 // KV 持久化值(ijk_codec/exo_decode),不能翻;显示走 player_decode_* 资源
@@ -35,6 +40,8 @@ private const val DecodeSoft = "软解码" // i18n: keep
 @Composable
 fun PlaySettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = viewModel()) {
     val state by vm.state
+    var sliderPreloadDuration by remember(state.preloadDuration) { mutableStateOf(state.preloadDuration) }
+    var sliderCacheSize by remember(state.exoCacheSizeMb) { mutableStateOf(state.exoCacheSizeMb) }
 
     val listState = rememberScrollState()
     AppTopBarScaffold(
@@ -164,6 +171,57 @@ fun PlaySettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = viewM
                         onCheckedChange = {
                             MusicSettings.setAutoOpenPage(it)
                             vm.refresh()
+                        },
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(28.dp))
+
+            SettingsGroup(title = stringResource(R.string.settings_group_preload_cache)) {
+                SettingsCard(SettingsCardPosition.FIRST) {
+                    SettingsSwitchRow(
+                        title = stringResource(R.string.preload_next_episode),
+                        subtitle = stringResource(R.string.preload_next_episode_subtitle),
+                        checked = state.preloadNextEpisode,
+                        onCheckedChange = { vm.put(HawkConfig.PRELOAD_NEXT_EPISODE, it) },
+                    )
+                }
+                SettingsCard(SettingsCardPosition.MIDDLE) {
+                    SettingsSliderRow(
+                        title = stringResource(R.string.preload_duration),
+                        value = sliderPreloadDuration.toFloat(),
+                        valueText = "${sliderPreloadDuration}s",
+                        valueRange = 20f..120f,
+                        steps = 9,
+                        onValueChange = { sliderPreloadDuration = ((it - 20) / 10).roundToInt() * 10 + 20 },
+                        onValueChangeFinished = {
+                            if (sliderPreloadDuration != state.preloadDuration) {
+                                vm.put(HawkConfig.PRELOAD_DURATION, sliderPreloadDuration)
+                            }
+                        },
+                    )
+                }
+                SettingsCard(SettingsCardPosition.MIDDLE) {
+                    SettingsSwitchRow(
+                        title = stringResource(R.string.preload_play_cache),
+                        subtitle = stringResource(R.string.preload_play_cache_subtitle),
+                        checked = state.playCache,
+                        onCheckedChange = { vm.put(HawkConfig.PLAY_CACHE, it) },
+                    )
+                }
+                SettingsCard(SettingsCardPosition.LAST) {
+                    SettingsSliderRow(
+                        title = stringResource(R.string.preload_cache_size),
+                        value = sliderCacheSize.toFloat(),
+                        valueText = if (sliderCacheSize >= 1024) "%.1fGB".format(sliderCacheSize / 1024f) else "${sliderCacheSize}MB",
+                        valueRange = 128f..4096f,
+                        steps = 30,
+                        onValueChange = { sliderCacheSize = ((it - 128) / 128).roundToInt() * 128 + 128 },
+                        onValueChangeFinished = {
+                            if (sliderCacheSize != state.exoCacheSizeMb) {
+                                vm.put(HawkConfig.EXO_CACHE_SIZE_MB, sliderCacheSize)
+                            }
                         },
                     )
                 }

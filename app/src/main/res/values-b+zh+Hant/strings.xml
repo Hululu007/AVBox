@@ -150,7 +150,15 @@
     <string name="player_menu_video_track">視訊軌</string>
     <string name="player_menu_danmu">彈幕</string>
     <string name="player_menu_search_danmu">搜彈幕</string>
+    <string name="player_menu_params">播放參數</string>
     <string name="player_menu_parse">解析</string>
+
+    <!-- 播放参数面板 -->
+    <string name="player_params_speed">調整倍速</string>
+    <string name="player_params_time">片頭片尾</string>
+    <string name="player_params_player">播放器</string>
+    <string name="player_params_set_start">設為片頭</string>
+    <string name="player_params_set_end">設為片尾</string>
 
     <!-- 音樂播放頁 -->
     <string name="music_queue">播放佇列</string>
@@ -383,8 +391,6 @@
     <string name="settings_play">播放設定</string>
     <string name="settings_play_subtitle">播放核心和解碼方式</string>
     <string name="settings_preference_subtitle">修改應用程式的使用偏好</string>
-    <string name="settings_preload">預載設定</string>
-    <string name="settings_preload_subtitle">播放影片時預先載入</string>
     <string name="settings_default_page">預設啟動頁</string>
     <string name="settings_default_page_subtitle">首次開啟應用程式時所在的位置</string>
     <string name="settings_history_limit">歷史紀錄上限</string>

@@ -1,17 +1,22 @@
 package com.github.tvbox.osc.player.ui
 
+import android.content.res.Configuration
 import android.content.res.Resources
 import android.util.TypedValue
 import androidx.annotation.DimenRes
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -49,7 +54,7 @@ import kotlinx.coroutines.delay
  * 播放器控制层根 Composable（Compose 化改造 §3.3 方案 C1）。
  * 层级顺序照搬 player_vod_control_view.xml 的 z-order（自底向上）：
  * 加载/错误遮罩 → 顶部栏 → 底部菜单 → 暂停浮层 → 亮度/音量提示 → seek 提示 → loading → 中央网速 →
- * 返回键 → 锁屏 → 长按倍速。原生字幕视图是控制器的直接子 View（位于 Compose 层之下），
+ * 返回键 → 右侧竖排（旋转/锁）→ 长按倍速。原生字幕视图是控制器的直接子 View（位于 Compose 层之下），
  * 与旧布局一致。
  *
  * ⚠️ 遮罩（[PlayerTipLayer]）必须留在最底、顶栏/底栏之前，否则加载期唤不出控件（见该层注释）。
@@ -59,11 +64,13 @@ fun PlayerOverlay(
     state: PlayerUiState,
     actions: PlayerActions,
 ) {
-    Box(Modifier.fillMaxSize()) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        // 图标盒只有一处算,胶囊与右侧竖排共用 ⇒ 两处图标必然等大(竖屏全屏下胶囊会被钳小)
+        val iconBox = playerIconBox(maxWidth - playerEdgePadding() * 2)
         PlayerTipLayer(state)
         PlayerTopBar(state, actions)
         // 旧 XML bottom_container 为 layout_gravity="bottom"（BoxScope 内显式贴底）
-        PlayerBottomBar(state, actions, Modifier.align(Alignment.BottomCenter))
+        PlayerBottomBar(state, actions, iconBox, Modifier.align(Alignment.BottomCenter))
         PlayerCenterControls(state, actions, Modifier.align(Alignment.Center))
         PlayerPauseLayer(state, actions)
         PlayerSlideHint(state)
@@ -71,7 +78,7 @@ fun PlayerOverlay(
         // 遮罩自带指示器：同时在屏会叠出两层转圈（遮罩的居中指示器 + 缓冲转圈），故遮罩在屏时不画
         if (!state.tipVisible) PlayerLoadingLayer(state)
         PlayerNetSpeedCenter(state)
-        PlayerLockButton(state, actions)
+        PlayerSideButtons(state, actions, iconBox)
         PlayerSpeedBoostHint(state)
 
         // 尺寸/倍速/播放器选择弹窗（阶段 7）
@@ -79,6 +86,15 @@ fun PlayerOverlay(
             PlayerSelectDialog(
                 dialogState = dialogState,
                 onDismiss = { state.selectDialog = null },
+            )
+        }
+
+        // 播放参数抽屉：横屏贴右滑出、竖屏贴底滑出（与选集面板同形态）
+        state.paramsSheet?.let { sheet ->
+            PlayerParamsSheet(
+                sheet = sheet,
+                slideFromEnd = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE,
+                onDismiss = { state.paramsSheet = null },
             )
         }
 
@@ -183,14 +199,13 @@ internal fun playerTextSize(@DimenRes id: Int): TextUnit {
 }
 
 /**
- * 播放器覆盖层控件距屏幕边缘的距离（2026-09-13 用户定稿，spec §4.4）：
- * 按窗口宽度分档 —— compact（screenWidthDp < 600，竖屏详情页预览态）16dp；
- * medium/expanded（横屏全屏、平板、折叠展开）24dp（对齐 M3 窗口分档惯例：compact 16dp / medium 及以上 24dp）。
+ * 播放器覆盖层控件距屏幕边缘的距离：compact（screenWidthDp < 600，竖屏详情页预览态）16dp；
+ * medium/expanded（横屏全屏、平板、折叠展开）48dp（2026-09-26 用户要求由 24dp 提至 48dp）。
  * 备注：边距与手势带无关 —— dkplayer 的 `PlayerUtils.isEdge()` 已忽略四边各 40dp 内的视频手势。
  */
 @Composable
 internal fun playerEdgePadding(): Dp =
-    if (LocalConfiguration.current.screenWidthDp >= 600) 24.dp else 16.dp
+    if (LocalConfiguration.current.screenWidthDp >= 600) 48.dp else 16.dp
 
 /**
  * 中央控制组（图二样式）：显示底栏时屏幕中央出现三个半透明圆形按钮：
@@ -255,10 +270,7 @@ private fun CenterControlCircle(
     }
 }
 
-/**
- * 菜单按钮：轻量化文字条目（视觉参考极简播放器底栏，替代旧 button_dialog_main 药丸）：
- * 常态纯文字全白（与顶栏标题一致），按压仅淡色底 + 文字加粗；选中色由调用方传入（02F8E1）。
- */
+/** 解析行用的文字条目：常态纯文字全白，按压仅淡色底 + 文字加粗；选中色由调用方传入（02F8E1）。 */
 @Composable
 internal fun PlayerMenuButton(
     text: String,
@@ -295,4 +307,78 @@ internal fun PlayerMenuButton(
         fontWeight = if (pressed) FontWeight.Bold else FontWeight.Medium,
         modifier = buttonModifier,
     )
+}
+
+/** 动作胶囊内的图标按钮：白色图标 + 下方文字标签 + 按压淡底（无障碍朗读由文字承担）。
+ *  [box] 定图标盒尺寸 —— 竖屏全屏下不能直接用 `playerDim(vs_40)`（它按长边=屏高缩放，会撑爆宽度）。 */
+@Composable
+internal fun PlayerPillIconButton(
+    @DrawableRes iconRes: Int,
+    label: String,
+    box: Dp,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
+) {
+    var pressed by remember { mutableStateOf(false) }
+    Box(
+        modifier.pointerInput(onClick, onLongClick) {
+            detectTapGestures(
+                onPress = {
+                    pressed = true
+                    tryAwaitRelease()
+                    pressed = false
+                },
+                onTap = { onClick() },
+                onLongPress = onLongClick?.let { cb -> { cb() } },
+            )
+        },
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+                .wrapContentWidth(Alignment.CenterHorizontally)
+                .background(
+                    if (pressed) Color.White.copy(alpha = 0.22f) else Color.Transparent,
+                    RoundedCornerShape(50),
+                )
+                .padding(horizontal = playerDim(R.dimen.vs_10), vertical = playerDim(R.dimen.vs_2)),
+        ) {
+            Image(
+                painter = painterResource(iconRes),
+                contentDescription = null,
+                modifier = Modifier.size(box * ICON_TO_BOX_RATIO),
+            )
+            Text(
+                text = label,
+                color = Color.White,
+                fontSize = playerTextSize(R.dimen.ts_18),
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+    }
+}
+
+/** 图标相对触摸盒的比例（照搬原 vs_24 / vs_40）；`PlayerLayers` 的右侧竖排也用它来与胶囊图标同尺寸 */
+internal const val ICON_TO_BOX_RATIO = 0.6f
+
+/** 动作胶囊最多同时可见的图标数（图标盒的宽度上限按"全可见"的最坏情况算） */
+private const val PILL_MAX_ICONS = 8
+
+/**
+ * 覆盖层图标的触摸盒尺寸（动作胶囊与右侧竖排**共用同一结果**，两处图标因此必然等大）。
+ * 按可用宽度钳制：`playerDim` 按窗口**长边**缩放，而竖屏全屏的长边 = 屏高、可用宽却由**短边**决定，
+ * 不钳则胶囊铺满时每颗摊到的槽位会小于图标盒，图标相互挤压甚至溢出屏宽。
+ */
+@Composable
+internal fun playerIconBox(availableWidth: Dp): Dp {
+    val gap = playerDim(R.dimen.vs_8)
+    return minOf(
+        playerDim(R.dimen.vs_70),
+        (availableWidth - gap * (PILL_MAX_ICONS + 1)) / PILL_MAX_ICONS,
+    ).coerceAtLeast(1.dp)
 }

@@ -142,7 +142,7 @@
 | 线路 | line | `线路N` = `Line N` |
 | 解析(超级解析) | parse / resolve | 超级解析 = `Super parse` |
 | 弹幕 | Danmaku | 保留日语借词(二次元语境通行),**不译** bullet comment |
-| 解码(硬解 / 软解) | Decoding(Hardware / Software) | 播放器底栏短标签 = `HW` / `SW` |
+| 解码(硬解 / 软解) | Decoding(Hardware / Software) | 参数面板 chips 用短标签 = `HW` / `SW`(2026-09-26 由底栏移到播放参数抽屉) |
 | 预载 / 缓存 / 缓冲 | preload / cache / buffer | |
 | 投屏 | cast | |
 | 节目单 | TV Guide | 节目单**数据内容**不翻(§2-N1) |
@@ -150,7 +150,7 @@
 | 收藏 | favorites | |
 | 换源 / 换线 / 换仓 | switch source / line / repo | |
 | 净化 | purify | `M3U8 净化` = `M3U8 Purify` |
-| 片头 / 片尾 | Opening / Ending | 播放器底栏在时长位显示 |
+| 片头 / 片尾 | Opening / Ending | 参数面板里作为当前值的标签(未设置显示 `Not set`;2026-09-26 由底栏移到播放参数抽屉) |
 
 ## 4. 技术方案
 
