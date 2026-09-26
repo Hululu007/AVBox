@@ -453,13 +453,14 @@
 - **band 与顶栏的重叠是刻意接受的取舍**(完整理由见 §5):band 顶部若下移到顶栏之下,Rail 上段会落在源层之外、玻璃退化成纯容器色。改 band 矩形前先读 §5 那条。
 - **阶段二的测试空白(说明,非遗漏)**:Rail 与导航壳全是 Compose 布局代码,而本项目单测是纯 JVM、无 Robolectric ⇒ 这部分进不了单测,只能靠 `@Preview` 矩阵与真机。若将来再扩轴向逻辑,建议先把"窗口档 → 轴向"抽成纯函数再补测。
 
-### 6.11 启动与配置加载(2026-09-22 补)
+### 6.11 启动与配置加载(2026-09-22 补;2026-09-26 补预热队列)
 
 - **首屏闸门**:整屏 `ContainedLoadingIndicator` 只等「配置就绪 + 分类到齐 + 推荐位出结果」,分区首屏各自骨架(见 §4.1)。改 `HomeViewModel.pageLoading` 判定前先读那条。
 - **配置快照优先(仅远程源)**:冷启动走 `ApiConfig.loadConfig(useCache)` 的缓存分支,判据 = 地址是 `http/https` **且** 快照文件(`filesDir + MD5.encode(apiUrl)`,与 `ApiConfig` 同一路径算法)未过期(`AppBootstrap.CONFIG_CACHE_TTL_MS` = 12h);过期即回网络并把新快照写回。**本地/局域网源不吃快照**(其改动必须立即生效)。没有 TTL 会让快照永久冻结 —— 服务端更新源后再也不会生效。
 - **用户主动重载一律走网络**:`AppBootstrap.retry()`(换源 / 改地址 / 启动失败重试)走 `startInit(forceFresh = true)` 跳过快照 —— 否则"重选同一个源"会拿旧快照,看起来像没生效;`continueOffline()` 照旧完全不拉配置。该标志是**参数透传**而非共享字段(主线程写、IO 线程读,字段形式会被连点 retry 的旧协程抢先清零)。
 - ⚠️ **不要在会话中重解析配置**:`parseJson` 第一行 `resetConfigData() → clearSpiderCache() → jarLoader.clear()`,会销毁所有 spider 与 DexClassLoader,而**重装 jar 只发生在 `AppBootstrap`**(`getCSP` 在 loader 为空时只返回 `SpiderNull`)⇒ 中途重解析 = 所有 spider 源失效到下次启动;要热刷新必须走 `AppBootstrap.retry()` 全套。
 - ⚠️ **不能"预装上一次的 jar"来做并行**:`JarLoader.load(MAIN_KEY, …)` 开头 `if (loaders.containsKey(key)) return true` ⇒ 预装的是旧 URL 的 jar 时,真实配置到达后会**静默沿用旧 jar**(爬虫全错);且预装本身会被上面那次 clear 清掉 —— 两头都白做。
+- ⚠️ **预热必须独占队列 + 单项限时**:`warmSearchSpiders` 不得复用 `configLoadExecutor`(它排的是用户触发的 `fetchConfigAsync`)—— 预热项会整项卡在网络超时上(实测 30s),共队列会把"添加/切换源"排后几十秒。每项还要限时并放弃等待(`getCSP` 深入 jar/py 初始化,超时**中断不了**;晚到的结果由加载器的 `spiders.put` 兜住),且换源后靠 `configGeneration` 代次守门让旧预热尾巴收手 —— 否则旧 spider 会写进新配置刚清空的缓存。
 
 ### 6.12 订阅源配置与站点字段(2026-09-23 补,均由静态审查/回归得出)
 

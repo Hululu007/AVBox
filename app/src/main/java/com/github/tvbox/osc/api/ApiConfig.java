@@ -64,8 +64,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -107,6 +112,15 @@ public class ApiConfig {
     private final Gson gson;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final ExecutorService configLoadExecutor = Executors.newSingleThreadExecutor();
+
+    /** 单项预热等待上限 */
+    private static final long WARM_ITEM_TIMEOUT_MS = 10_000L;
+    // 预热独占一条队列:预热项可能整项卡在网络超时上(实测 30s),不能拖住用户触发的配置加载
+    private final ExecutorService warmExecutor = Executors.newSingleThreadExecutor(r -> new Thread(r, "spider-warm"));
+    // 预热项用可并发池 + 限时等待:初始化超时后中断不了,单线程池会被跑飞的项堵死
+    private final ExecutorService warmItemExecutor = Executors.newCachedThreadPool(r -> new Thread(r, "spider-warm-item"));
+    // 换源后旧配置的预热项必须收手,否则会把 spider 写进新配置刚清空的缓存
+    private final AtomicInteger configGeneration = new AtomicInteger();
 
     private ApiConfig() {
         clearLoader();
@@ -641,6 +655,7 @@ public class ApiConfig {
     }
 
     private void resetConfigData() {
+        configGeneration.incrementAndGet();
         clearSpiderCache();
         currentPlaySourceKey = "";
         configLogo = "";
@@ -1419,12 +1434,18 @@ public class ApiConfig {
             String spiderApiKey = source.getJar() + "|" + source.getApi();
             if (!spiderApis.add(spiderApiKey)) sharedSpiderApis.add(spiderApiKey);
         }
-        configLoadExecutor.execute(new Runnable() {
+        final int generation = configGeneration.get();
+        warmExecutor.execute(new Runnable() {
             @Override
             public void run() {
                 LOG.i("echo-warm-spider start");
                 int eligibleCount = 0;
                 for (SourceBean source : sources) {
+                    // 已换源就别再往下走:否则会占用新配置的"已预热"名额,让它漏掉这个源的预热
+                    if (generation != configGeneration.get()) {
+                        LOG.i("echo-warm-spider stop: config changed");
+                        break;
+                    }
                     if (source == null || source.getType() != 3 || !source.isSearchable()) continue;
                     if (home != null && TextUtils.equals(home.getKey(), source.getKey())) continue;
                     // 同类 Spider 可能通过静态状态保存 ext，不能在后台预热时交替初始化。
@@ -1433,15 +1454,38 @@ public class ApiConfig {
                     eligibleCount++;
                     String warmKey = source.getKey() + "|" + source.getApi() + "|" + source.getJar() + "|" + source.getExt();
                     if (!spiderLoader.markWarmed(warmKey)) continue;
-                    try {
-                        LOG.i("echo-warm-spider load:" + warmKey);
-                        getCSP(source);
-                    } catch (Throwable th) {
-                        LOG.e("echo-warm-search-spider-error " + source.getKey() + ":" + th.getMessage());
-                    }
+                    LOG.i("echo-warm-spider load:" + warmKey);
+                    if (!warmOneSource(source, warmKey, generation)) break;
                 }
             }
         });
+    }
+
+    /** 预热单个源并限时等待:超时不打断,项自己在后台跑完(结果由加载器缓存兜住);返回 false = 调用线程被中断 */
+    private boolean warmOneSource(final SourceBean source, final String warmKey, final int generation) {
+        Future<?> task = warmItemExecutor.submit(new Runnable() {
+            @Override
+            public void run() {
+                if (generation != configGeneration.get()) {
+                    LOG.i("echo-warm-spider drop:" + warmKey);
+                    return;
+                }
+                getCSP(source);
+            }
+        });
+        try {
+            task.get(WARM_ITEM_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+            return true;
+        } catch (TimeoutException e) {
+            LOG.e("echo-warm-spider timeout:" + warmKey);
+            return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        } catch (ExecutionException e) {
+            LOG.e("echo-warm-search-spider-error " + source.getKey() + ":" + e.getMessage());
+            return true;
+        }
     }
 
     public Spider getPyCSP(String url) {
