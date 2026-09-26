@@ -1613,7 +1613,7 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
     public boolean onBackPressed() {
         int requestedOrientation = mActivity.getRequestedOrientation();
         boolean portrait = requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT || requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT || requestedOrientation == ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT;
-        if (portrait) {
+        if (portrait && previewMode) {
             if (mController.onBackPressed()) {
                 return true;
             }
@@ -1624,6 +1624,10 @@ public class PlayContainer extends FrameLayout implements CustomAdapt, PlaybackH
             return true;
         }
         return false;
+    }
+
+    public boolean isPortraitVideo() {
+        return mVideoView != null && mVideoView.isPortraitVideo();
     }
 
     public void setExitingPreview(boolean exitingPreview) {

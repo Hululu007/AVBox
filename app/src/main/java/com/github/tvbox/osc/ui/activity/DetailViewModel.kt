@@ -133,6 +133,7 @@ class DetailViewModel : ViewModel() {
         vodPicture = bundle.getString("picture", "")
         fromCollect = bundle.getBoolean("collect", false)
         loadDetail(bundle.getString("id", ""), bundle.getString("sourceKey", ""))
+        LOG.i("echo-detail-open collect=$fromCollect key=$sourceKey id=$vodId")
         if (vodName.isNotEmpty()) startSourceSearch()
     }
 
@@ -149,7 +150,8 @@ class DetailViewModel : ViewModel() {
             }
         }
         val landNow = playContainerRef?.resources?.configuration?.orientation == Configuration.ORIENTATION_LANDSCAPE
-        rotating.value = (full != landNow)
+        val landTarget = full && playContainerRef?.isPortraitVideo() != true
+        rotating.value = landTarget != landNow
         fullScreen.value = full
     }
 
@@ -226,7 +228,7 @@ class DetailViewModel : ViewModel() {
                 val fallbackSource = ApiConfig.get().getSource(sourceKey)
                 toastEvent.value = str(R.string.detail_switch_site, fallbackSource?.name ?: sourceKey)
             }
-            if (!absXml.msg.isNullOrEmpty() && absXml.msg != "数据列表") { // i18n: keep
+            if (isSourceErrorMsg(absXml.msg)) {
                 if (!rollbackManualSwitch(absXml.msg)) {
                     toastEvent.value = absXml.msg
                     enterEmpty(absXml.msg)
@@ -296,11 +298,13 @@ class DetailViewModel : ViewModel() {
     }
 
     private fun handleEmptyDetail(data: AbsXml?) {
-        val shouldFinish = data != null && !data.msg.isNullOrEmpty()
-        if (shouldFinish || fromCollect) {
-            if (shouldFinish && rollbackManualSwitch(data.msg)) return
+        val msg = data?.msg.orEmpty()
+        // 空详情一律留页(空态带换源列表),只有源侧真的报错才提示并退出 —— 源抖动不该表现为"闪退"
+        if (isSourceErrorMsg(msg)) {
+            if (rollbackManualSwitch(msg)) return
+            LOG.i("echo-detail-finish reason=source-msg msg=$msg key=$sourceKey id=$vodId")
             resetEngineState(keepChips = false)
-            if (shouldFinish) toastEvent.value = data.msg
+            toastEvent.value = msg
             finishEvent.value = true
             return
         }
@@ -445,6 +449,7 @@ class DetailViewModel : ViewModel() {
 
     private fun enterEmpty(msg: String? = null) {
         playContainerRef?.clearSourceSwitchTip()
+        LOG.i("echo-detail-empty-state msg=$msg key=$sourceKey id=$vodId")
         pageState.value = PageState.Empty(msg)
     }
 
@@ -841,5 +846,11 @@ class DetailViewModel : ViewModel() {
         private const val DETAIL_FALLBACK_DETAIL_TIMEOUT_MS = 6000L
         private const val SOURCE_SEARCH_TIMEOUT_MS = 30_000L
         private const val SOURCE_SEARCH_CONCURRENCY = 6
+
+        // i18n: keep —— 源侧"没有数据"的哨兵值;误翻会把空结果判成源报错,详情页提示后自动关闭
+        private const val SOURCE_EMPTY_MSG = "数据列表"
+
+        internal fun isSourceErrorMsg(msg: String?): Boolean =
+            !msg.isNullOrEmpty() && msg != SOURCE_EMPTY_MSG
     }
 }

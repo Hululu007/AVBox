@@ -74,7 +74,7 @@ fun PreferenceSettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel =
         ) {
             Spacer(Modifier.height(topPad + 8.dp))
 
-            SettingsGroup(title = null) {
+            SettingsGroup(title = stringResource(R.string.settings_language)) {
                 SettingsCard(SettingsCardPosition.SINGLE) {
                     LanguageRow()
                 }
@@ -82,7 +82,7 @@ fun PreferenceSettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel =
 
             Spacer(Modifier.height(28.dp))
 
-            SettingsGroup(title = null) {
+            SettingsGroup(title = stringResource(R.string.settings_group_privacy)) {
                 SettingsCard(SettingsCardPosition.FIRST) {
                     SettingsSwitchRow(
                         title = stringResource(R.string.settings_history_merge),
@@ -133,7 +133,7 @@ fun PreferenceSettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel =
 
             Spacer(Modifier.height(28.dp))
 
-            SettingsGroup(title = null) {
+            SettingsGroup(title = stringResource(R.string.settings_group_play_search)) {
                 SettingsCard(SettingsCardPosition.FIRST) {
                     SettingsSwitchRow(
                         title = stringResource(R.string.settings_auto_switch_line),

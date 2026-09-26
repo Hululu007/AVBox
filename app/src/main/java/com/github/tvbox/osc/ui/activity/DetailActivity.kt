@@ -218,7 +218,11 @@ class DetailActivity : BaseActivity(), PageHost {
         if (fullScreen == full) return
         fullScreen = full
         requestedOrientation = if (full) {
-            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            if (playContainer?.isPortraitVideo() == true) {
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+            } else {
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            }
         } else {
             // 恢复窗口档策略值:大屏上硬写竖屏会把平板压回信箱模式
             orientationPolicyValue()

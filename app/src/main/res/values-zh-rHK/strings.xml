@@ -70,4 +70,5 @@
     <string name="detail_collapse">收起</string>
     <string name="toast_source_auto_disabled">該源無法使用，會導致死機，已自動停用（可在設定管理中重新啟用）</string>
     <string name="dialog_source_disabled_message">「%1$s」先前導致應用程式死機，已被自動停用。\n\n若該源已經修好，可以重新啟用；否則切換後很可能再次閃退。</string>
+    <string name="settings_group_preload_cache">預載與緩存</string>
 </resources>

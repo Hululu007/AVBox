@@ -77,7 +77,7 @@
 | R9 | `viewmodel/SourceViewModel` | `IllegalStateException("网络请求错误")`(9 处,含变体) | 只经 `convertResponse → onError → LOG.i` 进日志,无 UI 出口 ⇒ 不翻 |
 | R10 | `ui/page/HistoryPage.kt` | `Regex("(\\d+)\\s*[集期]")` | 匹配源数据(片名/备注)里的集数标记,不是 UI 文案 |
 | R11 | `api/ApiConfig.defaultIJKADS` | ijk 分组的 `"硬解码"` / `"软解码"` | R1 的另一处落点:该 JSON 是 KV 值与 `getIJKCodec(name)` 的比较键 ⇒ 值不动 |
-| R12 | `ui/activity/DetailViewModel.kt` | `absXml.msg != "数据列表"` | 源返回 msg 的"非错误"哨兵值(数据规则)⇒ 不翻 |
+| R12 | `ui/activity/DetailViewModel.kt` | `SOURCE_EMPTY_MSG = "数据列表"` | 源返回 msg 的"非错误"哨兵值(数据规则)⇒ 不翻 |
 | R13 | `ui/activity/DetailViewModel.kt` | `Regex("(?i)(?:ep|第|e|[\\-\\.\\s])\\s?(\\d{1,4})")` | 从源侧标题里抽集数,关键词是数据规则 ⇒ 不翻 |
 
 实施要求:改这些文件时只替换 UI 展示点;**R1–R13 的值点保持字面量不动**,行尾(或上一行)加 `// i18n: keep` 标记,由 §7-A 校验脚本白名单化。

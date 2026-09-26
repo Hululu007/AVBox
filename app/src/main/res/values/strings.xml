@@ -285,6 +285,7 @@
 
     <!-- 设置:主题设置 -->
     <string name="theme_color">主题颜色</string>
+    <string name="theme_app_effects">应用效果</string>
     <string name="theme_liquid_glass">液态玻璃效果</string>
     <string name="theme_liquid_glass_hint">Android 13 及以上支持液态玻璃</string>
     <string name="theme_reset">重置</string>
@@ -301,7 +302,6 @@
     <string name="theme_mode_light">浅色</string>
     <string name="theme_mode_dark">深色</string>
     <string name="theme_palette_style">配色风格</string>
-    <string name="theme_preset_palette">主题颜色</string>
     <string name="theme_seed_red">红色</string>
     <string name="theme_seed_orange">橙色</string>
     <string name="theme_seed_yellow">黄色</string>
@@ -418,6 +418,13 @@
     <string name="settings_long_press_speed">长按倍速</string>
     <string name="settings_buffer_time">缓冲时间</string>
     <string name="settings_search_threads">搜索线程</string>
+
+    <!-- 设置:二级页分组小标题 -->
+    <string name="settings_group_play_picture">内核与画面</string>
+    <string name="settings_group_play_behavior">播放行为</string>
+    <string name="settings_group_privacy">隐私与交互</string>
+    <string name="settings_group_play_search">播放与搜索</string>
+    <string name="settings_group_preload_cache">预载与缓存</string>
 
     <!-- 播放链路提示(PlaybackController / ComposeVideoController) -->
     <string name="common_success">成功</string>

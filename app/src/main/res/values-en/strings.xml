@@ -285,6 +285,7 @@
 
     <!-- Settings: theme -->
     <string name="theme_color">Theme Color</string>
+    <string name="theme_app_effects">App Effects</string>
     <string name="theme_liquid_glass">Liquid Glass</string>
     <string name="theme_liquid_glass_hint">Liquid Glass requires Android 13 or later</string>
     <string name="theme_reset">Reset</string>
@@ -301,7 +302,6 @@
     <string name="theme_mode_light">Light</string>
     <string name="theme_mode_dark">Dark</string>
     <string name="theme_palette_style">Color Style</string>
-    <string name="theme_preset_palette">Preset Palette</string>
     <string name="theme_seed_red">Red</string>
     <string name="theme_seed_orange">Orange</string>
     <string name="theme_seed_yellow">Yellow</string>
@@ -418,6 +418,13 @@
     <string name="settings_long_press_speed">Long-press Speed</string>
     <string name="settings_buffer_time">Buffer Time</string>
     <string name="settings_search_threads">Search Threads</string>
+
+    <!-- Settings: secondary page group labels -->
+    <string name="settings_group_play_picture">Engine &amp; Picture</string>
+    <string name="settings_group_play_behavior">Playback Behavior</string>
+    <string name="settings_group_privacy">Privacy &amp; Interaction</string>
+    <string name="settings_group_play_search">Playback &amp; Search</string>
+    <string name="settings_group_preload_cache">Preload &amp; Cache</string>
 
     <!-- Playback pipeline tips (PlaybackController / ComposeVideoController) -->
     <string name="common_success">Success</string>

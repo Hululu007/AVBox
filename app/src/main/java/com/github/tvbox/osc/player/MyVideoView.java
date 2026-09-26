@@ -236,6 +236,10 @@ public class MyVideoView extends VideoView implements DrawHandler.Callback {
         return mVideoSize;
     }
 
+    public boolean isPortraitVideo() {
+        return VideoOrientation.isPortrait(mVideoSize[0], mVideoSize[1]);
+    }
+
     public void clearVideoFrame() {
         if (mMediaPlayer != null) mMediaPlayer.stop();
         showFrameCover();

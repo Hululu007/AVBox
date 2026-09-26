@@ -58,7 +58,7 @@ fun PlaySettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = viewM
         ) {
             Spacer(Modifier.height(topPad + 8.dp))
 
-            SettingsGroup(title = null) {
+            SettingsGroup(title = stringResource(R.string.settings_group_play_picture)) {
                 SettingsCard(SettingsCardPosition.FIRST) {
                     val playerTypes = PlayerHelper.getExistPlayerTypes().sortedDescending()
                     SettingsOptionMenuRow(
@@ -131,7 +131,7 @@ fun PlaySettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = viewM
 
             Spacer(Modifier.height(28.dp))
 
-            SettingsGroup(title = null) {
+            SettingsGroup(title = stringResource(R.string.settings_group_play_behavior)) {
                 SettingsCard(SettingsCardPosition.FIRST) {
                     SettingsSwitchRow(
                         title = stringResource(R.string.settings_ijk_cache_play),

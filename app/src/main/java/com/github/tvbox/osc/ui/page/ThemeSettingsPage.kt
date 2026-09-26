@@ -113,11 +113,8 @@ fun ThemeSettingsScreen(onNavigateBack: () -> Unit) {
         ) {
             Spacer(Modifier.height(topPad - 20.dp))
 
-            SettingsGroup(title = null) {
+            SettingsGroup(title = stringResource(R.string.theme_color)) {
                 ThemeCard(SettingsCardPosition.FIRST) {
-                    HeaderRow(stringResource(R.string.theme_color))
-                }
-                ThemeCard(SettingsCardPosition.MIDDLE) {
                     CustomThemeSwitchRow(
                         checked = isCustom,
                         onCheckedChange = { checked ->
@@ -157,7 +154,7 @@ fun ThemeSettingsScreen(onNavigateBack: () -> Unit) {
                 }
             }
 
-            SettingsGroup(title = null) {
+            SettingsGroup(title = stringResource(R.string.theme_app_effects)) {
                 SettingsCard(SettingsCardPosition.FIRST) {
                     Column(
                         modifier = Modifier
@@ -269,15 +266,6 @@ private fun ThemeCard(
             content()
         }
     }
-}
-
-@Composable
-private fun HeaderRow(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.onSurface,
-    )
 }
 
 @Composable
@@ -448,44 +436,36 @@ private fun PresetSeedsRow(
     enabled: Boolean,
     onSeedSelected: (Int) -> Unit,
 ) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = stringResource(R.string.theme_preset_palette),
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Spacer(Modifier.height(12.dp))
-        // 色卡是 1:1 正方形:列数写死 4 会让卡片随窗口放大(平板单张 250dp、色条细如发丝),按宽度切 4/8 列
-        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val wideColumnsMinWidth = PresetSeedMinCardWidth * PresetSeedWideColumns +
-                PresetSeedCardSpacing * (PresetSeedWideColumns - 1)
-            val columns =
-                if (maxWidth >= wideColumnsMinWidth) PresetSeedWideColumns
-                else PresetSeedNarrowColumns
-            Column {
-                PresetSeeds.chunked(columns).forEachIndexed { rowIndex, rowItems ->
-                    if (rowIndex > 0) Spacer(Modifier.height(PresetSeedCardSpacing))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(PresetSeedCardSpacing),
-                    ) {
-                        rowItems.forEach { (nameRes, argb) ->
-                            key(argb, style) {
-                                PresetSeedCard(
-                                    nameRes = nameRes,
-                                    seedArgb = argb,
-                                    selected = currentSeed == argb,
-                                    style = style,
-                                    enabled = enabled,
-                                    onClick = { onSeedSelected(argb) },
-                                    modifier = Modifier.weight(1f),
-                                )
-                            }
+    // 色卡是 1:1 正方形:列数写死 4 会让卡片随窗口放大(平板单张 250dp、色条细如发丝),按宽度切 4/8 列
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val wideColumnsMinWidth = PresetSeedMinCardWidth * PresetSeedWideColumns +
+            PresetSeedCardSpacing * (PresetSeedWideColumns - 1)
+        val columns =
+            if (maxWidth >= wideColumnsMinWidth) PresetSeedWideColumns
+            else PresetSeedNarrowColumns
+        Column {
+            PresetSeeds.chunked(columns).forEachIndexed { rowIndex, rowItems ->
+                if (rowIndex > 0) Spacer(Modifier.height(PresetSeedCardSpacing))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(PresetSeedCardSpacing),
+                ) {
+                    rowItems.forEach { (nameRes, argb) ->
+                        key(argb, style) {
+                            PresetSeedCard(
+                                nameRes = nameRes,
+                                seedArgb = argb,
+                                selected = currentSeed == argb,
+                                style = style,
+                                enabled = enabled,
+                                onClick = { onSeedSelected(argb) },
+                                modifier = Modifier.weight(1f),
+                            )
                         }
-                        // 不满一行时用等宽占位顶住,否则末行的卡片会被 weight 摊宽
-                        repeat(columns - rowItems.size) {
-                            Spacer(Modifier.weight(1f))
-                        }
+                    }
+                    // 不满一行时用等宽占位顶住,否则末行的卡片会被 weight 摊宽
+                    repeat(columns - rowItems.size) {
+                        Spacer(Modifier.weight(1f))
                     }
                 }
             }

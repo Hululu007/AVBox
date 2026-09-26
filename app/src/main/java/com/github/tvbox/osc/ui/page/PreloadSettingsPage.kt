@@ -57,7 +57,7 @@ fun PreloadSettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = vi
         ) {
             Spacer(Modifier.height(topPad + 8.dp))
 
-            SettingsGroup(title = null) {
+            SettingsGroup(title = stringResource(R.string.settings_group_preload_cache)) {
                 SettingsCard(SettingsCardPosition.FIRST) {
                     SettingsSwitchRow(
                         title = stringResource(R.string.preload_next_episode),
