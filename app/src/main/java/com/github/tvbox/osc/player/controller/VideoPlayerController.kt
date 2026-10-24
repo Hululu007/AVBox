@@ -83,24 +83,24 @@ class VideoPlayerController(
         activityCache ?: PlayerUtils.scanForActivity(context)?.also { activityCache = it }
             ?: videoView?.hostActivity()
 
-    internal fun gestureCanChangePosition(): Boolean = canChangePosition
+    internal fun gestureCanChangePosition(): Boolean = state.canChangePosition
 
-    internal fun gestureEnableInNormal(): Boolean = enableInNormal
+    internal fun gestureEnableInNormal(): Boolean = state.enableInNormal
 
-    internal fun gestureEnabled(): Boolean = gestureSwitch
+    internal fun gestureEnabled(): Boolean = state.gestureSwitch
 
     internal fun currentSpeed(): Float = playerView?.speed ?: 1f
 
     internal fun enterGestureSeek() {
         if (!state.dragging) {
-            state.dragging = true
+            state.updateDragging(true)
             if (!state.controlsVisible) actions.applyShowBottom()
             stopProgress()
         }
     }
 
     internal fun exitGestureSeek() {
-        state.dragging = false
+        state.updateDragging(false)
         startProgress()
         actions.keepControlsAlive()
     }
@@ -110,9 +110,9 @@ class VideoPlayerController(
     }
 
     internal fun showSlideHint(text: String, brightness: Boolean) {
-        state.slideHintText = text
-        state.slideHintBrightness = brightness
-        state.slideHintVisible = true
+        state.updateSlideHintText(text)
+        state.updateSlideHintBrightness(brightness)
+        state.updateSlideHintVisible(true)
     }
 
     private val tapConfirmRunnable = Runnable { confirmGestureTap() }
@@ -153,9 +153,6 @@ class VideoPlayerController(
 
     internal lateinit var config: PlayerConfigDelegate
 
-    private var canChangePosition = true
-    private var enableInNormal = false
-    private var gestureSwitch = true
 
     internal lateinit var subtitleView: SimpleSubtitleView
         private set
@@ -173,11 +170,6 @@ class VideoPlayerController(
 
     internal val videoSizeGate = VideoSizeGate()
 
-    internal var previewMode = false
-    internal var speedOld = 1.0f
-    private var skipEnd = true
-    internal var isClickBackBtn = false
-    private var showParseFlag = false
     private val playerConfigState = mutableStateOf<JSONObject?>(null)
 
     private val videoCodecFlowState =
@@ -203,13 +195,14 @@ class VideoPlayerController(
     private var progressTicking = false
     private val progressRunnable by lazy { Runnable { onProgressTick() } }
 
-    private var contentUrl: String? = null
+    private var armedContentGen = -1
 
     private var progressPhase = ProgressPhase.IDLE
 
-    override fun onContentUrlSet(url: String?) {
-        if (url.isNullOrEmpty()) return
-        contentUrl = url
+    override fun adoptCurrentContent() {
+        val view = videoView ?: return
+        if (view.currentUrl == null) return
+        armedContentGen = view.contentGen
         progressPhase = ProgressPhase.ACTIVE
     }
     internal val idleHideRunnable by lazy {
@@ -217,7 +210,7 @@ class VideoPlayerController(
             if (state.overlayPanelOpen) actions.keepControlsAlive() else actions.hideBottom()
         }
     }
-    internal val lockHideRunnable by lazy { Runnable { state.lockState = LockVisibility.HIDDEN } }
+    internal val lockHideRunnable by lazy { Runnable { state.updateLockState(LockVisibility.HIDDEN) } }
 
     private val m3u8PurifyUseCase by lazy {
         M3u8PurifyUseCase(context, object : M3u8PurifyUseCase.Callback {
@@ -241,9 +234,10 @@ class VideoPlayerController(
         initNativeSubtitleViews()
         initComposeHost()
 
-        state.sysTimeVisible = false
-        state.isPortrait =
-            resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+        state.updateSysTimeVisible(false)
+        state.updateIsPortrait(
+            resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT,
+        )
         updateDanmuBtnState()
         updateDanmuSearchBtnState()
         initSubtitleInfo()
@@ -327,7 +321,7 @@ class VideoPlayerController(
         val rect = VideoRect(left, top, width, height)
         if (rect.empty) return
         if (rect == state.videoRect) return
-        state.videoRect = rect
+        state.updateVideoRect(rect)
     }
 
     /** 对应原 View.onDetachedFromWindow：宿主被摘除时清理挂起的回调。 */
@@ -346,7 +340,7 @@ class VideoPlayerController(
     }
 
     override fun setPlayState(playState: PlayState) {
-        state.playState = playState
+        state.updatePlayState(playState)
         if (playState != PlayState.IDLE && playState != PlayState.ERROR &&
             playState != PlayState.PREPARING
         ) {
@@ -357,31 +351,29 @@ class VideoPlayerController(
 
     private fun applyPlayState(playState: PlayState) = when (playState) {
         PlayState.IDLE -> {
-            state.locked = false
+            state.updateLocked(false)
             progressPhase = ProgressPhase.IDLE
         }
         PlayState.PLAYING -> {
-            state.exitPaused = false
+            state.updateExitPaused(false)
             initOrientationState()
             startProgress()
         }
-        PlayState.ERROR -> listener?.errReplay()
         PlayState.PREPARED -> listener?.prepared()
         PlayState.COMPLETED -> {
-            state.locked = false
-            listener?.playNext(true)
+            state.updateLocked(false)
         }
         PlayState.PREPARING, PlayState.BUFFERING, PlayState.BUFFERED,
-        PlayState.START_ABORT, PlayState.PAUSED,
+        PlayState.START_ABORT, PlayState.PAUSED, PlayState.ERROR,
         -> Unit
     }
 
     override fun setPlayerState(playerState: Int) {
-        state.playerState = playerState
+        state.updatePlayerState(playerState)
     }
 
     override fun onVideoSizeChanged(width: Int, height: Int) {
-        state.videoSize = videoSizeGate.textFor(width, height)
+        state.updateVideoSize(videoSizeGate.textFor(width, height))
         onVideoSizeReady?.invoke(width, height)
     }
 
@@ -393,7 +385,7 @@ class VideoPlayerController(
 
     internal fun progressSnapshot(): ProgressSnapshot? {
         val view = videoView ?: return null
-        if (!ProgressUiGate.accept(progressPhase, contentUrl, view.currentUrl)) return null
+        if (!ProgressUiGate.accept(progressPhase, armedContentGen, view.contentGen)) return null
         return ProgressSnapshot(
             durationMs = PlayerUtils.safeTimeMs(view.duration),
             positionMs = PlayerUtils.safeTimeMs(view.currentPosition),
@@ -407,21 +399,16 @@ class VideoPlayerController(
         val snapshot = if (view != null && !state.dragging) progressSnapshot() else null
         LOG.i(
             "echo-progress-tick: accepted=${snapshot != null} phase=$progressPhase"
+                + " armed=$armedContentGen kernelGen=${view?.contentGen}"
                 + " uiPosition=${state.position} uiDuration=${state.duration}"
                 + " rawDuration=${snapshot?.durationMs} rawPosition=${snapshot?.positionMs}"
                 + " playing=${view?.isPlaying} state=${view?.playState}",
         )
         if (snapshot != null) {
-            if (snapshot.durationMs > 0) state.duration = snapshot.durationMs
-            if (snapshot.positionMs > 0 || snapshot.durationMs > 0) state.position = snapshot.positionMs
-            state.bufferedPercent = snapshot.bufferedPercent
-            if (skipEnd && snapshot.positionMs != 0 && snapshot.durationMs != 0) {
-                val et = playerConfig?.optInt("et", 0) ?: 0
-                if (et > 0 && snapshot.positionMs + et * 1000 >= snapshot.durationMs) {
-                    skipEnd = false
-                    listener?.playNext(true)
-                }
-            }
+            if (snapshot.durationMs > 0) state.updateDuration(snapshot.durationMs)
+            if (snapshot.positionMs > 0 || snapshot.durationMs > 0) state.updatePosition(snapshot.positionMs)
+            state.updateBufferedPercent(snapshot.bufferedPercent)
+            if (view?.isPlaying == true) listener?.onNearEndProgress(snapshot.positionMs.toLong(), snapshot.durationMs.toLong())
         }
         if (state.dragging) return
         if (view?.isPlaying != true) return
@@ -442,9 +429,9 @@ class VideoPlayerController(
     }
 
     internal fun updateSeekUiHint(curr: Int, seekTo: Int) {
-        state.seekHintForward = seekTo > curr
-        state.seekHintText = PlayerUtils.stringForTime(seekTo)
-        state.seekHintVisible = true
+        state.updateSeekHintForward(seekTo > curr)
+        state.updateSeekHintText(PlayerUtils.stringForTime(seekTo))
+        state.updateSeekHintVisible(true)
     }
 
     internal fun isInPlaybackState(): Boolean {
@@ -460,13 +447,13 @@ class VideoPlayerController(
     }
 
     internal fun showLockView() {
-        if (previewMode) {
-            state.locked = false
+        if (state.previewMode) {
+            state.updateLocked(false)
             uiHandler.removeCallbacks(lockHideRunnable)
-            state.lockState = LockVisibility.GONE
+            state.updateLockState(LockVisibility.GONE)
             return
         }
-        state.lockState = LockVisibility.SHOWN
+        state.updateLockState(LockVisibility.SHOWN)
         uiHandler.removeCallbacks(lockHideRunnable)
         if (state.locked) {
             uiHandler.postDelayed(lockHideRunnable, LOCK_HIDE_DELAY_MS)
@@ -475,22 +462,22 @@ class VideoPlayerController(
 
     private fun initOrientationState() {
         val isPortrait = resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
-        state.isPortrait = isPortrait
+        state.updateIsPortrait(isPortrait)
         if (isPortrait) {
-            state.backVisible = false
+            state.updateBackVisible(false)
         }
     }
 
     private fun updateDanmuBtnState() {
-        state.danmuOpen = DanmuHelper.isOpen()
+        state.updateDanmuOpen(DanmuHelper.isOpen())
     }
 
     internal fun updateDanmuSearchBtnState() {
-        state.danmuSearchAvailable = ApiConfig.get().hasDanmuSearchUi()
+        state.updateDanmuSearchAvailable(ApiConfig.get().hasDanmuSearchUi())
     }
 
     private fun updateLiveButtonsState() {
-        state.liveButtonsVisible = runCatching { videoView?.duration ?: 0L != 0L }.getOrDefault(true)
+        state.updateLiveButtonsVisible(runCatching { videoView?.duration ?: 0L != 0L }.getOrDefault(true))
     }
 
     override fun getUiState(): PlayerUiState = state
@@ -511,20 +498,18 @@ class VideoPlayerController(
     }
 
     override fun showParse(userJxList: Boolean) {
-        showParseFlag = userJxList
-        state.showParseRow = userJxList
+        state.updateShowParseRow(userJxList)
     }
 
     override fun setPreviewMode(previewMode: Boolean) {
-        this.previewMode = previewMode
-        state.previewMode = previewMode
+        state.updatePreviewMode(previewMode)
         if (previewMode && state.controlsVisible) actions.hideBottom()
         uiHandler.removeCallbacks(lockHideRunnable)
-        state.lockState = LockVisibility.GONE
+        state.updateLockState(LockVisibility.GONE)
     }
 
     override fun setTitle(playTitleInfo: String) {
-        state.title = playTitleInfo
+        state.updateTitle(playTitleInfo)
     }
 
     override fun setUrlTitle(playTitleInfo: String) = Unit
@@ -534,21 +519,21 @@ class VideoPlayerController(
     }
 
     override fun setCanChangePosition(canChangePosition: Boolean) {
-        this.canChangePosition = canChangePosition
+        state.updateCanChangePosition(canChangePosition)
     }
 
     override fun setEnableInNormal(enableInNormal: Boolean) {
-        this.enableInNormal = enableInNormal
+        state.updateEnableInNormal(enableInNormal)
     }
 
     override fun setGestureEnabled(gestureEnabled: Boolean) {
-        this.gestureSwitch = gestureEnabled
+        state.updateGestureSwitch(gestureEnabled)
     }
 
     override fun hidePauseRoot() = Unit
 
     override fun onNewPlayStarted(sameContent: Boolean) {
-        state.exitPaused = false
+        state.updateExitPaused(false)
         if (sameContent) {
             LOG.i(
                 "echo-progress-reset: same content restart, keep uiPosition=${state.position}"
@@ -562,27 +547,26 @@ class VideoPlayerController(
             "echo-progress-reset: onNewPlayStarted cleared uiPosition=${state.position}"
                 + " uiDuration=${state.duration}",
         )
-        state.videoSize = videoSizeGate.onNewSession(size[0], size[1])
-        state.position = 0
-        state.duration = 0
+        state.updateVideoSize(videoSizeGate.onNewSession(size[0], size[1]))
+        state.updatePosition(0)
+        state.updateDuration(0)
     }
     override fun setLifecyclePaused(paused: Boolean) {
-        state.lifecyclePaused = paused
+        state.updateLifecyclePaused(paused)
         if (paused) uiHandler.removeCallbacks(idleHideRunnable) else actions.keepControlsAlive()
     }
 
     override fun setExitPaused(paused: Boolean) {
-        state.exitPaused = paused
+        state.updateExitPaused(paused)
     }
 
     override fun resetSpeed() {
-        skipEnd = true
         config.applySpeedWhenReady()
     }
 
     override fun onBackPressed(): Boolean {
-        if (isClickBackBtn) {
-            isClickBackBtn = false
+        if (state.isClickBackBtn) {
+            state.updateIsClickBackBtn(false)
             if (state.controlsVisible) actions.hideBottom()
             return false
         }

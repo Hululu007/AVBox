@@ -51,9 +51,6 @@ import com.github.tvbox.osc.ui.components.glassTopBarSurface
 import com.github.tvbox.osc.ui.components.rememberVodCardMenuState
 import com.github.tvbox.osc.ui.page.jumpToSearch
 import com.github.tvbox.osc.ui.page.openVodCardOrDetail
-import com.github.tvbox.osc.util.HawkConfig
-import com.github.tvbox.osc.util.HistoryHelper
-import com.github.tvbox.osc.util.KV
 import kotlinx.coroutines.delay
 
 private const val SuggestDebounceMs = 120L
@@ -78,18 +75,15 @@ fun SearchScreen(vm: SearchViewModel = rememberSearchViewModel()) {
         mutableStateOf(activity?.intent?.getStringExtra("title").orEmpty())
     }
     var selectedSource by remember { mutableStateOf<String?>(null) }
-    var history by remember { mutableStateOf(KV.get(HawkConfig.SEARCH_HISTORY, ArrayList<String>())) }
+    val history by vm.searchHistory.collectAsState()
     val searchedTitle by vm.searchedTitle.collectAsState()
     val exactMatch by vm.exactMatch.collectAsState()
     val sitesEmpty by vm.sitesEmpty.collectAsState()
-    val vodMenu = rememberVodCardMenuState()
+    val vodMenu = rememberVodCardMenuState(
+        lookupCollected = vm::isVideoCollected,
+        onCollectToggle = vm::toggleVideoCollect,
+    )
     var resultLayout by remember { mutableStateOf(SearchSettings.resultLayout()) }
-
-    LaunchedEffect(Unit) {
-        if (SearchViewModel.isCheckedSourcesStale()) {
-            SearchViewModel.loadCheckedSources()
-        }
-    }
 
     LaunchedEffect(query) {
         val t = query.trim()
@@ -98,13 +92,6 @@ fun SearchScreen(vm: SearchViewModel = rememberSearchViewModel()) {
         } else {
             if (t.length > 1) delay(SuggestDebounceMs)
             vm.fetchSuggest(t)
-        }
-    }
-
-    val bootState by com.github.tvbox.osc.ui.page.AppBootstrap.state.collectAsState()
-    LaunchedEffect(bootState) {
-        if (bootState is com.github.tvbox.osc.ui.page.AppBootstrap.Boot.Ready && SearchViewModel.isCheckedSourcesStale()) {
-            SearchViewModel.loadCheckedSources()
         }
     }
 
@@ -121,7 +108,6 @@ fun SearchScreen(vm: SearchViewModel = rememberSearchViewModel()) {
         hideIme(activity)
         selectedSource = null
         vm.search(t)
-        history = KV.get(HawkConfig.SEARCH_HISTORY, ArrayList())
     }
 
     AppTopBarScaffold(
@@ -179,14 +165,8 @@ fun SearchScreen(vm: SearchViewModel = rememberSearchViewModel()) {
                     query = query,
                     topPad = topPad,
                     onSearch = { submit(it) },
-                    onClearHistory = {
-                        HistoryHelper.clearSearchHistory()
-                        history = ArrayList()
-                    },
-                    onRemoveHistory = { word ->
-                        HistoryHelper.removeSearchHistory(word)
-                        history = KV.get(HawkConfig.SEARCH_HISTORY, ArrayList())
-                    },
+                    onClearHistory = { vm.clearSearchHistory() },
+                    onRemoveHistory = { word -> vm.removeSearchHistory(word) },
                 )
             } else {
                 SearchResultsContent(

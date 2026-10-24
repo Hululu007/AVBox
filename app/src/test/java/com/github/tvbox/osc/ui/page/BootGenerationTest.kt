@@ -1,5 +1,7 @@
 package com.github.tvbox.osc.ui.page
 
+import com.github.tvbox.osc.api.AppBootstrap
+import com.github.tvbox.osc.api.BootGeneration
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking

@@ -46,12 +46,12 @@ internal object LiveSettingsSnapshot {
     internal const val SWITCH_GROUP_INDEX = 4
     internal const val CONFIG_GROUP_INDEX = 6
 
-    fun of(source: LiveSettingsSource, channel: LiveChannelItem?): List<LiveSettingsGroupUi> {
-        val groups = LiveSettingsRules.visibleGroups(source.settingGroups(), LiveSettingsRules.hasChannelSource(channel))
+    fun of(source: LiveSettingsSource, channel: LiveChannelItem?, sourceIndex: Int): List<LiveSettingsGroupUi> {
+        val groups = LiveSettingsRules.visibleGroups(source.settingGroups(), LiveSettingsRules.hasChannelSource(channel, sourceIndex))
         return groups.mapNotNull { group ->
             val items = group.liveSettingItems ?: return@mapNotNull null
             val switchRow = group.groupIndex == SWITCH_GROUP_INDEX
-            val selectedIndex = if (switchRow) -1 else selectedIndex(source, group.groupIndex, channel)
+            val selectedIndex = if (switchRow) -1 else selectedIndex(source, group.groupIndex, sourceIndex)
             LiveSettingsGroupUi(
                 groupIndex = group.groupIndex,
                 title = group.groupName.orEmpty(),
@@ -69,9 +69,9 @@ internal object LiveSettingsSnapshot {
         }
     }
 
-    private fun selectedIndex(source: LiveSettingsSource, groupIndex: Int, channel: LiveChannelItem?): Int =
+    private fun selectedIndex(source: LiveSettingsSource, groupIndex: Int, sourceIndex: Int): Int =
         when (groupIndex) {
-            0 -> channel?.sourceIndex ?: -1
+            0 -> sourceIndex
             1 -> source.playerScale()
             2 -> source.playerType()
             3 -> source.connectTimeoutIndex()

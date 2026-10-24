@@ -280,19 +280,20 @@ class BeanSerializationRegressionTest {
 
     @Test
     fun vodInfo_gsonKeepsRoomExcludedFieldNames() {
-        val info = VodInfo()
-        info.id = "1"
-        info.name = "片"
-        info.sourceKey = "src"
-        info.playFlag = "线路甲"
-        info.playIndex = 2
-        info.seriesFlags = arrayListOf(VodInfo.VodSeriesFlag("线路甲"))
-        info.seriesMap = LinkedHashMap<String?, MutableList<VodInfo.VodSeries>>().apply {
-            put("线路甲", arrayListOf(
-                VodInfo.VodSeries("第1集", "http://a/1"),
-                VodInfo.VodSeries("第2集", "http://a/2"),
-            ))
-        }
+        val info = VodInfo(
+            id = "1",
+            name = "片",
+            sourceKey = "src",
+            playFlag = "线路甲",
+            playIndex = 2,
+            seriesFlags = arrayListOf(VodInfo.VodSeriesFlag("线路甲")),
+            seriesMap = LinkedHashMap<String?, MutableList<VodInfo.VodSeries>>().apply {
+                put("线路甲", arrayListOf(
+                    VodInfo.VodSeries("第1集", "http://a/1"),
+                    VodInfo.VodSeries("第2集", "http://a/2"),
+                ))
+            },
+        )
 
         val json = gson.toJson(info)
         assertTrue(json.contains("\"seriesFlags\""))
@@ -330,8 +331,7 @@ class BeanSerializationRegressionTest {
             })
         }
 
-        val info = VodInfo()
-        info.setVideo(video)
+        val info = VodInfo.fromVideo(video)
 
         assertEquals("1", info.id)
         assertEquals("片", info.name)
@@ -351,8 +351,7 @@ class BeanSerializationRegressionTest {
         video.id = "1"
         video.name = "片"
 
-        val info = VodInfo()
-        info.setVideo(video)
+        val info = VodInfo.fromVideo(video)
 
         assertEquals("1", info.id)
         assertNull(info.seriesFlags)

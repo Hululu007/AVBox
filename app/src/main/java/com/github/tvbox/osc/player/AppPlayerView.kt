@@ -20,6 +20,7 @@ import com.github.tvbox.osc.player.host.AudioFocusTarget
 import com.github.tvbox.osc.player.state.PlayState
 import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.util.PlayerUtils
+import kotlin.jvm.Volatile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -63,6 +64,9 @@ open class AppPlayerView @JvmOverloads constructor(
     protected var mVideoSize = intArrayOf(0, 0)
 
     protected var mUrl: String? = null
+
+    @Volatile
+    protected var mContentGen = 0
 
     protected var mProgressKey: String? = null
 
@@ -456,6 +460,7 @@ open class AppPlayerView @JvmOverloads constructor(
     open fun setUrl(url: String, headers: Map<String, String>?) {
         mUrl = url
         mHeaders = headers
+        mContentGen++
         mVideoSize[0] = 0
         mVideoSize[1] = 0
         mVideoController?.onVideoSizeCleared()
@@ -464,6 +469,9 @@ open class AppPlayerView @JvmOverloads constructor(
     /** 当前已下发给播放器的地址，用于判断播放器是否已完成内容切换。 */
     val currentUrl: String?
         get() = mUrl
+
+    val contentGen: Int
+        get() = mContentGen
 
     open fun forgetVideoSize() {
         mVideoSize[0] = 0

@@ -7,9 +7,8 @@ import org.junit.Test
 
 class PlaybackAttemptStateTest {
 
-    private fun bootRetriedState(): PlaybackAttemptState = PlaybackAttemptState().apply {
-        hasRetriedSameUrlOnBoot = true
-    }
+    private fun bootRetriedState(): PlaybackAttemptState =
+        PlaybackAttemptState(hasRetriedSameUrlOnBoot = true)
 
     @Test
     fun sameUrlRetry_defaultsToFalse() {
@@ -18,53 +17,65 @@ class PlaybackAttemptStateTest {
 
     @Test
     fun sameUrlRetry_clearedByBeginNewPlay() {
-        val st = bootRetriedState()
-        st.beginNewPlay()
-        assertFalse(st.hasRetriedSameUrlOnBoot)
+        assertFalse(bootRetriedState().beginNewPlay().hasRetriedSameUrlOnBoot)
     }
 
     @Test
     fun sameUrlRetry_clearedByUserSelfRescue() {
-        val st = bootRetriedState()
-        st.userSelfRescue()
-        assertFalse(st.hasRetriedSameUrlOnBoot)
+        assertFalse(bootRetriedState().userSelfRescue().hasRetriedSameUrlOnBoot)
     }
 
     @Test
     fun sameUrlRetry_clearedByLadderReset() {
-        val st = bootRetriedState()
-        st.resetAutoRetryLadder()
-        assertFalse(st.hasRetriedSameUrlOnBoot)
+        assertFalse(bootRetriedState().resetAutoRetryLadder().hasRetriedSameUrlOnBoot)
     }
 
     @Test
     fun sameUrlRetry_keptBySessionBoundary() {
-        val st = bootRetriedState()
-        st.beginSession()
-        assertTrue(st.hasRetriedSameUrlOnBoot)
+        assertTrue(bootRetriedState().beginSession().hasRetriedSameUrlOnBoot)
     }
 
     @Test
     fun preloadedResultFlag_clearedByBeginNewPlay() {
-        val st = PlaybackAttemptState()
-        st.usedPreloadedResult = true
-        st.beginNewPlay()
+        val st = PlaybackAttemptState(usedPreloadedResult = true).beginNewPlay()
         assertFalse(st.usedPreloadedResult)
     }
 
     @Test
     fun httpStatus_clearedByBeginNewPlay() {
-        val st = PlaybackAttemptState()
-        st.lastHttpStatus = 403
-        st.beginNewPlay()
-        assertEquals(0, st.lastHttpStatus)
+        assertEquals(0, PlaybackAttemptState(lastHttpStatus = 403).beginNewPlay().lastHttpStatus)
     }
 
     @Test
     fun httpStatus_clearedBySessionBoundary() {
-        val st = PlaybackAttemptState()
-        st.lastHttpStatus = 500
-        st.beginSession()
-        assertEquals(0, st.lastHttpStatus)
+        assertEquals(0, PlaybackAttemptState(lastHttpStatus = 500).beginSession().lastHttpStatus)
+    }
+
+    @Test
+    fun triedLines_clearedByLadderReset() {
+        val st = PlaybackAttemptState(triedLineFlags = setOf("a", "b")).resetAutoRetryLadder()
+        assertTrue(st.triedLineFlags.isEmpty())
+    }
+
+    @Test
+    fun triedLine_addedWithoutMutatingSource() {
+        val base = PlaybackAttemptState()
+        val next = base.withTriedLine("line1")
+        assertTrue(base.triedLineFlags.isEmpty())
+        assertEquals(setOf("line1"), next.triedLineFlags)
+    }
+
+    @Test
+    fun skipEndLatch_defaultsArmedAndConsumedOnce() {
+        val base = PlaybackAttemptState()
+        assertTrue(base.skipEndPending)
+        val consumed = base.consumeSkipEnd()
+        assertFalse(consumed.skipEndPending)
+        assertTrue(base.skipEndPending)
+    }
+
+    @Test
+    fun skipEndLatch_notRearmedByBeginNewPlay() {
+        assertFalse(PlaybackAttemptState(skipEndPending = false).beginNewPlay().skipEndPending)
     }
 }

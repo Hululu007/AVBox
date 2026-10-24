@@ -26,7 +26,6 @@ kotlinxCoroutines = "1.11.0"
 gson = "2.14.0"
 autosize = "1.2.1"
 xstream = "1.4.21"
-eventbus = "3.3.1"
 mmkv = "2.4.2"
 junit = "4.13.2"
 robolectric = "4.17"
@@ -76,7 +75,6 @@ kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-
 gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
 autosize = { group = "me.jessyan", name = "autosize", version.ref = "autosize" }
 xstream = { group = "com.thoughtworks.xstream", name = "xstream", version.ref = "xstream" }
-eventbus = { group = "org.greenrobot", name = "eventbus", version.ref = "eventbus" }
 mmkv = { group = "com.tencent", name = "mmkv", version.ref = "mmkv" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }

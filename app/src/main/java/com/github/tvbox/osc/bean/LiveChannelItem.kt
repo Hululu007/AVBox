@@ -54,19 +54,12 @@ class LiveChannelItem {
         }
 
     @JvmField
-    var sourceIndex: Int = 0
-
-    @JvmField
     var sourceNum: Int = 0
 
     @JvmField
     var include_back: Boolean = false
 
-    val url: String
-        get() = channelUrls?.getOrNull(sourceIndex) ?: ""
-
-    val sourceName: String
-        get() = channelSourceNames?.getOrNull(sourceIndex) ?: ""
+    fun urlAt(sourceIndex: Int): String = channelUrls?.getOrNull(sourceIndex) ?: ""
 
     val headers: MutableMap<String, String>
         get() {
@@ -86,28 +79,12 @@ class LiveChannelItem {
 
     fun getinclude_back(): Boolean = include_back
 
-    fun setSourceIndex(sourceIndex: Int) {
-        this.sourceIndex = sourceIndex
-    }
-
-    fun getSourceIndex(): Int = sourceIndex
-
     fun getSourceNum(): Int = sourceNum
 
     fun getChannelParse(): Int = channelParse ?: 0
 
     fun setChannelParse(channelParse: Int?) {
         this.channelParse = channelParse
-    }
-
-    fun preSource() {
-        sourceIndex--
-        if (sourceIndex < 0) sourceIndex = sourceNum - 1
-    }
-
-    fun nextSource() {
-        sourceIndex++
-        if (sourceIndex == sourceNum) sourceIndex = 0
     }
 
     fun hasCatchup(): Boolean {
@@ -125,10 +102,10 @@ class LiveChannelItem {
         if (o == null || javaClass != o.javaClass) return false
         val that = o as LiveChannelItem
         return Objects.equals(channelName, that.channelName) &&
-            Objects.equals(url, that.url)
+            Objects.equals(channelUrls, that.channelUrls)
     }
 
     override fun hashCode(): Int {
-        return Objects.hash(channelName, url)
+        return Objects.hash(channelName, channelUrls)
     }
 }

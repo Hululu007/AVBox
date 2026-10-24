@@ -65,8 +65,8 @@ private class NoopPlacementActions : PlayerActions {
 }
 
 private fun visibleChromeState(): PlayerUiState = PlayerUiState().apply {
-    topLeftVisible = true
-    topRightVisible = true
+    updateTopLeftVisible(true)
+    updateTopRightVisible(true)
 }
 
 @RunWith(AndroidJUnit4::class)

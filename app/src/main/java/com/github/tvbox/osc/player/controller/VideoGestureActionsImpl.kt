@@ -56,6 +56,8 @@ internal class VideoGestureActionsImpl(private val host: VideoPlayerController) 
         host.context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
     }
 
+    private val systemEffects = SystemEffectDispatcher({ host.playerActivity() }, { audioManager })
+
     override fun inPlayback(): Boolean = host.isInPlaybackState()
 
     private fun bottomGestureBandPx(activity: Activity?): Float {
@@ -85,7 +87,7 @@ internal class VideoGestureActionsImpl(private val host: VideoPlayerController) 
             enableInNormal = host.gestureEnableInNormal(),
             fullScreen = host.state.playerState == AppPlayerView.PLAYER_FULL_SCREEN,
             locked = host.isLocked,
-            previewMode = host.previewMode,
+            previewMode = host.state.previewMode,
             paused = paused,
             gestureEnabled = host.gestureEnabled(),
             verticalSlidingDisabled = GestureHelper.isControlDisabled(),
@@ -113,16 +115,16 @@ internal class VideoGestureActionsImpl(private val host: VideoPlayerController) 
 
     override fun onLongPressStart() {
         if (host.isLocked) return
-        host.speedOld = host.currentSpeed()
+        host.state.updateSpeedOld(host.currentSpeed())
         val boost = KV.get(HawkConfig.LONG_PRESS_SPEED, HawkConfig.LONG_PRESS_SPEED_DEFAULT).toFloat()
         host.setSpeedFromGesture(boost)
-        host.state.speedBoostValue = boost
-        host.state.speedBoostVisible = true
+        host.state.updateSpeedBoostValue(boost)
+        host.state.updateSpeedBoostVisible(true)
     }
 
     override fun onLongPressEnd() {
-        host.setSpeedFromGesture(host.speedOld)
-        host.state.speedBoostVisible = false
+        host.setSpeedFromGesture(host.state.speedOld)
+        host.state.updateSpeedBoostVisible(false)
     }
 
     override fun onSeekPreview(totalDeltaX: Float) {
@@ -159,9 +161,7 @@ internal class VideoGestureActionsImpl(private val host: VideoPlayerController) 
 
     override fun onBrightnessSlide(totalDeltaY: Float) {
         if (host.isLocked) return
-        val activity = host.playerActivity() ?: return
-        val window = activity.window
-        val attrs = window.attributes
+        if (host.playerActivity() == null) return
         val height = host.height
         if (height <= 0) return
         val base = brightnessBase ?: return
@@ -170,8 +170,7 @@ internal class VideoGestureActionsImpl(private val host: VideoPlayerController) 
         if (target < 0f) target = 0f
         if (target > 1f) target = 1f
         if (target != lastAppliedBrightness) {
-            attrs.screenBrightness = target
-            window.attributes = attrs
+            systemEffects.dispatch(SystemEffect.Brightness(target))
             lastAppliedBrightness = target
         }
         if (VERBOSE_GESTURE_LOG) {
@@ -186,7 +185,7 @@ internal class VideoGestureActionsImpl(private val host: VideoPlayerController) 
 
     override fun onVolumeSlide(totalDeltaY: Float) {
         if (host.isLocked) return
-        val am = audioManager ?: return
+        if (audioManager == null) return
         val height = host.height
         if (height <= 0) return
         val streamMax = cachedStreamMax
@@ -198,7 +197,7 @@ internal class VideoGestureActionsImpl(private val host: VideoPlayerController) 
         if (index < 0f) index = 0f
         val applied = index.toInt()
         if (applied != lastAppliedVolume) {
-            am.setStreamVolume(AudioManager.STREAM_MUSIC, applied, 0)
+            systemEffects.dispatch(SystemEffect.Volume(applied))
             lastAppliedVolume = applied
         }
         if (VERBOSE_GESTURE_LOG) {

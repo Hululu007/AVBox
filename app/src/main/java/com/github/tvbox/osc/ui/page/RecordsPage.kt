@@ -1,5 +1,6 @@
 package com.github.tvbox.osc.ui.page
 
+import com.github.tvbox.osc.api.AppBootstrap
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Spring
@@ -74,10 +75,10 @@ fun RecordsPage(
     val collectItems by collectVm.items.collectAsStateWithLifecycle()
 
     var mode by rememberSaveable { mutableStateOf(RecordsMode.History) }
-    var historyEdit by remember { mutableStateOf(false) }
-    var historySelected by remember { mutableStateOf(emptySet<String>()) }
-    var collectEdit by remember { mutableStateOf(false) }
-    var collectSelected by remember { mutableStateOf(emptySet<Int>()) }
+    val historyEdit by historyVm.editMode.collectAsStateWithLifecycle()
+    val historySelected by historyVm.selected.collectAsStateWithLifecycle()
+    val collectEdit by collectVm.editMode.collectAsStateWithLifecycle()
+    val collectSelected by collectVm.selected.collectAsStateWithLifecycle()
     var dialog by remember { mutableStateOf<RecordsDialog?>(null) }
 
     val historyListState = rememberLazyGridState()
@@ -93,10 +94,8 @@ fun RecordsPage(
     val selectedCount = if (isHistory) historySelected.size else collectSelected.size
 
     fun exitEdit() {
-        historyEdit = false
-        historySelected = emptySet()
-        collectEdit = false
-        collectSelected = emptySet()
+        historyVm.exitEdit()
+        collectVm.exitEdit()
     }
 
     BackHandler(enabled = editing) { exitEdit() }
@@ -107,17 +106,11 @@ fun RecordsPage(
     }
 
     LaunchedEffect(historyItems) {
-        val keys = historyItems.map { HistoryViewModel.key(it) }.toSet()
-        val pruned = historySelected.intersect(keys)
-        if (pruned.size != historySelected.size) historySelected = pruned
-        if (historyItems.isEmpty()) historyEdit = false
+        historyVm.pruneSelection(historyItems.map { HistoryViewModel.key(it) }.toSet())
     }
 
     LaunchedEffect(collectItems) {
-        val keys = collectItems.map { it.id }.toSet()
-        val pruned = collectSelected.intersect(keys)
-        if (pruned.size != collectSelected.size) collectSelected = pruned
-        if (collectItems.isEmpty()) collectEdit = false
+        collectVm.pruneSelection(collectItems.map { it.id }.toSet())
     }
 
     var historyScrollPending by remember { mutableStateOf(false) }
@@ -185,7 +178,7 @@ fun RecordsPage(
                                 iconRes = R.drawable.ic_edit,
                                 contentDescription = stringResource(R.string.common_edit),
                                 onClick = {
-                                    if (isHistory) historyEdit = true else collectEdit = true
+                                    if (isHistory) historyVm.enterEdit() else collectVm.enterEdit()
                                 },
                             )
                         }
@@ -254,13 +247,7 @@ fun RecordsPage(
                         listState = historyListState,
                         editMode = historyEdit,
                         selected = historySelected,
-                        onToggleSelected = { key ->
-                            historySelected = if (key in historySelected) {
-                                historySelected - key
-                            } else {
-                                historySelected + key
-                            }
-                        },
+                        onToggleSelected = { historyVm.toggleSelected(it) },
                         onRequestDelete = { dialog = RecordsDialog.DeleteHistoryItem(it) },
                         navStart = navStart,
                         navBottom = navBottom,
@@ -271,13 +258,7 @@ fun RecordsPage(
                         listState = collectListState,
                         editMode = collectEdit,
                         selected = collectSelected,
-                        onToggleSelected = { id ->
-                            collectSelected = if (id in collectSelected) {
-                                collectSelected - id
-                            } else {
-                                collectSelected + id
-                            }
-                        },
+                        onToggleSelected = { collectVm.toggleSelected(it) },
                         onRequestDelete = { dialog = RecordsDialog.DeleteCollectItem(it) },
                         navStart = navStart,
                         navBottom = navBottom,

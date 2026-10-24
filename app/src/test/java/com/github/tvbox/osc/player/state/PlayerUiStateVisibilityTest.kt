@@ -11,9 +11,9 @@ class PlayerUiStateVisibilityTest {
         controlsVisible: Boolean = true,
         locked: Boolean = false,
     ) = PlayerUiState().apply {
-        this.playState = playState
-        this.controlsVisible = controlsVisible
-        this.locked = locked
+        this.updatePlayState(playState)
+        this.updateControlsVisible(controlsVisible)
+        this.updateLocked(locked)
     }
 
     @Test
@@ -50,7 +50,7 @@ class PlayerUiStateVisibilityTest {
     fun centerControls_visibleDuringPlaybackAndInPreviewMode() {
         val playing = state(playState = PlayState.PLAYING)
         assertTrue(playing.centerControlsVisible)
-        playing.previewMode = true
+        playing.updatePreviewMode(true)
         assertTrue(playing.centerControlsVisible)
 
         assertTrue(state(playState = PlayState.PAUSED).centerControlsVisible)
@@ -73,14 +73,14 @@ class PlayerUiStateVisibilityTest {
     @Test
     fun pauseOverlay_hiddenWhileLifecyclePaused() {
         val s = state(playState = PlayState.PAUSED, controlsVisible = false)
-        s.lifecyclePaused = true
+        s.updateLifecyclePaused(true)
         assertFalse(s.pauseOverlayVisible)
     }
 
     @Test
     fun pauseOverlay_hiddenWhenPausedByLeavingFullscreen() {
         val s = state(playState = PlayState.PAUSED, controlsVisible = false)
-        s.exitPaused = true
+        s.updateExitPaused(true)
         assertFalse(s.pauseOverlayVisible)
     }
 }

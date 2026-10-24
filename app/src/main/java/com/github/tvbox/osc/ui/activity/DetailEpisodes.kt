@@ -330,11 +330,11 @@ private fun PillAction(iconRes: Int, text: String, onClick: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-internal fun EpisodeSheet(vm: DetailViewModel, revision: Int, slideFromEnd: Boolean, showQuality: Boolean) {
-    @Suppress("UNUSED_EXPRESSION") revision
+internal fun EpisodeSheet(vm: DetailViewModel, slideFromEnd: Boolean, showQuality: Boolean) {
+    val vodUi by vm.vodUi.collectAsState()
     val show by vm.episodeSheet.collectAsState()
     if (!show) return
-    val info = vm.vodInfo ?: return
+    val info = vodUi?.info ?: return
     val currentFlag = info.playFlag
     val episodes = info.seriesMap?.get(currentFlag).orEmpty()
     val playIndex = info.playIndex

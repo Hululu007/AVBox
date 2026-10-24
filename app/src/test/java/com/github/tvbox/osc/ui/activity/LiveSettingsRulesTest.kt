@@ -16,13 +16,12 @@ class LiveSettingsRulesTest {
         return group
     }
 
-    private fun channel(urls: List<String>?, sourceIndex: Int): LiveChannelItem {
+    private fun channel(urls: List<String>?): LiveChannelItem {
         val item = LiveChannelItem()
         item.channelName = "CCTV1"
         if (urls != null) {
             item.channelUrls = ArrayList(urls)
         }
-        item.sourceIndex = sourceIndex
         return item
     }
 
@@ -46,12 +45,12 @@ class LiveSettingsRulesTest {
 
     @Test
     fun hasChannelSource_requiresUrlsAndIndexInRange() {
-        assertFalse(LiveSettingsRules.hasChannelSource(null))
-        assertFalse(LiveSettingsRules.hasChannelSource(channel(null, 0)))
-        assertFalse(LiveSettingsRules.hasChannelSource(channel(emptyList(), 0)))
-        assertFalse(LiveSettingsRules.hasChannelSource(channel(listOf("http://a/1"), 1)))
-        assertFalse(LiveSettingsRules.hasChannelSource(channel(listOf("http://a/1"), -1)))
-        assertTrue(LiveSettingsRules.hasChannelSource(channel(listOf("http://a/1"), 0)))
+        assertFalse(LiveSettingsRules.hasChannelSource(null, 0))
+        assertFalse(LiveSettingsRules.hasChannelSource(channel(null), 0))
+        assertFalse(LiveSettingsRules.hasChannelSource(channel(emptyList()), 0))
+        assertFalse(LiveSettingsRules.hasChannelSource(channel(listOf("http://a/1")), 1))
+        assertFalse(LiveSettingsRules.hasChannelSource(channel(listOf("http://a/1")), -1))
+        assertTrue(LiveSettingsRules.hasChannelSource(channel(listOf("http://a/1")), 0))
     }
 
     @Test

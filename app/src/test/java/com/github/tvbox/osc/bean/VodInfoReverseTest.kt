@@ -15,11 +15,12 @@ class VodInfoReverseTest {
 
     @Test
     fun reverse_reversesEveryLineList() {
-        val info = VodInfo()
-        info.seriesMap = linkedMapOf(
-            "线路1" to mutableListOf(
-                VodInfo.VodSeries("1", "http://a/1"),
-                VodInfo.VodSeries("2", "http://a/2"),
+        val info = VodInfo(
+            seriesMap = linkedMapOf(
+                "线路1" to mutableListOf(
+                    VodInfo.VodSeries("1", "http://a/1"),
+                    VodInfo.VodSeries("2", "http://a/2"),
+                ),
             ),
         )
 

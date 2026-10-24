@@ -105,7 +105,7 @@ fun PlayerOverlay(
         state.selectDialog?.let { dialogState ->
             PlayerSelectDialog(
                 dialogState = dialogState,
-                onDismiss = { state.selectDialog = null },
+                onDismiss = state::dismissSelectDialog,
             )
         }
 
@@ -114,28 +114,28 @@ fun PlayerOverlay(
                 sheet = sheet,
                 decodeChoice = decodeChoice,
                 tab = state.paramsTab,
-                onTabSelected = { state.paramsTab = it },
+                onTabSelected = state::selectParamsTab,
                 osdVisible = state.infoOsdVisible,
                 onToggleOsd = actions::onInfoOsdClicked,
                 slideFromEnd = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE,
-                onDismiss = { state.paramsSheet = null },
+                onDismiss = state::dismissParamsSheet,
             )
         }
 
         state.danmuSettingSheet?.let { sheet ->
-            DanmuSettingSheet(sheet) { state.danmuSettingSheet = null }
+            DanmuSettingSheet(sheet) { state.dismissDanmuSettingSheet() }
         }
         state.danmuSearchSheet?.let { sheet ->
-            DanmuSearchSheet(sheet) { state.danmuSearchSheet = null }
+            DanmuSearchSheet(sheet) { state.dismissDanmuSearchSheet() }
         }
         state.subtitleSheet?.let { sheet ->
-            SubtitleSheet(sheet) { state.subtitleSheet = null }
+            SubtitleSheet(sheet) { state.dismissSubtitleSheet() }
         }
         state.subtitleSearchSheet?.let { sheet ->
-            SubtitleSearchSheet(sheet) { state.subtitleSearchSheet = null }
+            SubtitleSearchSheet(sheet) { state.dismissSubtitleSearchSheet() }
         }
         state.castSheet?.let { sheet ->
-            CastSheet(sheet) { state.castSheet = null }
+            CastSheet(sheet) { state.dismissCastSheet() }
         }
     }
 

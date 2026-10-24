@@ -83,9 +83,9 @@ internal class RoomHistoryRepository(
         try {
             if (record.dataJson != null && !TextUtils.isEmpty(record.dataJson)) {
                 val parsed = vodInfoGson().fromJson<VodInfo>(record.dataJson, vodInfoType())
-                parsed.sourceKey = record.sourceKey
-                parsed.updateTime = record.updateTime
-                if (parsed.name != null) return parsed
+                if (parsed.name != null) {
+                    return parsed.copy(sourceKey = record.sourceKey, updateTime = record.updateTime)
+                }
             }
         } catch (e: Exception) {
             LOG.e("RoomHistoryRepository", e)

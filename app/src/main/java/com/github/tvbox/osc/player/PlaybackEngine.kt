@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.webkit.WebView
+import com.github.tvbox.osc.bean.VodInfo
 import androidx.appcompat.view.ContextThemeWrapper
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.player.host.EngineSurfaceRenderViewFactory
@@ -81,7 +82,6 @@ class PlaybackEngine(context: Context) : PlaybackHostApi, VideoCodecObserver {
     }
 
     private var pageRef: WeakReference<PlaybackPage>? = null
-    private var session: PlaybackSession? = null
     private var released: Boolean = false
 
     private var liveMode: Boolean = false
@@ -98,7 +98,7 @@ class PlaybackEngine(context: Context) : PlaybackHostApi, VideoCodecObserver {
     init {
         LOG.i(TAG + " engine create")
         videoView = createPlayerView()
-        controller.setViewBridge(headlessView)
+        controller.attachViewBridge(headlessView)
         controller.initFetch()
         controller.initPreload()
     }
@@ -166,6 +166,14 @@ class PlaybackEngine(context: Context) : PlaybackHostApi, VideoCodecObserver {
         if (controller.handlePlayStateForMusicSession(playState)) {
             return
         }
+        val page = attachedPage()
+        if (page != null && !page.isAudioOnlyPage()) {
+            if (playState == PlayState.COMPLETED) {
+                controller.onPlaybackCompleted()
+                return
+            }
+            if (playState == PlayState.ERROR) controller.onKernelPlayError()
+        }
         activeView().startDanmuIfReady()
     }
 
@@ -181,7 +189,7 @@ class PlaybackEngine(context: Context) : PlaybackHostApi, VideoCodecObserver {
         setLiveFlag(true)
         cancelIdleRelease()
         LOG.i(TAG + " re-enter live state (after vod takeover)")
-        session = null
+        controller.clearSession()
         controller.clearStartedContent()
         videoView.setProgressSink(null)
         videoView.setExoDiskCacheEnabled(false)
@@ -192,7 +200,7 @@ class PlaybackEngine(context: Context) : PlaybackHostApi, VideoCodecObserver {
     fun enterLive() {
         if (released) return
         progressSampler.flushNow()
-        session = null
+        controller.clearSession()
         controller.clearStartedContent()
         LOG.i(TAG + " enter live mode")
         val page = attachedPage()
@@ -263,14 +271,16 @@ class PlaybackEngine(context: Context) : PlaybackHostApi, VideoCodecObserver {
         if (liveMode) exitLiveState()
         pageRef = WeakReference(page)
         if (!videoView.isPlaying) videoView.coverVideoFrame()
-        controller.setViewBridge(page.viewBridge())
+        val bridge = page.viewBridge()
+        controller.attachViewBridge(bridge)
+        controller.playerCfg()?.let { bridge.applyPlayerConfig(it) }
         if (!page.isAudioOnlyPage()) {
             videoView.attachContainerTo(page.renderSlot())
             videoView.alignRenderViewToConfig(configuredRenderType())
         }
         cancelIdleRelease()
         consumeServiceLostKeep(false)
-        LOG.i(TAG + " attach page=" + page.hashCode() + " key=" + (session?.playbackKey() ?: "-"))
+        LOG.i(TAG + " attach page=" + page.hashCode() + " key=" + (controller.currentSession()?.playbackKey() ?: "-"))
     }
 
     fun detach(page: PlaybackPage) {
@@ -297,7 +307,7 @@ class PlaybackEngine(context: Context) : PlaybackHostApi, VideoCodecObserver {
         videoView.releaseController()
         videoView.setDanmuView(null)
         videoView.detachContainerFromHost()
-        controller.setViewBridge(headlessView)
+        controller.attachViewBridge(headlessView)
         scheduleIdleRelease()
         LOG.i(TAG + (if (keepPlayback) " detach for handover page=" else " detach page=") + page.hashCode())
     }
@@ -348,7 +358,7 @@ class PlaybackEngine(context: Context) : PlaybackHostApi, VideoCodecObserver {
             main.post { discardStartedContentOf(owners) }
             return
         }
-        val current = session
+        val current = controller.currentSession()
         if (current == null || owners.isEmpty()) return
         val owner = current.sourceKey() + "|" + current.vod().id
         if (!owners.contains(owner)) return
@@ -376,7 +386,7 @@ class PlaybackEngine(context: Context) : PlaybackHostApi, VideoCodecObserver {
         val page = attachedPage()
         pageRef = null
         page?.onServiceStopped()
-        controller.setViewBridge(headlessView)
+        controller.attachViewBridge(headlessView)
         controller.onHostDestroy()
         PlaybackService.forceStopSession(appContext)
         videoView.releaseController()
@@ -431,7 +441,6 @@ class PlaybackEngine(context: Context) : PlaybackHostApi, VideoCodecObserver {
     }
 
     override fun setData(session: PlaybackSession) {
-        this.session = session
         controller.startSession(session)
     }
 
@@ -446,9 +455,6 @@ class PlaybackEngine(context: Context) : PlaybackHostApi, VideoCodecObserver {
     }
 
     override fun selectQuality(position: Int): Boolean = false
-
-    override fun setAutoSwitchLineEnabled(enabled: Boolean) {
-    }
 
     override fun setPreviewMode(previewMode: Boolean) {
     }
@@ -550,8 +556,7 @@ class PlaybackEngine(context: Context) : PlaybackHostApi, VideoCodecObserver {
 
         override fun currentUrl(): String? = if (released) null else videoView.currentUrl
 
-        override fun onContentUrlSet(url: String?) {
-            // 无头桥接没有进度条；详情页路径由 PlayContainerViewBridge 直接转给页面控制器。
+        override fun onSessionVodUpdated(vod: VodInfo) {
         }
 
         override fun releasePlayer() {
@@ -598,19 +603,6 @@ class PlaybackEngine(context: Context) : PlaybackHostApi, VideoCodecObserver {
             if (!released) videoView.ensureRenderViewMatchesConfig()
         }
 
-        override fun setAudioOnlyMode(audioOnly: Boolean) {
-            if (released) return
-            if (!audioOnly) {
-                videoView.alignRenderViewToConfig(configuredRenderType())
-            }
-            (videoView.mediaPlayer as? ExoPlayer)?.setAudioOnlyMode(audioOnly)
-        }
-
-        override fun isAudioOnlyMode(): Boolean {
-            if (released) return false
-            return (videoView.mediaPlayer as? ExoPlayer)?.isAudioOnlyMode() == true
-        }
-
         override fun playExternalPlayer(
             playerType: Int,
             url: String,
@@ -631,28 +623,14 @@ class PlaybackEngine(context: Context) : PlaybackHostApi, VideoCodecObserver {
 
         override fun startVideoPlayback(url: String, headers: HashMap<String, String>?, forceExoPlayer: Boolean) {
             if (released) return
-            if (videoView.isKernelErrored()) {
-                videoView.requireKernelRebuild()
-                LOG.i(TAG + " rebuild errored kernel on start (headless)")
-            }
-            val kernelPresent = videoView.mediaPlayer != null
-            val rebuildKernel = videoView.consumeKernelRebuildRequired()
-            val reusePlayer =
-                KernelReusePolicy.decide(kernelPresent, rebuildKernel, forceExoPlayer, true) == KernelDecision.REUSE
-            val sameContent = reusePlayer && controller.isSameStartedContent()
-            if (!reusePlayer && kernelPresent) releasePlayer()
-            if (sameContent) videoView.saveCurrentProgress()
-            videoView.setProgressKey(controller.progressKey())
-            videoView.setTrackMemoryKey("")
-            controller.markContentStarted()
-            videoView.setUrl(url, headers)
-            if (reusePlayer) {
-                val base = controller.playTimeoutBasePosition()
-                videoView.skipPositionWhenPlay((if (sameContent) videoView.resumePositionForReplay(base) else base).toInt())
-                videoView.replay(false)
-            } else {
-                videoView.start()
-            }
+            controller.startVideoPlayback(
+                videoView,
+                url,
+                headers,
+                forceExoPlayer,
+                releaseKernel = { releasePlayer() },
+                trackMemoryKey = "",
+            )
         }
 
         override fun switchPlayerKernel(): Boolean {

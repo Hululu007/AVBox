@@ -158,7 +158,7 @@ class PlayerControlsAnimationWiringTest {
     fun hiddenControlsKeepTheBottomBandClickable() {
         val state = PlayerUiState()
         val recorder = Recorder()
-        state.controlsVisible = false
+        state.updateControlsVisible(false)
         composeBottomOverlay(state, NoopActions(), recorder)
         settle()
         tapBottomBand()
@@ -172,7 +172,7 @@ class PlayerControlsAnimationWiringTest {
     fun shownControlsDoNotLeakTheBottomBandToTheGestureLayer() {
         val state = PlayerUiState()
         val recorder = Recorder()
-        state.controlsVisible = true
+        state.updateControlsVisible(true)
         composeBottomOverlay(state, NoopActions(), recorder)
         settle()
         recorder.calls.clear()
@@ -186,11 +186,11 @@ class PlayerControlsAnimationWiringTest {
     @Test
     fun collapsingControlsMovesTheBarOffScreen() {
         val state = PlayerUiState()
-        state.controlsVisible = true
+        state.updateControlsVisible(true)
         composeBottomOverlay(state, NoopActions(), Recorder())
         settle()
         rule.onNodeWithTag(TRANSPORT_PLAY_PAUSE_TAG).assertExists()
-        state.controlsVisible = false
+        state.updateControlsVisible(false)
         settle()
         val screenHeight = rule.onNodeWithTag("overlay").fetchSemanticsNode().size.height
         val bounds = rule.onNodeWithTag(TRANSPORT_PLAY_PAUSE_TAG).fetchSemanticsNode().boundsInRoot
@@ -204,7 +204,7 @@ class PlayerControlsAnimationWiringTest {
     fun transportButtonStillFiresItsAction() {
         val state = PlayerUiState()
         val actions = NoopActions()
-        state.controlsVisible = true
+        state.updateControlsVisible(true)
         composeBottomOverlay(state, actions, Recorder())
         settle()
         rule.onNodeWithTag(TRANSPORT_PLAY_PAUSE_TAG).performClick()
@@ -215,11 +215,11 @@ class PlayerControlsAnimationWiringTest {
     @Test
     fun topBarContentSitsAtTheTopEdgeNotBelowTheScrim() {
         val state = PlayerUiState()
-        state.topLeftVisible = true
-        state.topRightVisible = true
-        state.title = "兰香如故 1"
-        state.videoSize = "1920 X 1080"
-        state.videoQuality = "1080P"
+        state.updateTopLeftVisible(true)
+        state.updateTopRightVisible(true)
+        state.updateTitle("兰香如故 1")
+        state.updateVideoSize("1920 X 1080")
+        state.updateVideoQuality("1080P")
         rule.setContent {
             Box(
                 Modifier
@@ -242,8 +242,8 @@ class PlayerControlsAnimationWiringTest {
     @Test
     fun topBarStaysAnchoredToTheTopEdge() {
         val state = PlayerUiState()
-        state.topLeftVisible = true
-        state.topRightVisible = true
+        state.updateTopLeftVisible(true)
+        state.updateTopRightVisible(true)
         rule.setContent {
             Box(
                 Modifier

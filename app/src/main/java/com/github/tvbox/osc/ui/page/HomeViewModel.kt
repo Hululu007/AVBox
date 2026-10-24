@@ -3,6 +3,7 @@ package com.github.tvbox.osc.ui.page
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.tvbox.osc.R
+import com.github.tvbox.osc.api.AppBootstrap
 import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.api.SortAdjuster
 import com.github.tvbox.osc.base.App
@@ -30,13 +31,19 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
-import org.json.JSONObject
+import com.github.tvbox.osc.data.AppGraph
+import com.github.tvbox.osc.ui.components.toVodInfo
+import kotlinx.coroutines.withContext
 
 class HomeViewModel : ViewModel() {
     private fun str(resId: Int, vararg args: Any): String {
@@ -72,21 +79,32 @@ class HomeViewModel : ViewModel() {
         const val HERO_VIDEO_COUNT = 5
     }
 
-    val currentSource = MutableStateFlow<SourceBean?>(null)
-    val sources = MutableStateFlow<List<SourceBean>>(emptyList())
-    val subscribeItems = MutableStateFlow<List<SubscribeSource>>(emptyList())
-    val activeSubscribeIndex = MutableStateFlow(-1)
-    val allSorts = MutableStateFlow<List<MovieSort.SortData>>(emptyList())
-    val sorts = MutableStateFlow<List<MovieSort.SortData>>(emptyList())
-    val rec = MutableStateFlow(Rec(PartitionState.Loading, emptyList()))
-    val partitions = MutableStateFlow<List<Partition>>(emptyList())
+    private val _currentSource = MutableStateFlow<SourceBean?>(null)
+    val currentSource = _currentSource.asStateFlow()
+    private val _sources = MutableStateFlow<List<SourceBean>>(emptyList())
+    val sources = _sources.asStateFlow()
+    private val _subscribeItems = MutableStateFlow<List<SubscribeSource>>(emptyList())
+    val subscribeItems = _subscribeItems.asStateFlow()
+    private val _activeSubscribeIndex = MutableStateFlow(-1)
+    val activeSubscribeIndex = _activeSubscribeIndex.asStateFlow()
+    private val _allSorts = MutableStateFlow<List<MovieSort.SortData>>(emptyList())
+    val allSorts = _allSorts.asStateFlow()
+    private val _sorts = MutableStateFlow<List<MovieSort.SortData>>(emptyList())
+    val sorts = _sorts.asStateFlow()
+    private val _rec = MutableStateFlow(Rec(PartitionState.Loading, emptyList()))
+    val rec = _rec.asStateFlow()
+    private val _partitions = MutableStateFlow<List<Partition>>(emptyList())
+    val partitions = _partitions.asStateFlow()
 
-    val pageLoading = MutableStateFlow(true)
+    private val _pageLoading = MutableStateFlow(true)
+    val pageLoading = _pageLoading.asStateFlow()
     private val sortsLoaded = MutableStateFlow(false)
     private val bootReady = MutableStateFlow(false)
-    val pageErrorEvents = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    private val _pageErrorEvents = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val pageErrorEvents: SharedFlow<String> = _pageErrorEvents.asSharedFlow()
 
-    val sortLoadFailed = MutableStateFlow(false)
+    private val _sortLoadFailed = MutableStateFlow(false)
+    val sortLoadFailed = _sortLoadFailed.asStateFlow()
     private var sortRetried = false
     private val listRetried = HashSet<String>()
 
@@ -101,16 +119,45 @@ class HomeViewModel : ViewModel() {
     private var configReloading = false
     private var watchdogJob: Job? = null
 
-    var activeSortId: String? = null
-        private set
+    private val _activeSortId = MutableStateFlow<String?>(null)
+    val activeSortId: StateFlow<String?> = _activeSortId.asStateFlow()
 
     var defaultLiveLaunched = false
-    var lastBackTime = 0L
+        private set
 
-    val actionMessages = MutableSharedFlow<String>(
+    var lastBackTime = 0L
+        private set
+
+    fun markDefaultLiveLaunched() {
+        defaultLiveLaunched = true
+    }
+
+    fun onBackPressedOnce(): Boolean {
+        val now = System.currentTimeMillis()
+        if (now - lastBackTime < 2000) return true
+        lastBackTime = now
+        return false
+    }
+
+    suspend fun isVideoCollected(video: Movie.Video): Boolean = withContext(Dispatchers.IO) {
+        AppGraph.collectRepository.isVodCollect(video.sourceKey, video.id)
+    }
+
+    fun toggleVideoCollect(video: Movie.Video, toCollect: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (toCollect) {
+                AppGraph.collectRepository.insertVodCollect(video.sourceKey, toVodInfo(video))
+            } else {
+                AppGraph.collectRepository.deleteVodCollect(video.sourceKey, toVodInfo(video))
+            }
+        }
+    }
+
+    private val _actionMessages = MutableSharedFlow<String>(
         extraBufferCapacity = 8,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
+    val actionMessages: SharedFlow<String> = _actionMessages.asSharedFlow()
 
     init {
         scope.launch { sortViewModel.sortResult.flow.collect { onSortResult(it) } }
@@ -118,7 +165,7 @@ class HomeViewModel : ViewModel() {
         scope.launch {
             actionViewModel.actionResult.flow.collect { json ->
                 val msg = json?.optString("msg").orEmpty()
-                if (msg.isNotEmpty()) actionMessages.tryEmit(msg)
+                if (msg.isNotEmpty()) _actionMessages.tryEmit(msg)
             }
         }
         scope.launch {
@@ -127,8 +174,8 @@ class HomeViewModel : ViewModel() {
                 reload()
             }
         }
-        sources.value = ApiConfig.get().getSwitchSourceBeanList()
-        currentSource.value = ApiConfig.get().getHomeSourceBean()
+        _sources.value = ApiConfig.get().getSwitchSourceBeanList()
+        _currentSource.value = ApiConfig.get().getHomeSourceBean()
         refreshSubscribes()
         scope.launch {
             AppBootstrap.state.collect {
@@ -143,8 +190,8 @@ class HomeViewModel : ViewModel() {
             combine(bootReady, rec, sortsLoaded) { ready, r, loaded ->
                 ready && loaded && r.state != PartitionState.Loading
             }.collect { ready ->
-                if (ready && pageLoading.value) {
-                    pageLoading.value = false
+                if (ready && _pageLoading.value) {
+                    _pageLoading.value = false
                 }
             }
         }
@@ -165,7 +212,7 @@ class HomeViewModel : ViewModel() {
     fun switchSource(bean: SourceBean) {
         LOG.i("echo--sort-switch: key=${bean.key}")
         ApiConfig.get().setSourceBean(bean)
-        currentSource.value = bean
+        _currentSource.value = bean
         loadHome()
     }
 
@@ -178,26 +225,26 @@ class HomeViewModel : ViewModel() {
     fun refreshSubscribes() {
         val items = vodSubscribes()
         val active = KV.get(HawkConfig.API_URL, "")
-        subscribeItems.value = items
-        activeSubscribeIndex.value = items.indexOfFirst {
+        _subscribeItems.value = items
+        _activeSubscribeIndex.value = items.indexOfFirst {
             it.url == active || HistoryHelper.isApiLineSourceOf(it.url, active)
         }
     }
 
     fun loadHome() {
-        sources.value = ApiConfig.get().getSwitchSourceBeanList()
+        _sources.value = ApiConfig.get().getSwitchSourceBeanList()
         refreshSubscribes()
         val home = ApiConfig.get().getHomeSourceBean()
         loadingSourceKey = if (home.key.isNullOrEmpty()) null else home.key
-        LOG.i("echo--sort-loadHome: key=${loadingSourceKey} name=${home.name} srcCount=${sources.value.size}")
-        currentSource.value = home
-        pageLoading.value = true
+        LOG.i("echo--sort-loadHome: key=${loadingSourceKey} name=${home.name} srcCount=${_sources.value.size}")
+        _currentSource.value = home
+        _pageLoading.value = true
         sortsLoaded.value = false
-        sortLoadFailed.value = false
+        _sortLoadFailed.value = false
         sortRetried = false
         listRetried.clear()
-        rec.value = Rec(PartitionState.Loading, emptyList())
-        partitions.value = emptyList()
+        _rec.value = Rec(PartitionState.Loading, emptyList())
+        _partitions.value = emptyList()
         val staleLoaders = ArrayList(loaders.values)
         loaders.clear()
         staleLoaders.forEach { it.release() }
@@ -207,28 +254,28 @@ class HomeViewModel : ViewModel() {
     }
 
     private fun onHomeLoadTimeout() {
-        val recLoading = rec.value.state == PartitionState.Loading
-        val partitionLoading = partitions.value.any { it.state == PartitionState.Loading }
+        val recLoading = _rec.value.state == PartitionState.Loading
+        val partitionLoading = _partitions.value.any { it.state == PartitionState.Loading }
         if (!recLoading && !partitionLoading) return
         if (recLoading) {
-            rec.value = Rec(PartitionState.Error, emptyList())
+            _rec.value = Rec(PartitionState.Error, emptyList())
         }
         if (partitionLoading) {
-            partitions.value = partitions.value.map { p ->
+            _partitions.value = _partitions.value.map { p ->
                 if (p.state == PartitionState.Loading) p.copy(state = PartitionState.Error) else p
             }
         }
-        pageErrorEvents.tryEmit(
+        _pageErrorEvents.tryEmit(
             if (recLoading) str(R.string.home_load_failed)
             else str(R.string.home_load_partial_timeout)
         )
-        pageLoading.value = false
+        _pageLoading.value = false
     }
 
     fun retryPartition(partition: Partition) {
         if (partition.state != PartitionState.Error) return
         listRetried.remove(partition.sort.id)
-        partitions.value = partitions.value.map {
+        _partitions.value = _partitions.value.map {
             if (it.sort.id == partition.sort.id) it.copy(state = PartitionState.Loading) else it
         }
         requestPartition(partition, Partition.FIRST_PAGE)
@@ -237,20 +284,20 @@ class HomeViewModel : ViewModel() {
     fun retrySort() {
         val key = loadingSourceKey ?: return
         LOG.i("echo--sort-manual-retry: key=$key")
-        sortLoadFailed.value = false
+        _sortLoadFailed.value = false
         sortRetried = true
-        rec.value = Rec(PartitionState.Loading, emptyList())
+        _rec.value = Rec(PartitionState.Loading, emptyList())
         sortsLoaded.value = false
-        pageLoading.value = true
+        _pageLoading.value = true
         armWatchdog()
         sortViewModel.getSort(key, HomeSettings.current() == HomeSettings.HomeLayout.Horizontal)
     }
 
     fun ensureLoaded(sortId: String) {
-        activeSortId = sortId
-        val current = partitions.value.firstOrNull { it.sort.id == sortId } ?: return
+        _activeSortId.value = sortId
+        val current = _partitions.value.firstOrNull { it.sort.id == sortId } ?: return
         if (current.state != PartitionState.Idle) return
-        partitions.value = partitions.value.map {
+        _partitions.value = _partitions.value.map {
             if (it.sort.id == sortId) it.copy(state = PartitionState.Loading) else it
         }
         requestPartition(current, Partition.FIRST_PAGE)
@@ -258,19 +305,19 @@ class HomeViewModel : ViewModel() {
 
     fun onLayoutChanged() {
         if (HomeSettings.current() != HomeSettings.HomeLayout.Horizontal) return
-        val idle = partitions.value.filter { it.state == PartitionState.Idle }
+        val idle = _partitions.value.filter { it.state == PartitionState.Idle }
         if (idle.isNotEmpty()) {
-            partitions.value = partitions.value.map {
+            _partitions.value = _partitions.value.map {
                 if (it.state == PartitionState.Idle) it.copy(state = PartitionState.Loading) else it
             }
             idle.forEach { p -> requestPartition(p, Partition.FIRST_PAGE) }
         }
         val key = loadingSourceKey
-        val hasRecSort = allSorts.value.any { it.id == "my0" }
-        if (key != null && hasRecSort && rec.value.videos.isEmpty() &&
-            rec.value.state != PartitionState.Loading
+        val hasRecSort = _allSorts.value.any { it.id == "my0" }
+        if (key != null && hasRecSort && _rec.value.videos.isEmpty() &&
+            _rec.value.state != PartitionState.Loading
         ) {
-            rec.value = Rec(PartitionState.Loading, emptyList())
+            _rec.value = Rec(PartitionState.Loading, emptyList())
             recViewModel.getSort(key, true)
         }
     }
@@ -278,12 +325,12 @@ class HomeViewModel : ViewModel() {
     private fun onSortResult(absXml: AbsSortXml?) {
         val key = loadingSourceKey
         if (key == null) {
-            LOG.i("echo--sort-null-key: srcName=${currentSource.value?.name} srcCount=${sources.value.size} absXml=${absXml != null} reloading=$configReloading")
+            LOG.i("echo--sort-null-key: srcName=${_currentSource.value?.name} srcCount=${_sources.value.size} absXml=${absXml != null} reloading=$configReloading")
             if (configReloading) return
-            rec.value = Rec(PartitionState.Empty, emptyList())
-            partitions.value = emptyList()
-            sorts.value = emptyList()
-            allSorts.value = emptyList()
+            _rec.value = Rec(PartitionState.Empty, emptyList())
+            _partitions.value = emptyList()
+            _sorts.value = emptyList()
+            _allSorts.value = emptyList()
             sortsLoaded.value = true
             return
         }
@@ -300,11 +347,11 @@ class HomeViewModel : ViewModel() {
                 return
             }
             LOG.i("echo--sort-failed: src=$key")
-            sortLoadFailed.value = true
-            rec.value = Rec(PartitionState.Empty, emptyList())
-            partitions.value = emptyList()
-            sorts.value = emptyList()
-            allSorts.value = emptyList()
+            _sortLoadFailed.value = true
+            _rec.value = Rec(PartitionState.Empty, emptyList())
+            _partitions.value = emptyList()
+            _sorts.value = emptyList()
+            _allSorts.value = emptyList()
             sortsLoaded.value = true
             return
         }
@@ -316,13 +363,13 @@ class HomeViewModel : ViewModel() {
         } else {
             SortAdjuster.adjustSort(key, ArrayList(), true)
         }
-        allSorts.value = adjusted
+        _allSorts.value = adjusted
 
         val recSort = adjusted.firstOrNull { it.id == "my0" }
         if (recSort != null) {
             loadRec(absXml)
         } else {
-            rec.value = Rec(PartitionState.Empty, emptyList())
+            _rec.value = Rec(PartitionState.Empty, emptyList())
         }
 
         val visible = adjusted.filter { it.id != "my0" }
@@ -340,18 +387,18 @@ class HomeViewModel : ViewModel() {
                 return
             }
             LOG.i("echo--sort-empty-final: src=$key sortSize=${absXml.classes?.sortList?.size}")
-            sortLoadFailed.value = true
-            rec.value = Rec(PartitionState.Empty, emptyList())
-            partitions.value = emptyList()
-            sorts.value = emptyList()
-            allSorts.value = emptyList()
+            _sortLoadFailed.value = true
+            _rec.value = Rec(PartitionState.Empty, emptyList())
+            _partitions.value = emptyList()
+            _sorts.value = emptyList()
+            _allSorts.value = emptyList()
             sortsLoaded.value = true
             return
         }
-        sorts.value = visible
+        _sorts.value = visible
         val vertical = HomeSettings.current() == HomeSettings.HomeLayout.Vertical
-        val active = activeSortId?.takeIf { id -> visible.any { it.id == id } } ?: visible.firstOrNull()?.id
-        activeSortId = active
+        val active = _activeSortId.value?.takeIf { id -> visible.any { it.id == id } } ?: visible.firstOrNull()?.id
+        _activeSortId.value = active
         val newPartitions = visible.map { sort ->
             if (vertical && sort.id != active) {
                 Partition(sort, PartitionState.Idle, emptyList(), Partition.FIRST_PAGE, 0)
@@ -359,7 +406,7 @@ class HomeViewModel : ViewModel() {
                 Partition(sort, PartitionState.Loading, emptyList(), Partition.FIRST_PAGE, 0)
             }
         }
-        partitions.value = newPartitions
+        _partitions.value = newPartitions
         LOG.i("echo--sort-partitions: n=${newPartitions.size}")
         sortsLoaded.value = true
         newPartitions
@@ -369,7 +416,7 @@ class HomeViewModel : ViewModel() {
 
     private fun loadRec(absXml: AbsSortXml?) {
         val videos = absXml?.videoList ?: emptyList()
-        rec.value = if (videos.isEmpty()) Rec(PartitionState.Empty, videos) else Rec(PartitionState.Ready, videos)
+        _rec.value = if (videos.isEmpty()) Rec(PartitionState.Empty, videos) else Rec(PartitionState.Ready, videos)
     }
 
     private fun onRecResult(absXml: AbsSortXml?) {
@@ -410,11 +457,11 @@ class HomeViewModel : ViewModel() {
         if (absXml == null && page == Partition.FIRST_PAGE) {
             if (listRetried.add(sortId)) {
                 LOG.i("echo--list-retry: sort=$sortId pg=$page")
-                val current = partitions.value.firstOrNull { it.sort.id == sortId } ?: return
+                val current = _partitions.value.firstOrNull { it.sort.id == sortId } ?: return
                 requestPartition(current, Partition.FIRST_PAGE)
             } else {
                 LOG.i("echo--list-failed: sort=$sortId pg=$page")
-                partitions.value = partitions.value.map { p ->
+                _partitions.value = _partitions.value.map { p ->
                     if (p.sort.id == sortId) p.copy(state = PartitionState.Error) else p
                 }
             }
@@ -423,7 +470,7 @@ class HomeViewModel : ViewModel() {
         val videos = absXml?.movie?.videoList ?: emptyList()
         LOG.i("echo--list-result: src=${loadingSourceKey} sort=$sortId pg=$page n=${videos.size}")
         val maxPage = absXml?.movie?.pagecount ?: 0
-        partitions.value = partitions.value.map { p ->
+        _partitions.value = _partitions.value.map { p ->
             if (p.sort.id != sortId) {
                 p
             } else if (videos.isEmpty() && page == Partition.FIRST_PAGE) {
@@ -437,11 +484,11 @@ class HomeViewModel : ViewModel() {
     }
 
     private fun fillRecFromPartition() {
-        if (rec.value.videos.isNotEmpty()) return
-        val first = partitions.value.firstOrNull {
+        if (_rec.value.videos.isNotEmpty()) return
+        val first = _partitions.value.firstOrNull {
             it.state == PartitionState.Ready && it.videos.isNotEmpty()
         } ?: return
-        rec.value = Rec(PartitionState.Ready, first.videos.take(HERO_VIDEO_COUNT))
+        _rec.value = Rec(PartitionState.Ready, first.videos.take(HERO_VIDEO_COUNT))
     }
 
     fun loadMorePartition(partition: Partition) {
@@ -453,7 +500,7 @@ class HomeViewModel : ViewModel() {
 
     fun applyFilter(partition: Partition, filterSelect: Map<String, String>) {
         partition.sort.filterSelect = HashMap(filterSelect)
-        partitions.value = partitions.value.map {
+        _partitions.value = _partitions.value.map {
             if (it.sort.id == partition.sort.id) {
                 Partition(it.sort, PartitionState.Loading, emptyList(), Partition.FIRST_PAGE, 0)
             } else {
@@ -469,13 +516,13 @@ class HomeViewModel : ViewModel() {
 
     fun refreshPartitions() {
         val vertical = HomeSettings.current() == HomeSettings.HomeLayout.Vertical
-        val active = activeSortId
+        val active = _activeSortId.value
         val targets = if (vertical) {
-            partitions.value.filter { it.sort.id == active }
+            _partitions.value.filter { it.sort.id == active }
         } else {
-            partitions.value
+            _partitions.value
         }
-        partitions.value = partitions.value.map { p ->
+        _partitions.value = _partitions.value.map { p ->
             if (targets.any { it.sort.id == p.sort.id }) {
                 Partition(p.sort, PartitionState.Loading, emptyList(), Partition.FIRST_PAGE, 0)
             } else {

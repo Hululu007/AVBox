@@ -1,9 +1,10 @@
 package com.github.tvbox.osc.data
 
+import com.github.tvbox.osc.event.UiChange
+import com.github.tvbox.osc.event.UiEvents
+
 import com.github.tvbox.osc.bean.VodInfo
-import com.github.tvbox.osc.event.RefreshEvent
 import com.github.tvbox.osc.util.LOG
-import org.greenrobot.eventbus.EventBus
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlinx.coroutines.runBlocking
@@ -44,7 +45,7 @@ object HistoryWriter {
             return
         }
         LOG.i("echo-history touch key=" + sourceKey + "|" + vodId)
-        EventBus.getDefault().post(RefreshEvent(RefreshEvent.TYPE_HISTORY_REFRESH))
+        UiEvents.post(UiChange.HistoryChanged)
     }
 
     private fun writeNow(sourceKey: String, info: VodInfo) {
@@ -54,6 +55,6 @@ object HistoryWriter {
             LOG.e("HistoryWriter", "echo-history insert failed: " + th, th)
             return
         }
-        EventBus.getDefault().post(RefreshEvent(RefreshEvent.TYPE_HISTORY_REFRESH))
+        UiEvents.post(UiChange.HistoryChanged)
     }
 }

@@ -2,6 +2,8 @@ package com.github.tvbox.osc.player.controller
 
 import com.github.tvbox.osc.bean.ParseBean
 
+import org.json.JSONObject
+
 import java.util.HashMap
 
 interface VodControlListener {
@@ -13,11 +15,15 @@ interface VodControlListener {
 
     fun changeParse(pb: ParseBean)
 
-    fun updatePlayerCfg()
+    fun updatePlayerCfg(
+        suppressAutoSwitch: Boolean = false,
+        suppressDecodeFallback: Boolean = false,
+        mutate: (JSONObject) -> Unit,
+    )
 
     fun replay(replay: Boolean)
 
-    fun errReplay()
+    fun onNearEndProgress(positionMs: Long, durationMs: Long)
 
     fun selectSubtitle()
 
@@ -40,8 +46,4 @@ interface VodControlListener {
     fun onM3u8ProxyUrl(proxyUrl: String, sourceUrl: String)
 
     fun clickCast()
-
-    fun setAllowSwitchPlayer(isAllow: Boolean)
-
-    fun setAllowDecodeFallback(isAllow: Boolean)
 }

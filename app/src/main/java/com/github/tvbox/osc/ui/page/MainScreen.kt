@@ -2,6 +2,7 @@
 
 package com.github.tvbox.osc.ui.page
 
+import com.github.tvbox.osc.api.AppBootstrap
 import android.app.Activity
 import android.content.Intent
 import android.os.Build
@@ -142,7 +143,7 @@ private fun MainContent() {
         if (homeViewModel.defaultLiveLaunched) return@LaunchedEffect
         AppBootstrap.state.collect { boot ->
             if (boot is AppBootstrap.Boot.Ready && !homeViewModel.defaultLiveLaunched) {
-                homeViewModel.defaultLiveLaunched = true
+                homeViewModel.markDefaultLiveLaunched()
                 val disabled = BootGuard.takeSafeDisabledNotice()
                 if (disabled.isNotEmpty()) {
                     Toast.makeText(context, context.getString(R.string.toast_source_auto_disabled), Toast.LENGTH_LONG).show()
@@ -162,13 +163,11 @@ private fun MainContent() {
     }
 
     BackHandler {
-        val now = System.currentTimeMillis()
-        if (now - homeViewModel.lastBackTime < 2000) {
+        if (homeViewModel.onBackPressedOnce()) {
             AppManager.getInstance().finishAllActivity()
             ControlManager.get().stopServer()
             (context as? Activity)?.finishAffinity()
         } else {
-            homeViewModel.lastBackTime = now
             Toast.makeText(context, context.getString(R.string.toast_press_again_to_exit), Toast.LENGTH_SHORT).show()
         }
     }

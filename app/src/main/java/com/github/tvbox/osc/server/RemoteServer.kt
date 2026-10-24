@@ -10,7 +10,6 @@ import android.util.Base64
 import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.base.App
 import com.github.tvbox.osc.bean.VodInfo
-import com.github.tvbox.osc.event.ServerEvent
 import com.github.tvbox.osc.io.LocalSourceTree
 import com.github.tvbox.osc.net.OkGoHelper
 import com.github.tvbox.osc.net.Proxy
@@ -21,7 +20,6 @@ import com.github.tvbox.osc.util.RegexUtils
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 
-import org.greenrobot.eventbus.EventBus
 
 import java.io.ByteArrayInputStream
 import java.io.File
@@ -67,7 +65,6 @@ class RemoteServer(port: Int, context: Context) : NanoHTTPD(port) {
     override fun start(timeout: Int, daemon: Boolean) {
         isStarted = true
         super.start(timeout, daemon)
-        EventBus.getDefault().post(ServerEvent(ServerEvent.SERVER_SUCCESS))
     }
 
     override fun stop() {
@@ -157,7 +154,6 @@ class RemoteServer(port: Int, context: Context) : NanoHTTPD(port) {
     }
 
     override fun serve(session: NanoHTTPD.IHTTPSession): NanoHTTPD.Response {
-        EventBus.getDefault().post(ServerEvent(ServerEvent.SERVER_CONNECTION))
         if (!session.uri.isEmpty()) {
             var fileName = session.uri.trim { it <= ' ' }
             if (fileName.indexOf('?') >= 0) {
@@ -287,7 +283,7 @@ class RemoteServer(port: Int, context: Context) : NanoHTTPD(port) {
 
     private fun normalizeDanmuParams(params: MutableMap<String, String>) {
         try {
-            val vodInfo = App.getInstance()?.getVodInfo() ?: return
+            val vodInfo = com.github.tvbox.osc.player.PlaybackService.peek()?.controller()?.vod() ?: return
             val vodName = vodInfo.name
             if (!vodName.isNullOrEmpty()) params["vodName"] = vodName
             if (!isNumeric(params["vodIndex"])) {

@@ -31,11 +31,9 @@ import androidx.compose.ui.unit.dp
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.api.DanmakuApi
 import com.github.tvbox.osc.bean.DanmuSearchResult
-import com.github.tvbox.osc.event.RefreshEvent
 import com.github.tvbox.osc.player.state.DanmuSearchSheetState
 import com.github.tvbox.osc.player.state.DanmuSettingSheetState
 import com.github.tvbox.osc.util.DanmuHelper
-import org.greenrobot.eventbus.EventBus
 
 private val DANMU_SPEEDS = listOf(2.4f, 1.8f, 1.5f, 1.0f)
 
@@ -69,7 +67,7 @@ fun DanmuSettingSheet(sheet: DanmuSettingSheetState, onDismiss: () -> Unit) {
             }
             Spacer(Modifier.height(playerDim(R.dimen.vs_12)))
             val postSettings: (Boolean) -> Unit = { forColor ->
-                EventBus.getDefault().post(RefreshEvent(RefreshEvent.TYPE_SET_DANMU_SETTINGS, forColor))
+                sheet.onSettingsApplied(forColor)
             }
 
             SheetLabelRow(stringResource(R.string.danmu_online)) {

@@ -18,7 +18,7 @@ import com.github.tvbox.osc.io.handleLocalSourceTreeResult
 import com.github.tvbox.osc.io.importLocalSource
 import com.github.tvbox.osc.io.startLocalConfig
 import com.github.tvbox.osc.ui.components.SheetHostScaffold
-import com.github.tvbox.osc.ui.page.AppBootstrap
+import com.github.tvbox.osc.api.AppBootstrap
 import com.github.tvbox.osc.ui.page.ConfigManageScreen
 import com.github.tvbox.osc.ui.page.ConfigManageViewModel
 import com.github.tvbox.osc.ui.theme.AVBoxTheme

@@ -21,7 +21,7 @@ internal class LiveCatchupController(
 ) {
 
     internal interface Host {
-        var logoUrl: String?
+        fun updateLogoUrl(url: String?)
 
         fun videoView(): MyVideoView?
 
@@ -38,7 +38,7 @@ internal class LiveCatchupController(
 
     fun initLiveObj() {
         catchup = null
-        host.logoUrl = null
+        vm.updateLogoUrl(null)
         val position = ApiConfig.getLiveGroupIndex()
         val liveGroups = KV.get(HawkConfig.LIVE_GROUP_LIST, JsonArray())
         if (liveGroups == null || liveGroups.size() == 0 || position < 0 || position >= liveGroups.size()) {
@@ -51,7 +51,7 @@ internal class LiveCatchupController(
             LOG.i("echo-catchup :$catchup")
         }
         if (livesOBJ.has("logo")) {
-            host.logoUrl = livesOBJ.get("logo").asString
+            vm.updateLogoUrl(livesOBJ.get("logo").asString)
         }
         if (type == "3") {
             var pyJar = ""
@@ -97,7 +97,7 @@ internal class LiveCatchupController(
         val videoView = host.videoView() ?: return
         host.releasePlayerKernel()
         vm.updateTimeshift { it.copy(isShiyi = true) }
-        val shiyiUrl = buildCatchupUrl(item.url, epg)
+        val shiyiUrl = buildCatchupUrl(item.urlAt(vm.currentSourceIndex()), epg)
         if (TextUtils.isEmpty(shiyiUrl)) return
         LOG.i("echo-回看地址playUrl :$shiyiUrl")
         playUrl = shiyiUrl
@@ -119,16 +119,8 @@ internal class LiveCatchupController(
         host.releasePlayerKernel()
         vm.updateTimeshift { it.copy(isShiyi = false, isBackState = false) }
         vm.updateOverlay { it.copy(visible = false) }
-        videoView.setUrl(item.url, host.liveChannelHeader())
+        videoView.setUrl(item.urlAt(vm.currentSourceIndex()), host.liveChannelHeader())
         videoView.start()
-    }
-
-    fun onTimeshiftSeek(progress: Float) {
-        overlay.onTimeshiftSeek(progress)
-    }
-
-    fun onTimeshiftTogglePlay() {
-        overlay.onTimeshiftTogglePlay()
     }
 
     private fun currentChannelHasCatchup(): Boolean {
@@ -144,7 +136,7 @@ internal class LiveCatchupController(
 
     fun canCurrentChannelCatchup(): Boolean {
         val item = vm.state.value.channelList.playingChannel ?: return false
-        val url = item.url
+        val url = item.urlAt(vm.currentSourceIndex())
         val catchupObj = currentCatchup()
         if (LiveEpgParser.hasCatchupSource(catchupObj)) {
             val regex = LiveEpgParser.getCatchupValue(catchupObj, "regex")

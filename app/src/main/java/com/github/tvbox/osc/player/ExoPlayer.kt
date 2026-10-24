@@ -199,12 +199,6 @@ class ExoPlayer(context: Context) : KernelPlayer() {
         engine?.detachVideoSurface()
     }
 
-    fun setAudioOnlyMode(audioOnly: Boolean) {
-        engine?.setAudioOnlyMode(audioOnly)
-    }
-
-    fun isAudioOnlyMode(): Boolean = engine?.isAudioOnlyMode == true
-
     override fun setVolume(leftVolume: Float, rightVolume: Float) {
         engine?.setVolume(leftVolume, rightVolume)
     }

@@ -7,31 +7,31 @@ import org.junit.Test
 class ProgressUiGateTest {
 
     @Test
-    fun loadingPhase_rejectsEvenWhenUrlMatches() {
-        assertFalse(ProgressUiGate.accept(ProgressPhase.LOADING, "http://a", "http://a"))
-        assertFalse(ProgressUiGate.accept(ProgressPhase.LOADING, "http://a", "http://b"))
-        assertFalse(ProgressUiGate.accept(ProgressPhase.LOADING, null, null))
+    fun loadingPhase_rejectsEvenWhenGenMatches() {
+        assertFalse(ProgressUiGate.accept(ProgressPhase.LOADING, 3, 3))
+        assertFalse(ProgressUiGate.accept(ProgressPhase.LOADING, 3, 4))
+        assertFalse(ProgressUiGate.accept(ProgressPhase.LOADING, -1, 0))
     }
 
     @Test
     fun idlePhase_rejects() {
-        assertFalse(ProgressUiGate.accept(ProgressPhase.IDLE, "http://a", "http://a"))
+        assertFalse(ProgressUiGate.accept(ProgressPhase.IDLE, 3, 3))
     }
 
     @Test
-    fun activePhase_acceptsMatchingUrl() {
-        assertTrue(ProgressUiGate.accept(ProgressPhase.ACTIVE, "http://a", "http://a"))
+    fun activePhase_acceptsMatchingGen() {
+        assertTrue(ProgressUiGate.accept(ProgressPhase.ACTIVE, 3, 3))
     }
 
     @Test
-    fun activePhase_rejectsMismatchedUrl() {
-        assertFalse(ProgressUiGate.accept(ProgressPhase.ACTIVE, "http://a", "http://b"))
-        assertFalse(ProgressUiGate.accept(ProgressPhase.ACTIVE, "http://a", null))
+    fun activePhase_rejectsMismatchedGen() {
+        assertFalse(ProgressUiGate.accept(ProgressPhase.ACTIVE, 3, 4))
+        assertFalse(ProgressUiGate.accept(ProgressPhase.ACTIVE, 4, 3))
     }
 
     @Test
-    fun activePhase_rejectsMissingContentUrl() {
-        assertFalse(ProgressUiGate.accept(ProgressPhase.ACTIVE, null, "http://a"))
-        assertFalse(ProgressUiGate.accept(ProgressPhase.ACTIVE, "", "http://a"))
+    fun activePhase_rejectsUnarmedController() {
+        assertFalse(ProgressUiGate.accept(ProgressPhase.ACTIVE, -1, 0))
+        assertFalse(ProgressUiGate.accept(ProgressPhase.ACTIVE, -1, 7))
     }
 }

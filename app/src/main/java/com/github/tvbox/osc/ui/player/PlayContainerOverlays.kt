@@ -14,6 +14,12 @@ import kotlinx.coroutines.launch
 
 private const val PRELOAD_TOAST_REFRESH_DELAY_MS = 1000L
 
+data class PlayerTipState(
+    val msg: String = "",
+    val loading: Boolean = false,
+    val err: Boolean = false,
+)
+
 internal class PlayContainerOverlays(private val host: PlayContainer) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -57,7 +63,7 @@ internal class PlayContainerOverlays(private val host: PlayContainer) {
     }
 
     fun checkDanmu(danmu: String?, callback: DanmuLoadController.LoadCallback?) {
-        host.scheduler.setPlayDanmu(danmu)
+        host.scheduler.onDanmuChecked(danmu)
         val controller = host.danmuLoadController ?: return
         val vod = host.scheduler.vod()
         val series = if (vod == null) null else host.scheduler.currentSeries(vod.playFlag, vod.playIndex)
@@ -81,28 +87,28 @@ internal class PlayContainerOverlays(private val host: PlayContainer) {
         val vod = host.scheduler.vod()
         val series = if (vod == null) null else host.scheduler.currentSeries(vod.playFlag, vod.playIndex)
         val uiState = host.mController.getUiState()
-        uiState.danmuSearchSheet = DanmuSearchSheetState(
+        uiState.openDanmuSearchSheet(DanmuSearchSheetState(
             series?.name ?: "",
             host.scheduler.vod()?.name ?: "",
         ) { danmu ->
             if (host.isAttached()) {
                 checkDanmu(danmu)
             }
-        }
+        })
     }
 
     fun setTip(msg: String, loading: Boolean, err: Boolean) {
         if (!host.isAttached()) return
-        PlayerTipBridge.setTip(msg, loading, err)
+        onTipStateChanged(PlayerTipState(msg, loading, err))
     }
 
     fun hideTip() {
-        PlayerTipBridge.hide()
+        onTipStateChanged(PlayerTipState())
     }
 
     fun hideTipOnUiThread() {
         if (!host.isAttached()) return
-        PlayerTipBridge.hide()
+        onTipStateChanged(PlayerTipState())
     }
 
     fun showPreloadReady() {

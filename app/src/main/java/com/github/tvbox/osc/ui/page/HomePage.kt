@@ -5,6 +5,7 @@
 
 package com.github.tvbox.osc.ui.page
 
+import com.github.tvbox.osc.api.SearchSourcesState
 import android.content.Intent
 import android.widget.Toast
 import androidx.compose.animation.Crossfade
@@ -86,7 +87,6 @@ import com.github.tvbox.osc.net.SiteSearch
 import com.github.tvbox.osc.ui.activity.ConfigManageActivity
 import com.github.tvbox.osc.ui.activity.PartitionListActivity
 import com.github.tvbox.osc.ui.activity.SearchActivity
-import com.github.tvbox.osc.ui.activity.SearchViewModel
 import com.github.tvbox.osc.ui.components.AVBoxBottomSheet
 import com.github.tvbox.osc.ui.components.AVBoxOptionMenuAction
 import com.github.tvbox.osc.ui.components.AppTopBarScaffold
@@ -141,7 +141,10 @@ fun HomePage(
     val rec by vm.rec.collectAsStateWithLifecycle()
     val partitions by vm.partitions.collectAsStateWithLifecycle()
     val sorts by vm.sorts.collectAsStateWithLifecycle()
-    val vodMenu = rememberVodCardMenuState()
+    val vodMenu = rememberVodCardMenuState(
+        lookupCollected = vm::isVideoCollected,
+        onCollectToggle = vm::toggleVideoCollect,
+    )
 
     val listState = rememberLazyListState()
 
@@ -577,9 +580,12 @@ fun HomePage(
     }
 
     if (showSearchSettings) {
+        val searchSources by SearchSourcesState.state.collectAsStateWithLifecycle()
         SearchSettingsSheet(
+            sources = searchSources.sources,
+            selected = searchSources.pickedKeys,
+            onApplySelection = { SearchSourcesState.applySelection(it) },
             onDismiss = { showSearchSettings = false },
-            onSelectionChanged = { SearchViewModel.loadCheckedSources() },
         )
     }
 

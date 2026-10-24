@@ -90,9 +90,9 @@ internal object InfoOsdText {
             cachedRightActivity = WeakReference(activity)
         }
 
-        state.infoOsdLeft = left
-        state.infoOsdRight = right
-        state.infoOsdFooter = footer
+        state.updateInfoOsdLeft(left)
+        state.updateInfoOsdRight(right)
+        state.updateInfoOsdFooter(footer)
     }
 
     private fun videoText(format: Format?, exo: ExoPlayer?): String {
@@ -332,10 +332,12 @@ internal object InfoOsdText {
             val bm = context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
                 ?: return
             val level = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
-            state.batteryPercent = if (level in 0..100) level else -1
+            state.updateBatteryPercent(if (level in 0..100) level else -1)
             val status = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_STATUS)
-            state.batteryCharging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
-                    status == BatteryManager.BATTERY_STATUS_FULL
+            state.updateBatteryCharging(
+                status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                    status == BatteryManager.BATTERY_STATUS_FULL,
+            )
         }
     }
 }

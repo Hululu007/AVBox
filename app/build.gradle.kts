@@ -135,7 +135,6 @@ dependencies {
         exclude(group = "xmlpull", module = "xmlpull")
         exclude(group = "xpp3", module = "xpp3_min")
     }
-    implementation(libs.eventbus)
     implementation(libs.mmkv)
     implementation(libs.danmaku.flame.master)
 

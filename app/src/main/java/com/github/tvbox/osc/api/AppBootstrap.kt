@@ -1,16 +1,16 @@
-package com.github.tvbox.osc.ui.page
+package com.github.tvbox.osc.api
 
 import android.widget.Toast
 import com.github.tvbox.osc.api.ApiConfig
+import com.github.tvbox.osc.api.ConfigRepository
 import com.github.tvbox.osc.base.App
 import com.github.tvbox.osc.data.CurrentSubscription
 import com.github.tvbox.osc.io.FileUtils
 import com.github.tvbox.osc.player.PlaybackService
 import com.github.tvbox.osc.server.ControlManager
-import com.github.tvbox.osc.ui.activity.SearchViewModel
 import com.github.tvbox.osc.util.BootGuard
 import com.github.tvbox.osc.util.HawkConfig
-import com.github.tvbox.osc.util.HistoryHelper
+
 import com.github.tvbox.osc.util.KV
 import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.util.MD5
@@ -82,7 +82,7 @@ object AppBootstrap {
             val startedAt = System.currentTimeMillis()
             ApiConfig.get().invalidateVodConfig()
             LOG.debugI("echo-switch: invalidate dt=" + (System.currentTimeMillis() - startedAt) + "ms")
-            SearchViewModel.clearCheckedSources()
+            SearchSourcesState.refresh()
             subscriptionCidFlow.value = CurrentSubscription.cid()
             startInit(forceFresh = true, offline = false, generation = generation)
         }
@@ -90,16 +90,7 @@ object AppBootstrap {
 
     fun switchVodSubscription(url: String): Boolean {
         val followLive = ApiConfig.isLiveFollowVod()
-        val oldApi = KV.get(HawkConfig.API_URL, "")
-        val oldFollowTarget = KV.get(HawkConfig.LIVE_API_URL, "").ifEmpty { oldApi }
-        HistoryHelper.setApiHistory(url)
-        KV.put(HawkConfig.API_URL, url)
-        if (followLive) {
-            KV.put(HawkConfig.LIVE_API_URL, "")
-            if (url != oldFollowTarget) HistoryHelper.clearLiveApiLineList()
-        }
-        if (!HistoryHelper.isApiLineHistory(url)) HistoryHelper.clearApiLineList()
-        if (oldApi == url) {
+        if (ConfigRepository.switchVodSource(url)) {
             ApiConfig.get().invalidateLiveConfig()
             return followLive
         }
@@ -140,6 +131,7 @@ object AppBootstrap {
                 }
                 if (dataInitOk && jarInitOk && bootGeneration.isLatest(generation)) {
                     ApiConfig.get().warmSearchSpiders()
+                    SearchSourcesState.refresh()
                     _state.value = Boot.Ready(generation)
                     if (!offline && !forceFresh) scheduleConfigRefresh(generation)
                 }
@@ -194,6 +186,7 @@ object AppBootstrap {
                     }
                 }
                 ApiConfig.get().warmSearchSpiders()
+                SearchSourcesState.refresh()
                 LOG.debugI("echo-config-refresh: applied")
                 _state.value = Boot.Ready(bootGeneration.next())
             }

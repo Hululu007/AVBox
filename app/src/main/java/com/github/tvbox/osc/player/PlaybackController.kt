@@ -1,28 +1,32 @@
 package com.github.tvbox.osc.player
 
+import android.os.Looper
 import android.text.TextUtils
+import com.github.tvbox.osc.R
 import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.base.App
 import com.github.tvbox.osc.bean.ParseBean
 import com.github.tvbox.osc.bean.SourceBean
 import com.github.tvbox.osc.bean.VodInfo
 import com.github.tvbox.osc.data.WatchProgressStore
-import com.github.tvbox.osc.event.RefreshEvent
 import com.github.tvbox.osc.server.ControlManager
 import com.github.tvbox.osc.sourcedata.SourceHelper
 import com.github.tvbox.osc.sourcedata.SourceViewModel
 import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.util.LanguageManager
+import com.github.tvbox.osc.player.state.NearEndRules
 import com.github.tvbox.osc.player.state.PlayState
 import com.github.tvbox.osc.player.engine.SourcePolicy
 import com.github.tvbox.osc.player.engine.iso.IsoSessionSignal
 import com.github.tvbox.osc.player.usecase.M3u8PurifyUseCase
-import org.greenrobot.eventbus.EventBus
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import java.util.HashMap
 import java.util.Locale
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -33,9 +37,25 @@ class PlaybackController {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private var vod: VodInfo? = null
+
+    @Volatile
     private var playerCfg: JSONObject? = null
     private var sourceKey: String = ""
     private var sourceBean: SourceBean? = null
+
+    data class PlaybackSelection(val flag: String?, val index: Int)
+
+    private val _selection = MutableStateFlow(PlaybackSelection(null, 0))
+
+    val selection: StateFlow<PlaybackSelection> = _selection.asStateFlow()
+
+    private val _quality = MutableStateFlow<JSONObject?>(null)
+
+    val quality: StateFlow<JSONObject?> = _quality.asStateFlow()
+
+    private val _persistedPlayerCfg = MutableStateFlow<String?>(null)
+
+    val persistedPlayerCfg: StateFlow<String?> = _persistedPlayerCfg.asStateFlow()
 
     private val progress: PlaybackProgressTracker = PlaybackProgressTracker(object : PlaybackProgressTracker.Host {
         override fun playerCfg(): JSONObject? = this@PlaybackController.playerCfg
@@ -45,6 +65,10 @@ class PlaybackController {
         override fun currentSession(): PlaybackSession? = this@PlaybackController.currentSession
 
         override fun attemptState(): PlaybackAttemptState = st
+
+        override fun updateAttemptState(block: (PlaybackAttemptState) -> PlaybackAttemptState) {
+            this@PlaybackController.updateAttemptState(block)
+        }
     })
 
     private var subtitleCacheKey: String? = null
@@ -69,23 +93,97 @@ class PlaybackController {
         }
         // 纯音频确认必须绑定当前内容：否则「先播纯音频、再播带视频轨的内容」时这个标记会残留，
         // 使视频内容被 isConfirmedAudioOnly() 误判为音频并自动跳进音乐页。
-        st.audioOnlyConfirmed = false
+        music.onNewContent()
         currentSession = session
         if (contentChanged) {
             progress.clearStartedPlaybackKey()
         }
         if (st.castAborted) LOG.i("echo-cast abort clear: new playback session")
-        st.beginSession()
+        st = st.beginSession()
         clearM3u8ProxyUrl()
         vod = session.vod()
+        _selection.value = PlaybackSelection(vod?.playFlag, vod?.playIndex ?: 0)
+        qualityResult = null
+        _quality.value = null
         sourceKey = session.sourceKey()
         sourceBean = ApiConfig.get().getSource(sourceKey)
         ApiConfig.get().setCurrentPlaySourceKey(sourceKey)
         initPlayerCfg()
+        _persistedPlayerCfg.value = vod?.playerCfg
     }
 
     fun initPlayerCfg() {
         config.initPlayerCfg()
+    }
+
+    fun updateSelection(flag: String?, index: Int) {
+        val current = vod ?: return
+        val updated = current.copy(
+            playFlag = flag,
+            playIndex = index,
+            playNote = current.seriesMap?.get(flag)?.getOrNull(index)?.name ?: "",
+        )
+        vod = updated
+        currentSession?.adoptVod(updated)
+        view?.onSessionVodUpdated(updated)
+        _selection.value = PlaybackSelection(flag, index)
+    }
+
+    private fun publishPersistedPlayerCfg(cfg: String) {
+        val updated = vod?.copy(playerCfg = cfg)
+        if (updated != null) {
+            vod = updated
+            currentSession?.adoptVod(updated)
+        }
+        _persistedPlayerCfg.value = cfg
+    }
+
+    fun updatePlayerCfg(
+        mutate: (JSONObject) -> Unit,
+        suppressAutoSwitch: Boolean = false,
+        suppressDecodeFallback: Boolean = false,
+    ) {
+        commitPlayerCfg(mutate, true, suppressAutoSwitch, suppressDecodeFallback)
+    }
+
+    fun commitPlayerCfg(
+        mutate: (JSONObject) -> Unit,
+        persist: Boolean,
+        suppressAutoSwitch: Boolean = false,
+        suppressDecodeFallback: Boolean = false,
+    ): Boolean {
+        if (suppressAutoSwitch) config.setAllowSwitchPlayer(false)
+        if (suppressDecodeFallback) config.setAllowDecodeFallback(false)
+        val current = playerCfg ?: return false
+        val next = try {
+            JSONObject(current.toString())
+        } catch (th: Throwable) {
+            LOG.e("PlaybackController", th)
+            return false
+        }
+        try {
+            mutate(next)
+        } catch (th: Throwable) {
+            LOG.e("PlaybackController", th)
+            return false
+        }
+        playerCfg = next
+        val bridge = view
+        if (bridge != null) {
+            if (Looper.myLooper() == Looper.getMainLooper()) {
+                bridge.applyPlayerConfig(next)
+            } else {
+                bridge.runOnUi {
+                    val latest = playerCfg
+                    if (latest != null) bridge.applyPlayerConfig(latest)
+                }
+            }
+        }
+        if (persist) {
+            val persisted = (config.playerCfgForPersist() ?: next).toString()
+            scope.launch { publishPersistedPlayerCfg(persisted) }
+        }
+        return true
     }
 
     suspend fun getSavedProgress(url: String?): Long {
@@ -154,10 +252,10 @@ class PlaybackController {
             val urls = JSONArray(src.optString("url"))
             if (urls.length() < 4 || urls.length() % 2 != 0) throw JSONException("invalid quality urls")
             qualityResult = JSONObject(src.toString())
-            EventBus.getDefault().post(RefreshEvent(RefreshEvent.TYPE_PLAY_QUALITY, qualityResult))
+            _quality.value = qualityResult
         } catch (th: Throwable) {
             qualityResult = null
-            EventBus.getDefault().post(RefreshEvent(RefreshEvent.TYPE_PLAY_QUALITY, null))
+            _quality.value = null
         }
     }
 
@@ -178,7 +276,7 @@ class PlaybackController {
         return !TextUtils.isEmpty(m3u8ProxyUrl) && url == m3u8ProxyUrl
     }
 
-    fun setM3u8Urls(proxyUrl: String?, sourceUrl: String?) {
+    fun onM3u8ProxyResolved(proxyUrl: String?, sourceUrl: String?) {
         m3u8ProxyUrl = proxyUrl
         m3u8SourceUrl = sourceUrl
     }
@@ -228,9 +326,10 @@ class PlaybackController {
         this.lyricCacheKey = lyricCacheKey
     }
 
+    @Volatile
     private var view: PlaybackViewBridge? = null
 
-    fun setViewBridge(bridge: PlaybackViewBridge) {
+    fun attachViewBridge(bridge: PlaybackViewBridge) {
         this.view = bridge
     }
 
@@ -259,17 +358,35 @@ class PlaybackController {
             this@PlaybackController.playerCfg = cfg
         }
 
+        override fun commitPlayerCfg(mutate: (JSONObject) -> Unit, persist: Boolean): Boolean {
+            return this@PlaybackController.commitPlayerCfg(mutate, persist)
+        }
+
         override fun attemptState(): PlaybackAttemptState = st
+
+        override fun updateAttemptState(block: (PlaybackAttemptState) -> PlaybackAttemptState) {
+            this@PlaybackController.updateAttemptState(block)
+        }
     })
 
     private val retry: PlaybackRetryDelegate = PlaybackRetryDelegate(object : PlaybackRetryDelegate.Host {
         override fun attemptState(): PlaybackAttemptState = st
 
+        override fun updateAttemptState(block: (PlaybackAttemptState) -> PlaybackAttemptState) {
+            this@PlaybackController.updateAttemptState(block)
+        }
+
         override fun view(): PlaybackViewBridge? = this@PlaybackController.view
 
         override fun playerCfg(): JSONObject? = this@PlaybackController.playerCfg
 
+        override fun commitPlayerCfg(mutate: (JSONObject) -> Unit, persist: Boolean): Boolean {
+            return this@PlaybackController.commitPlayerCfg(mutate, persist)
+        }
+
         override fun vod(): VodInfo? = this@PlaybackController.vod
+
+        override fun updateSelection(flag: String?, index: Int) = this@PlaybackController.updateSelection(flag, index)
 
         override fun sourceBean(): SourceBean? = this@PlaybackController.sourceBean()
 
@@ -376,13 +493,20 @@ class PlaybackController {
         }
     })
 
-    private val st: PlaybackAttemptState = PlaybackAttemptState()
+    @Volatile
+    private var st: PlaybackAttemptState = PlaybackAttemptState()
+
+    fun attemptState(): PlaybackAttemptState = st
+
+    fun updateAttemptState(block: (PlaybackAttemptState) -> PlaybackAttemptState) {
+        st = block(st)
+    }
 
     fun beginNewPlay() {
-        st.beginNewPlay()
+        st = st.beginNewPlay()
         IsoSessionSignal.reset()
         timeouts.cancelPendingCompletionDrop()
-        st.audioOnlyConfirmed = false
+        music.onNewPlayStarted()
     }
 
     private fun <T> probeKernelError(fallback: T, label: String, read: (ExoPlayer) -> T): T {
@@ -405,7 +529,7 @@ class PlaybackController {
         probeKernelError(0, "exo http status") { it.lastErrorHttpStatus() }
 
     fun rememberErrorHttpStatus() {
-        st.lastHttpStatus = lastErrorHttpStatus()
+        st = st.copy(lastHttpStatus = lastErrorHttpStatus())
     }
 
     fun errorHttpStatusForTip(): Int {
@@ -413,68 +537,77 @@ class PlaybackController {
         return if (live > 0) live else st.lastHttpStatus
     }
 
-    fun setCastPrepareOnly(prepareOnly: Boolean) {
-        st.castPrepareOnly = prepareOnly
+    fun beginCastPrepare() {
+        st = st.copy(castPrepareOnly = true)
     }
 
     fun isCastPrepareOnly(): Boolean = st.castPrepareOnly
 
     fun closeCastPrepare() {
-        st.abortCastSession()
+        st = st.abortCastSession()
         resolver.nextGen()
         LOG.i("echo-cast abort set: drop in-flight resolve results")
     }
 
     fun clearCastAbort() {
-        if (st.clearCastAbort()) LOG.i("echo-cast abort clear")
+        val cleared = st.clearCastAbort()
+        st = cleared.state
+        if (cleared.value) LOG.i("echo-cast abort clear")
     }
 
     fun markStoppedForSourceSwitch() {
-        st.stoppedForSourceSwitch()
+        st = st.stoppedForSourceSwitch()
+    }
+
+    fun beginSourceSwitch(position: Long) {
+        cancelPlayTimeout()
+        stopParse()
+        markStoppedForSourceSwitch()
+        stopMusicSessionForFailedPlayback()
+        setPendingInherit(progressKey(), position)
+        setWebPlayUrl(null)
+        setWebHeaderMap(null)
+        initParseLoadFound()
     }
 
     fun consumeReusePlayerOnSwitch(): Boolean {
-        return st.consumeReuseIntent()
+        val consumed = st.consumeReuseIntent()
+        st = consumed.state
+        return consumed.value
     }
 
     fun setReusePlayerOnSwitch(reuse: Boolean) {
-        st.setReuseIntent(reuse)
+        st = st.setReuseIntent(reuse)
     }
 
     fun setReleasePlayerOnSwitch(release: Boolean) {
-        st.setReleaseIntent(release)
+        st = st.setReleaseIntent(release)
     }
 
     fun clearTriedLines() {
-        st.clearTriedLines()
+        st = st.linesExhausted()
     }
 
     fun setUserPickedLine(picked: Boolean) {
-        st.userPickedLine = picked
-    }
-
-    fun setAllowSwitchPlayer(allow: Boolean) {
-        config.setAllowSwitchPlayer(allow)
-    }
-
-    fun setAllowDecodeFallback(allow: Boolean) {
-        config.setAllowDecodeFallback(allow)
-    }
-
-    fun playerCfgForPersist(): JSONObject? {
-        return config.playerCfgForPersist()
+        st = st.copy(userPickedLine = picked)
     }
 
     fun resetAutoRetryState() {
-        st.userSelfRescue()
+        st = st.userSelfRescue()
+    }
+
+    fun prepareUserReplay() {
+        resetAutoRetryState()
+        clearTriedLines()
+        setPlaybackStarted(false)
     }
 
     fun setPlaybackStarted(started: Boolean) {
-        st.playbackStarted = started
+        st = st.copy(playbackStarted = started)
     }
 
     fun setPlayTimeoutBasePosition(position: Long) {
-        st.playTimeoutBasePosition = position
+        st = st.copy(playTimeoutBasePosition = position)
     }
 
     fun playTimeoutBasePosition(): Long {
@@ -486,16 +619,115 @@ class PlaybackController {
     }
 
     fun markPlaybackStarted() {
-        st.playbackStarted = true
+        st = st.copy(playbackStarted = true)
         SlowOpenSignal.disarm()
         WatchProgressStore.onPlayStart(progressKey())
         cancelPlayTimeout()
+    }
+
+    fun onKernelPlayStateChanged(playState: PlayState): Boolean {
+        if (webPlayUrl() == null || !isStartedPlayState(playState)) return false
+        markPlaybackStarted()
+        return true
+    }
+
+    fun onKernelPlayError() {
+        rememberErrorHttpStatus()
+        if (isPlaybackStarted()) {
+            cancelPlayTimeout()
+            view?.hideTipOnUiThread()
+            if (retryAfterStartedError()) return
+            scope.launch {
+                if (autoRetry()) return@launch
+                stopMusicSessionForFailedPlayback()
+                showTerminalError()
+            }
+            return
+        }
+        scope.launch {
+            if (!autoRetry()) {
+                cancelPlayTimeout()
+                stopMusicSessionForFailedPlayback()
+                showTerminalError()
+            }
+        }
+    }
+
+    private fun showTerminalError() {
+        val bridge = view ?: return
+        if (!bridge.isPageAlive()) return
+        bridge.showTip(terminalErrorText(str(R.string.player_error_play), playbackError = true), false, true)
+    }
+
+    fun onPlaybackCompleted() {
+        if (!st.skipEndPending) return
+        st = st.consumeSkipEnd()
+        val preProgressKey = progressKey()
+        val preOwner = progressOwner()
+        clearTriedLines()
+        val currentVod = vod()
+        val episodes = currentVod?.seriesMap?.get(currentVod.playFlag)
+        if (currentVod == null || episodes == null || currentVod.playIndex + 1 >= episodes.size) {
+            view?.toast(str(R.string.player_last_episode))
+            return
+        }
+        updateSelection(currentVod.playFlag, currentVod.playIndex + 1)
+        setUserPickedLine(false)
+        setReusePlayerOnSwitch(true)
+        play(false)
+        if (preProgressKey != null) {
+            WatchProgressStore.clear(preOwner ?: "", preProgressKey, discard = true)
+        }
+    }
+
+    fun playAdjacentEpisode(forward: Boolean) {
+        st = st.consumeSkipEnd()
+        clearTriedLines()
+        val boundaryText = if (forward) R.string.player_last_episode else R.string.player_first_episode
+        val currentVod = vod()
+        val episodes = currentVod?.seriesMap?.get(currentVod.playFlag)
+        if (currentVod == null || episodes == null) {
+            view?.toast(str(boundaryText))
+            return
+        }
+        val nextIndex = if (forward) currentVod.playIndex + 1 else currentVod.playIndex - 1
+        if (nextIndex < 0 || nextIndex >= episodes.size) {
+            view?.toast(str(boundaryText))
+            return
+        }
+        updateSelection(currentVod.playFlag, nextIndex)
+        setUserPickedLine(false)
+        setReusePlayerOnSwitch(true)
+        play(false)
+    }
+
+    fun onNearEndProgress(positionMs: Long, durationMs: Long) {
+        if (!st.skipEndPending) return
+        val et = playerCfg?.optInt("et", 0) ?: 0
+        if (!NearEndRules.shouldAdvance(positionMs, durationMs, et)) return
+        onPlaybackCompleted()
+    }
+
+    fun terminalErrorText(err: String, playbackError: Boolean): String {
+        val httpStatus = if (playbackError) errorHttpStatusForTip() else 0
+        return when {
+            isSourceStub() -> str(R.string.player_source_invalid)
+            isIsoBandwidthStopped() -> str(R.string.player_iso_bandwidth_low)
+            isLastErrorExceedsDecodeCapability() -> str(
+                if (isLastErrorTenBitFormat()) R.string.player_decode_10bit_tip
+                else R.string.player_decode_exceeds_capability,
+            )
+            httpStatus > 0 -> str(R.string.player_error_play_http, httpStatus)
+            else -> err
+        }
     }
 
     fun isIsoBandwidthStopped(): Boolean =
         (st.isoSession || IsoSessionSignal.escalated()) && st.isoBandwidthSwitchTried
 
     fun isSourceStub(): Boolean = IsoSessionSignal.stubBytes() > 0
+
+    fun isIsoEscalated(): Boolean = IsoSessionSignal.escalated()
 
     fun isPlaybackStarted(): Boolean {
         if (st.playbackStarted) return true
@@ -549,15 +781,6 @@ class PlaybackController {
         timeouts.cancelResolvePlayUrlTimeout()
     }
 
-    fun setAutoSwitchLineEnabled(enabled: Boolean) {
-        if (st.allowAutoSwitchLine == enabled) return
-        st.allowAutoSwitchLine = enabled
-        if (!enabled) {
-            cancelPlayTimeout()
-            st.clearTriedLines()
-        }
-    }
-
     fun retryAfterStartedError(): Boolean {
         return retry.retryAfterStartedError()
     }
@@ -594,8 +817,71 @@ class PlaybackController {
 
     private var currentSession: PlaybackSession? = null
 
+    fun currentSession(): PlaybackSession? = currentSession
+
+    fun clearSession() {
+        currentSession = null
+    }
+
+    fun startVideoPlayback(
+        view: MyVideoView,
+        url: String,
+        headers: HashMap<String, String>?,
+        forceExoPlayer: Boolean,
+        releaseKernel: () -> Unit,
+        trackMemoryKey: String,
+        renderRebuildGuard: (() -> Boolean)? = null,
+        startLineTimeoutIso: Boolean? = null,
+    ): Boolean {
+        if (renderRebuildGuard != null && view.mediaPlayer != null && renderRebuildGuard() &&
+            view.needsRenderRebuild(view.factoryRenderType())
+        ) {
+            view.requireKernelRebuild()
+            LOG.i("echo-render-changed: rebuild kernel on next start")
+        }
+        if (view.isKernelErrored()) {
+            view.requireKernelRebuild()
+            LOG.i("echo-kernel-error: rebuild errored kernel on start")
+        }
+        val rebuildKernel = view.consumeKernelRebuildRequired()
+        val kernelPresent = view.mediaPlayer != null
+        val reusePlayer =
+            KernelReusePolicy.decide(kernelPresent, rebuildKernel, forceExoPlayer, true) == KernelDecision.REUSE
+        val sameContent = reusePlayer && isSameStartedContent()
+        if (!reusePlayer && kernelPresent) releaseKernel()
+        if (sameContent) view.saveCurrentProgress()
+        view.setProgressKey(progressKey())
+        view.setTrackMemoryKey(trackMemoryKey)
+        markContentStarted()
+        st = st.copy(skipEndPending = true)
+        if (headers != null) {
+            view.setUrl(url, headers)
+        } else {
+            view.setUrl(url)
+        }
+        if (startLineTimeoutIso != null) startSwitchLinePlayTimeout(startLineTimeoutIso)
+        if (reusePlayer) {
+            val base = playTimeoutBasePosition()
+            view.skipPositionWhenPlay((if (sameContent) view.resumePositionForReplay(base) else base).toInt())
+            view.replay(false)
+        } else {
+            view.start()
+        }
+        return reusePlayer
+    }
+
     fun markContentStarted() {
         progress.markContentStarted()
+    }
+
+    fun onSessionTakenOver(userPickedLine: Boolean) {
+        markContentStarted()
+        setUserPickedLine(userPickedLine)
+    }
+
+    fun onNewPlayArmed(userPickedLine: Boolean, reusePlayerOnSwitch: Boolean) {
+        setUserPickedLine(userPickedLine)
+        if (reusePlayerOnSwitch) setReusePlayerOnSwitch(true)
     }
 
     fun clearStartedContent() {
@@ -606,13 +892,16 @@ class PlaybackController {
 
     fun startedProgressKey(): String? = progress.startedProgressKey()
 
-    fun isSameContentRestart(): Boolean =
-        ProgressSampling.restartKeepsProgress(
+    fun isSameContentRestart(): Boolean {
+        val refresh = st.consumeRefreshKeepsProgress()
+        st = refresh.state
+        return ProgressSampling.restartKeepsProgress(
             st.userPickedLine,
             progress.startedPlaybackKey(),
             currentSession?.playbackKey(),
-            st.consumeRefreshKeepsProgress(),
+            refresh.value,
         )
+    }
 
     fun isSameStartedContent(): Boolean = progress.isSameStartedContent()
 
@@ -650,6 +939,12 @@ class PlaybackController {
 
     fun initParse(flag: String?, useParse: Boolean, playUrl: String, url: String) {
         resolver.initParse(flag, useParse, playUrl, url)
+    }
+
+    fun requestParse(pb: ParseBean) {
+        resetAutoRetryState()
+        clearTriedLines()
+        doParse(pb)
     }
 
     fun doParse(pb: ParseBean) {
@@ -690,6 +985,10 @@ class PlaybackController {
 
     private val starter: PlaybackStarter = PlaybackStarter(object : PlaybackStarter.Host {
         override fun attemptState(): PlaybackAttemptState = st
+
+        override fun updateAttemptState(block: (PlaybackAttemptState) -> PlaybackAttemptState) {
+            this@PlaybackController.updateAttemptState(block)
+        }
 
         override fun view(): PlaybackViewBridge? = this@PlaybackController.view
 
@@ -831,7 +1130,7 @@ class PlaybackController {
     }
 
     fun goPlayUrl(url: String, headers: HashMap<String, String>?) {
-        st.localProxySession = SourcePolicy.isLocalProxyUrl(url)
+        st = st.copy(localProxySession = SourcePolicy.isLocalProxyUrl(url))
         SlowOpenSignal.reset()
         starter.goPlayUrl(url, headers)
     }
@@ -846,7 +1145,7 @@ class PlaybackController {
         }
 
         override fun onPreloadedResult(info: JSONObject?) {
-            st.usedPreloadedResult = true
+            st = st.copy(usedPreloadedResult = true)
             fetch.deliver(info)
         }
     })
@@ -871,6 +1170,10 @@ class PlaybackController {
         override fun view(): PlaybackViewBridge? = this@PlaybackController.view
 
         override fun attemptState(): PlaybackAttemptState = st
+
+        override fun updateAttemptState(block: (PlaybackAttemptState) -> PlaybackAttemptState) {
+            this@PlaybackController.updateAttemptState(block)
+        }
 
         override fun timeouts(): PlaybackTimeouts = this@PlaybackController.timeouts
 
@@ -904,7 +1207,7 @@ class PlaybackController {
 
     fun playDanmu(): String? = music.playDanmu()
 
-    fun setPlayDanmu(danmu: String?) {
+    fun onDanmuChecked(danmu: String?) {
         music.setPlayDanmu(danmu)
     }
 
@@ -917,7 +1220,8 @@ class PlaybackController {
     }
 
     fun stopPlaybackForPageExit() {
-        st.clearSessionFlags()
+        st = st.clearSessionFlags()
+        music.resetAudioSession()
         timeouts.cancelPendingCompletionDrop()
         cancelInFlight()
         ApiConfig.get().setCurrentPlaySourceKey("")
@@ -933,7 +1237,8 @@ class PlaybackController {
     }
 
     fun onHostDestroy() {
-        st.clearSessionFlags()
+        st = st.clearSessionFlags()
+        music.resetAudioSession()
         timeouts.cancelPendingCompletionDrop()
         cancelPlayTimeout()
         cancelResolvePlayUrlTimeout()

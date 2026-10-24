@@ -184,7 +184,7 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
                             iconRes = R.drawable.ic_edit,
                             contentDescription = stringResource(R.string.common_edit),
                             enabled = selected.size == 1,
-                            onClick = { vm.editTarget.value = selected.firstOrNull()?.let { parseSubscribe(it) } },
+                            onClick = { vm.openEdit(selected.firstOrNull()?.let { parseSubscribe(it) }) },
                         )
                         ManageActionIcon(
                             iconRes = R.drawable.ic_delete,
@@ -396,7 +396,7 @@ fun ConfigManageScreen(onNavigateBack: () -> Unit) {
             initialUrl = editing?.url.orEmpty(),
             onDismiss = {
                 addDialogOpen = false
-                vm.editTarget.value = null
+                vm.closeEdit()
             },
             onSave = { name, url ->
                 if (editing != null) vm.commitEdit(isVod, editing, name, url) else vm.commitAdd(isVod, name, url)

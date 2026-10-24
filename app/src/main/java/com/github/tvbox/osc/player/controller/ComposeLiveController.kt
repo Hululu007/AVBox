@@ -56,15 +56,12 @@ class ComposeLiveController(
     private var firstTouch = false
     private var changeBrightness = false
     private var changeVolume = false
-    private var playState = PlayState.IDLE
-
     init {
         @Suppress("ClickableViewAccessibility")
         setOnTouchListener(this)
     }
 
     override fun setPlayState(playState: PlayState) {
-        this.playState = playState
         listener?.onPlayStateChanged(playState)
     }
 
@@ -81,8 +78,8 @@ class ComposeLiveController(
     }
 
     private fun gesturePlaybackState(): Boolean {
-        if (videoView == null) return false
-        return when (playState) {
+        val view = videoView ?: return false
+        return when (view.playState) {
             PlayState.PLAYING, PlayState.PAUSED, PlayState.BUFFERING, PlayState.BUFFERED -> true
             else -> false
         }

@@ -66,7 +66,7 @@ internal class PlayContainerSubtitles(private val host: PlayContainer) {
             val mediaPlayer = view.mediaPlayer
             val hasInternal = host.mController.getSubtitleView().hasInternal || hasExoInternalSubtitle(mediaPlayer)
             val exoInternal = mediaPlayer is ExoPlayer && exoInternalSubtitle
-            uiState.subtitleSheet = SubtitleSheetState(
+            uiState.openSubtitleSheet(SubtitleSheetState(
                 exoInternal,
                 hasInternal,
                 {
@@ -90,7 +90,7 @@ internal class PlayContainerSubtitles(private val host: PlayContainer) {
                     setSubtitleViewTextStyle(0)
                     applySubtitleTextSize()
                 },
-            )
+            ))
         } catch (e: Exception) {
             LOG.e("PlayContainer", e)
         }
@@ -159,7 +159,7 @@ internal class PlayContainerSubtitles(private val host: PlayContainer) {
             vod.name
         }
         val uiState = host.mController.getUiState()
-        uiState.subtitleSearchSheet = SubtitleSearchSheetState(word ?: "") { subtitle, releaseUrl ->
+        uiState.openSubtitleSearchSheet(SubtitleSearchSheetState(word ?: "") { subtitle, releaseUrl ->
             if (host.isAttached()) {
                 runOnUi {
                     val zimuUrl = subtitle.url
@@ -171,7 +171,7 @@ internal class PlayContainerSubtitles(private val host: PlayContainer) {
                     setSubtitle(zimuUrl)
                 }
             }
-        }
+        })
     }
 
     @SuppressLint("UseCompatLoadingForColorStateLists")
@@ -203,7 +203,7 @@ internal class PlayContainerSubtitles(private val host: PlayContainer) {
             "echo-setTrack subtitle-list: count=" + bean.size +
                 " selected=" + trackInfo.getSubtitleSelected(false) + " names=" + names,
         )
-        host.mController.getUiState().selectDialog = SelectDialogState(
+        host.mController.getUiState().openSelectDialog(SelectDialogState(
             host.context.getString(R.string.player_switch_internal_subtitle),
             names,
             trackInfo.getSubtitleSelected(false),
@@ -230,7 +230,7 @@ internal class PlayContainerSubtitles(private val host: PlayContainer) {
                     LOG.e("echo-switch-internal-subtitle-error:" + e.message)
                 }
             }
-        }
+        })
     }
 
     private fun hasExoInternalSubtitle(mediaPlayer: KernelPlayer?): Boolean {
@@ -319,7 +319,7 @@ internal class PlayContainerSubtitles(private val host: PlayContainer) {
             }
             var trackInfo: TrackInfo? = null
             val mediaPlayer = view.mediaPlayer
-            host.mController.getLyricView().setTextSize(if (host.previewMode) 16f else 24f)
+            host.mController.getLyricView().setTextSize(if (host.mController.getUiState().previewMode) 16f else 24f)
             applySubtitleTextSize()
             host.mController.getLyricView().setVisibility(View.GONE)
             host.mController.getLyricView().reset()
@@ -516,6 +516,6 @@ internal class PlayContainerSubtitles(private val host: PlayContainer) {
     fun applySubtitleTextSize() {
         if (host.mController == null || host.mController.getSubtitleView() == null) return
         val size = SubtitleHelper.getTextSize(host.mActivity)
-        host.mController.getSubtitleView().setTextSize(if (host.previewMode) size * 0.6f else size.toFloat())
+        host.mController.getSubtitleView().setTextSize(if (host.mController.getUiState().previewMode) size * 0.6f else size.toFloat())
     }
 }

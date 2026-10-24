@@ -4,14 +4,17 @@ import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.api.ApiConfig
+import com.github.tvbox.osc.api.ConfigRepository
 import com.github.tvbox.osc.base.App
 import com.github.tvbox.osc.bean.Epginfo
 import com.github.tvbox.osc.bean.LiveChannelGroup
 import com.github.tvbox.osc.bean.LiveChannelItem
+import com.github.tvbox.osc.bean.LiveSettingGroup
+import com.github.tvbox.osc.bean.LiveSettingItem
 import com.github.tvbox.osc.player.state.PlayState
 import com.github.tvbox.osc.util.BootGuard
 import com.github.tvbox.osc.util.HawkConfig
-import com.github.tvbox.osc.util.HistoryHelper
+
 import com.github.tvbox.osc.util.KV
 import com.github.tvbox.osc.util.LanguageManager
 import com.google.gson.JsonArray
@@ -38,6 +41,7 @@ internal data class LiveEpgUi(
     val epgList: List<Epginfo> = emptyList(),
     val lookBackIndex: Int = -1,
     val canCatchup: Boolean = false,
+    val logoUrl: String? = null,
 )
 
 internal data class LiveTimeshiftUi(
@@ -53,6 +57,7 @@ internal data class LiveChannelListUi(
     val playingGroupIndex: Int = 0,
     val playingChannelIndex: Int = -1,
     val playingChannel: LiveChannelItem? = null,
+    val playingSourceIndex: Int = -1,
     val expandedGroups: Set<Int> = emptySet(),
     val lockedGroups: Set<Int> = emptySet(),
     val confirmedPasswordGroups: Set<Int> = emptySet(),
@@ -75,6 +80,7 @@ internal data class LivePlayerUi(
     val resolutionText: String = "",
     val resolutionVisible: Boolean = false,
     val gestureHintText: String? = null,
+    val sourceSwitchAttempts: Int = 0,
 )
 
 internal data class LiveOverlayUi(
@@ -130,7 +136,169 @@ internal class LivePlayViewModel : ViewModel() {
         _state.update { it.copy(passwordDialogTarget = target) }
     }
 
+    internal fun updateLogoUrl(url: String?) {
+        updateEpg { it.copy(logoUrl = url) }
+    }
+
+    internal fun resetSourceSwitchAttempts() {
+        _state.update { it.copy(player = it.player.copy(sourceSwitchAttempts = 0)) }
+    }
+
+    internal fun bumpSourceSwitchAttempts(): Int {
+        var next = 0
+        _state.update {
+            next = it.player.sourceSwitchAttempts + 1
+            it.copy(player = it.player.copy(sourceSwitchAttempts = next))
+        }
+        return next
+    }
+
+    internal fun updateSourceIndex(index: Int) {
+        _state.update { it.copy(channelList = it.channelList.copy(playingSourceIndex = index)) }
+    }
+
+    internal fun onPlayStateChanged(playState: PlayState) {
+        updatePlayer { it.copy(playState = playState) }
+    }
+
+    internal fun setFullscreen(full: Boolean) {
+        updateFrame { it.copy(fullScreen = full) }
+    }
+
+    internal fun setRotating(rotating: Boolean) {
+        updateFrame { it.copy(rotating = rotating) }
+    }
+
+    internal fun setLandscapeNow(landscape: Boolean) {
+        updateFrame { it.copy(landscapeNow = landscape) }
+    }
+
+    internal fun setOverlayVisible(visible: Boolean) {
+        updateOverlay { it.copy(visible = visible) }
+    }
+
+    internal fun toggleOverlay(): Boolean {
+        var next = false
+        updateOverlay {
+            next = !it.visible
+            it.copy(visible = next)
+        }
+        return next
+    }
+
+    internal fun setTimeshiftBack(back: Boolean) {
+        updateTimeshift { it.copy(isBackState = back) }
+    }
+
+    internal fun setShiyi(shiyi: Boolean) {
+        updateTimeshift { it.copy(isShiyi = shiyi) }
+    }
+
+    internal fun setLookBackIndex(index: Int) {
+        updateEpg { it.copy(lookBackIndex = index) }
+    }
+
+    internal fun setEpgList(list: List<Epginfo>) {
+        updateEpg { it.copy(epgList = list) }
+    }
+
+    internal fun setEpgChannelName(name: String) {
+        updateEpg { it.copy(channelName = name) }
+    }
+
+    internal fun setCanCatchup(can: Boolean) {
+        updateEpg { it.copy(canCatchup = can) }
+    }
+
+    internal fun showEpgSheet() {
+        updateEpg { it.copy(sheetVisible = true) }
+    }
+
+    internal fun hideEpgSheet() {
+        updateEpg { it.copy(sheetVisible = false) }
+    }
+
+    internal fun hideSettingsSheet() {
+        updateSettings { it.copy(sheetVisible = false) }
+    }
+
+    internal fun setPlayingGroupIndex(index: Int) {
+        updateChannelList { it.copy(playingGroupIndex = index) }
+    }
+
+    internal fun setPlayingChannelIndex(index: Int) {
+        updateChannelList { it.copy(playingChannelIndex = index) }
+    }
+
+    internal fun setPlayingChannel(item: LiveChannelItem?) {
+        updateChannelList { it.copy(playingChannel = item) }
+    }
+
+    internal fun setTappedGroupIndex(index: Int) {
+        updateChannelList { it.copy(tappedGroupIndex = index) }
+    }
+
+    internal fun expandChannelGroup(index: Int) {
+        updateChannelList { it.copy(expandedGroups = it.expandedGroups + index) }
+    }
+
+    internal fun collapseChannelGroup(index: Int) {
+        updateChannelList { it.copy(expandedGroups = it.expandedGroups - index) }
+    }
+
+    internal fun requestChannelScroll() {
+        updateChannelList { it.copy(scrollRequestId = it.scrollRequestId + 1) }
+    }
+
+    internal fun confirmPasswordGroup(index: Int) {
+        updateChannelList { it.copy(confirmedPasswordGroups = it.confirmedPasswordGroups + index) }
+    }
+
+    private var pendingSourceIndex = 0
+
+    internal fun setPendingSourceIndex(index: Int) {
+        pendingSourceIndex = index
+    }
+
+    internal fun consumePendingSourceIndex(): Int {
+        val index = pendingSourceIndex
+        pendingSourceIndex = 0
+        return index
+    }
+
+    internal fun currentSourceIndex(): Int = _state.value.channelList.playingSourceIndex
+
+    internal fun channelGroups(): List<LiveChannelGroup> = channelGroups
+
     private var channelGroups: List<LiveChannelGroup> = emptyList()
+
+    private var settingGroups: List<LiveSettingGroup> = emptyList()
+
+    internal fun settingGroups(): List<LiveSettingGroup> = settingGroups
+
+    internal fun updateSettingGroups(groups: List<LiveSettingGroup>) {
+        settingGroups = groups.map { group ->
+            LiveSettingGroup().apply {
+                groupIndex = group.groupIndex
+                groupName = group.groupName
+                liveSettingItems = group.liveSettingItems?.let { ArrayList(it) }
+            }
+        }
+    }
+
+    internal fun updateCurrentSourceItems(items: ArrayList<LiveSettingItem>) {
+        settingGroups = settingGroups.map { group ->
+            if (group.groupIndex == 0) {
+                LiveSettingGroup().apply {
+                    groupIndex = group.groupIndex
+                    groupName = group.groupName
+                    liveSettingItems = items
+                }
+            } else {
+                group
+            }
+        }
+    }
 
     internal fun updateChannelList(transform: (LiveChannelListUi) -> LiveChannelListUi) {
         _state.update { current ->
@@ -188,7 +356,7 @@ internal class LivePlayViewModel : ViewModel() {
 
     private fun refreshSettingsSnapshot() {
         val source = settingsSource ?: return
-        val groups = LiveSettingsSnapshot.of(source, _state.value.channelList.playingChannel)
+        val groups = LiveSettingsSnapshot.of(source, _state.value.channelList.playingChannel, currentSourceIndex())
         _state.update { it.copy(settings = it.settings.copy(groups = groups)) }
     }
 
@@ -239,8 +407,8 @@ internal class LivePlayViewModel : ViewModel() {
         when (groupIndex) {
             0 -> {
                 val item = host.currentChannelItem() ?: return
-                if (position < 0 || position >= item.sourceNum || position == item.sourceIndex) return
-                item.sourceIndex = position
+                if (position < 0 || position >= item.sourceNum || position == currentSourceIndex()) return
+                updateSourceIndex(position)
                 host.replayCurrentChannel()
             }
             1 -> {
@@ -296,15 +464,7 @@ internal class LivePlayViewModel : ViewModel() {
                     host.toast(str(R.string.live_source_auto_disabled))
                     return
                 }
-                KV.put(HawkConfig.LIVE_API_URL, target)
-                if (target.isEmpty()) {
-                    HistoryHelper.clearLiveApiLineList()
-                } else {
-                    HistoryHelper.setLiveApiHistory(target)
-                    if (!HistoryHelper.isLiveApiLineUrl(target)) HistoryHelper.clearLiveApiLineList()
-                }
-                ApiConfig.get().clearLiveHosts()
-                ApiConfig.get().invalidateLiveConfig()
+                ConfigRepository.switchLiveSource(target)
                 ApiConfig.get().refreshLiveApiHistoryItems()
                 ApiConfig.get().loadLiveConfig(false, object : ApiConfig.LoadConfigCallback {
                     override fun success() {
@@ -342,7 +502,7 @@ internal class LivePlayViewModel : ViewModel() {
     }
 
     private fun preferredRefreshSourceIndex(host: Host): Int {
-        host.currentChannelItem()?.let { return it.sourceIndex }
+        if (host.currentChannelItem() != null) return currentSourceIndex()
         return -1
     }
 }

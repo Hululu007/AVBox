@@ -92,7 +92,7 @@ import com.github.tvbox.osc.ui.components.PosterBackdrop
 import com.github.tvbox.osc.ui.components.ScallopShape
 import com.github.tvbox.osc.ui.components.TopBarActionBox
 import com.github.tvbox.osc.ui.components.glassTopBarSurface
-import com.github.tvbox.osc.ui.player.PlayerTipBridge
+import com.github.tvbox.osc.ui.player.PlayerTipState
 import com.github.tvbox.osc.ui.theme.AppThemeState
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
@@ -212,7 +212,7 @@ fun MusicPlayerScreen(
                 Spacer(Modifier.height(16.dp))
             }
 
-            MusicTipOverlay()
+            MusicTipOverlay(state.tip)
         }
 
         if (queueVisible) {
@@ -275,7 +275,7 @@ fun MusicPlayerScreen(
         }
 
         state.castSheet?.let { sheet ->
-            CastSheet(sheet) { state.castSheet = null }
+            CastSheet(sheet) { state.dismissCastSheet() }
         }
     }
 }
@@ -807,8 +807,7 @@ private const val WAVE_PERIOD_NANOS = 2_000_000_000L
 private const val WAVE_FRAME_INTERVAL_NANOS = 1_000_000_000L / 30
 
 @Composable
-private fun MusicTipOverlay() {
-    val tip = PlayerTipBridge.state
+private fun MusicTipOverlay(tip: PlayerTipState) {
     if (tip.msg.isEmpty()) return
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Surface(

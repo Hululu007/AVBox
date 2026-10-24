@@ -9,8 +9,8 @@ import android.os.SystemClock
 
 import com.github.catvod.crawler.JsLoader
 import com.github.tvbox.osc.BuildConfig
-import com.github.tvbox.osc.bean.VodInfo
 import com.github.tvbox.osc.data.AppDataManager
+import com.github.tvbox.osc.data.PlaybackDataPorts
 import com.github.tvbox.osc.data.PlaybackPorts
 import com.github.tvbox.osc.io.FileUtils
 import com.github.tvbox.osc.net.OkGoHelper
@@ -30,7 +30,6 @@ import me.jessyan.autosize.AutoSizeConfig
 import me.jessyan.autosize.unit.Subunits
 
 class App : Application() {
-    private var vodInfo: VodInfo? = null
 
     override fun attachBaseContext(base: Context) {
         Probe.step("kvInit") { KV.init(base) }
@@ -53,7 +52,16 @@ class App : Application() {
         bootMark("installStrictMode")
         instance = this
         AppContextHolder.install(this)
-        PlaybackPorts.currentVod = { getInstance()?.getVodInfo() }
+        PlaybackPorts.ports = object : PlaybackDataPorts {
+            override fun currentVod() = com.github.tvbox.osc.player.PlaybackService.peek()?.controller()?.vod()
+            override fun isLiveMode() = com.github.tvbox.osc.player.PlaybackService.peek()?.isLiveMode() == true
+            override fun discardStartedContentOf(owners: List<String>) {
+                com.github.tvbox.osc.player.PlaybackService.peek()?.discardStartedContentOf(owners)
+            }
+            override fun onProgressKeysCleared(keys: List<String>) {
+                com.github.tvbox.osc.player.PlaybackService.peek()?.markZeroStartKeys(keys)
+            }
+        }
         com.github.tvbox.osc.util.BootGuard.install()
         bootMark("bootGuard")
         initParams()
@@ -138,14 +146,6 @@ class App : Application() {
     override fun onTerminate() {
         super.onTerminate()
         JsLoader.destroy()
-    }
-
-    fun setVodInfo(vodinfo: VodInfo?) {
-        this.vodInfo = vodinfo
-    }
-
-    fun getVodInfo(): VodInfo? {
-        return this.vodInfo
     }
 
     fun getCurrentActivity(): Activity {

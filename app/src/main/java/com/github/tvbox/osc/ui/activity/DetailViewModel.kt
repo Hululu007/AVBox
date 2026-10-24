@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.base.App
+import com.github.tvbox.osc.event.UiChange
+import com.github.tvbox.osc.event.UiEvents
 import com.github.tvbox.osc.bean.AbsXml
 import com.github.tvbox.osc.bean.Movie
 import com.github.tvbox.osc.bean.VodInfo
@@ -13,7 +15,6 @@ import com.github.tvbox.osc.data.AppGraph
 import com.github.tvbox.osc.data.EpisodeTotals
 import com.github.tvbox.osc.data.HistoryWriter
 import com.github.tvbox.osc.data.VodFollow
-import com.github.tvbox.osc.event.RefreshEvent
 import com.github.tvbox.osc.net.SearchHelper
 import com.github.tvbox.osc.player.PlaybackService
 import com.github.tvbox.osc.player.PlaybackSession
@@ -30,18 +31,25 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import org.greenrobot.eventbus.EventBus
-import org.greenrobot.eventbus.Subscribe
-import org.greenrobot.eventbus.ThreadMode
+import com.github.tvbox.osc.ui.components.toVodInfo
 
 class DetailViewModel : ViewModel() {
 
@@ -58,29 +66,55 @@ class DetailViewModel : ViewModel() {
 
     data class SourceChip(val key: String, val name: String)
 
-    val pageState = MutableStateFlow<PageState>(PageState.Loading)
-    val revision = MutableStateFlow(0)
-    val fullScreen = MutableStateFlow(false)
-    val rotating = MutableStateFlow(false)
-    val enteringFullscreen = MutableStateFlow(false)
-    val exitingFullscreen = MutableStateFlow(false)
-    val playSignal = MutableStateFlow(0)
-    val collected = MutableStateFlow(false)
-    val follow = MutableStateFlow<VodFollow?>(null)
-    val qualityOptions = MutableStateFlow<List<String>>(emptyList())
-    val qualitySelected = MutableStateFlow(0)
-    val sourceChips = MutableStateFlow<List<SourceChip>>(emptyList())
-    val sourcesSearching = MutableStateFlow(false)
-    val relatedVideos = MutableStateFlow<List<Movie.Video>>(emptyList())
-    val episodeSheet = MutableStateFlow(false)
-    val toastEvent = MutableStateFlow<String?>(null)
-    val finishEvent = MutableStateFlow(false)
+    private val _pageState = MutableStateFlow<PageState>(PageState.Loading)
+    val pageState = _pageState.asStateFlow()
+
+    data class VodUiSnapshot(val rev: Int, val info: VodInfo)
+
+    private val _vodUi = MutableStateFlow<VodUiSnapshot?>(null)
+    val vodUi: StateFlow<VodUiSnapshot?> = _vodUi.asStateFlow()
+    private val _fullScreen = MutableStateFlow(false)
+    val fullScreen = _fullScreen.asStateFlow()
+    private val _rotating = MutableStateFlow(false)
+    val rotating: StateFlow<Boolean> = _rotating.asStateFlow()
+    private val _enteringFullscreen = MutableStateFlow(false)
+    val enteringFullscreen = _enteringFullscreen.asStateFlow()
+    private val _exitingFullscreen = MutableStateFlow(false)
+    val exitingFullscreen = _exitingFullscreen.asStateFlow()
+    private val _playSignal = MutableStateFlow(0)
+    val playSignal = _playSignal.asStateFlow()
+    private val _collected = MutableStateFlow(false)
+    val collected = _collected.asStateFlow()
+    private val _follow = MutableStateFlow<VodFollow?>(null)
+    val follow = _follow.asStateFlow()
+    private val _qualityOptions = MutableStateFlow<List<String>>(emptyList())
+    val qualityOptions = _qualityOptions.asStateFlow()
+    private val _qualitySelected = MutableStateFlow(0)
+    val qualitySelected = _qualitySelected.asStateFlow()
+    private val _sourceChips = MutableStateFlow<List<SourceChip>>(emptyList())
+    val sourceChips = _sourceChips.asStateFlow()
+    private val _sourcesSearching = MutableStateFlow(false)
+    val sourcesSearching = _sourcesSearching.asStateFlow()
+    private val _relatedVideos = MutableStateFlow<List<Movie.Video>>(emptyList())
+    val relatedVideos = _relatedVideos.asStateFlow()
+    private val _episodeSheet = MutableStateFlow(false)
+    val episodeSheet = _episodeSheet.asStateFlow()
+    private val _toastEvent = MutableSharedFlow<String>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    val toastEvent: SharedFlow<String> = _toastEvent.asSharedFlow()
+
+    private val _finishEvent = MutableSharedFlow<Unit>(
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    val finishEvent: SharedFlow<Unit> = _finishEvent.asSharedFlow()
 
     private val playbackCommandChannel = Channel<PlaybackCommand>(Channel.BUFFERED)
     val playbackCommands: Flow<PlaybackCommand> = playbackCommandChannel.receiveAsFlow()
 
     var vodInfo: VodInfo? = null; private set
-    var previewVodInfo: VodInfo? = null; private set
     var vodId = ""; private set
     var sourceKey = ""; private set
     var firstsourceKey = ""; private set
@@ -136,10 +170,59 @@ class DetailViewModel : ViewModel() {
     private var searchTitle = ""
 
     init {
-        EventBus.getDefault().register(this)
         viewModelScope.launch {
             sourceViewModel.detailResult.flow.collect { data ->
                 if (DetailResponseGuard.isCurrent(detailRequestToken, data?.detailToken)) onDetailResult(data)
+            }
+        }
+        viewModelScope.launch {
+            sourceViewModel.searchResult.flow.collect { onSearchResult(it) }
+        }
+        observeUiEvents()
+        observeEngineState()
+    }
+
+    private var engineStateJob: Job? = null
+
+    private fun observeEngineState() {
+        if (engineStateJob?.isActive == true) return
+        engineStateJob = viewModelScope.launch {
+            while (isActive) {
+                val engine = PlaybackService.peek()
+                val controller = engine?.controller()
+                if (engine == null || controller == null) {
+                    delay(250)
+                    continue
+                }
+                val subscriptions = launch {
+                    launch {
+                        controller.selection.collect {
+                            val playing = controller.vod() ?: return@collect
+                            syncPlayingVodInfo(playing)
+                        }
+                    }
+                    launch {
+                        controller.quality.collect { result ->
+                            val playing = controller.vod() ?: return@collect
+                            val info = vodInfo ?: return@collect
+                            if (playing.id != info.id || playing.sourceKey != info.sourceKey) return@collect
+                            updateQualityOptions(result)
+                        }
+                    }
+                    launch {
+                        controller.persistedPlayerCfg.collect { cfg ->
+                            val playing = controller.vod() ?: return@collect
+                            val info = vodInfo ?: return@collect
+                            if (playing.id != info.id || playing.sourceKey != info.sourceKey) return@collect
+                            if (cfg != null && info.playerCfg != cfg) {
+                                commitVodInfo(info.copy(playerCfg = cfg))
+                                insertVod()
+                            }
+                        }
+                    }
+                }
+                while (isActive && PlaybackService.peek() === engine) delay(500)
+                subscriptions.cancel()
             }
         }
     }
@@ -197,22 +280,19 @@ class DetailViewModel : ViewModel() {
     }
 
     private fun resetContentState() {
-        vodInfo = null
-        previewVodInfo = null
+        publishVodInfo(null)
         switchSnapshot = null
         firstsourceKey = ""
         searchTitle = ""
         manualLineSwitchPending = false
-        collected.value = false
-        follow.value = null
-        relatedVideos.value = emptyList()
-        sourcesSearching.value = false
-        qualityOptions.value = emptyList()
-        qualitySelected.value = 0
-        episodeSheet.value = false
-        toastEvent.value = null
-        finishEvent.value = false
-        pageState.value = PageState.Loading
+        _collected.value = false
+        _follow.value = null
+        _relatedVideos.value = emptyList()
+        _sourcesSearching.value = false
+        _qualityOptions.value = emptyList()
+        _qualitySelected.value = 0
+        _episodeSheet.value = false
+        _pageState.value = PageState.Loading
         fallbackEpisode = null
         fallbackEpisodeIndex = -1
         usedSourceKeys.clear()
@@ -223,12 +303,12 @@ class DetailViewModel : ViewModel() {
     fun onFullScreenToggleRequested(requested: Boolean, facts: DetailPlaybackFacts) {
         if (requested) {
             val reason = DetailFullScreenGate.refusalReason(
-                pageState.value,
+                _pageState.value,
                 loadingText = { str(R.string.detail_content_not_ready) },
                 emptyText = { str(R.string.detail_empty_source) },
             )
             if (reason != null) {
-                toastEvent.value = reason
+                _toastEvent.tryEmit(reason)
                 return
             }
             enterFullscreen()
@@ -237,17 +317,32 @@ class DetailViewModel : ViewModel() {
         val next = DetailFullScreenSlide.exit(slideState()) ?: return
         applySlideState(next)
         Thunder.cancelPendingParse()
-        rotating.value = DetailPlaybackCommands.exitFullScreenState(facts).second
+        _rotating.value = DetailPlaybackCommands.exitFullScreenState(facts).second
+    }
+
+    fun settleRotation() {
+        if (!_rotating.value) return
+        _rotating.value = false
     }
 
     fun bumpRevision() {
-        revision.value += 1
+        _vodUi.update { it?.copy(rev = it.rev + 1) }
+    }
+
+    private fun commitVodInfo(info: VodInfo) {
+        vodInfo = info
+        _vodUi.update { it?.copy(info = info, rev = it.rev + 1) }
+    }
+
+    private fun publishVodInfo(info: VodInfo?) {
+        vodInfo = info
+        _vodUi.value = info?.let { VodUiSnapshot(0, it) }
     }
 
     internal fun onPlayRequested(entry: DetailPlaybackEntry) {
         val list = vodInfo?.seriesMap?.get(vodInfo?.playFlag)
         if (list.isNullOrEmpty()) {
-            toastEvent.value = str(R.string.detail_no_playable_content)
+            _toastEvent.tryEmit(str(R.string.detail_no_playable_content))
             return
         }
         applyPlaybackEntry(entry)
@@ -256,7 +351,7 @@ class DetailViewModel : ViewModel() {
     internal fun applyPlaybackEntry(entry: DetailPlaybackEntry, resumable: Boolean = false) {
         val plan = DetailPlaybackPolicy.plan(entry, resumable)
         if (plan.enterFullScreen) enterFullscreen()
-        if (plan.startPlayback) playSignal.value += 1
+        if (plan.startPlayback) _playSignal.value += 1
     }
 
     private fun enterFullscreen() {
@@ -279,15 +374,15 @@ class DetailViewModel : ViewModel() {
     }
 
     private fun slideState() = DetailFullScreenSlideState(
-        fullScreen = fullScreen.value,
-        entering = enteringFullscreen.value,
-        exiting = exitingFullscreen.value,
+        fullScreen = _fullScreen.value,
+        entering = _enteringFullscreen.value,
+        exiting = _exitingFullscreen.value,
     )
 
     private fun applySlideState(state: DetailFullScreenSlideState) {
-        fullScreen.value = state.fullScreen
-        enteringFullscreen.value = state.entering
-        exitingFullscreen.value = state.exiting
+        _fullScreen.value = state.fullScreen
+        _enteringFullscreen.value = state.entering
+        _exitingFullscreen.value = state.exiting
     }
 
     private fun consumeManualLineSwitch(): Boolean {
@@ -297,21 +392,13 @@ class DetailViewModel : ViewModel() {
     }
 
     fun showEpisodeSheet() {
-        episodeSheet.value = true
+        _episodeSheet.value = true
         sendCommand(PlaybackCommand.SetEpisodeSheetOpen(true))
     }
 
     fun dismissEpisodeSheet() {
-        episodeSheet.value = false
+        _episodeSheet.value = false
         sendCommand(PlaybackCommand.SetEpisodeSheetOpen(false))
-    }
-
-    fun clearToast() {
-        toastEvent.value = null
-    }
-
-    fun consumeFinish() {
-        finishEvent.value = false
     }
 
     private fun retryDetailOnce(reason: String): Boolean {
@@ -339,7 +426,7 @@ class DetailViewModel : ViewModel() {
             onDetailUnavailable()
             return
         }
-        pageState.value = PageState.Loading
+        _pageState.value = PageState.Loading
         sourceViewModel.getDetail(sourceKey, vodId, false, requestToken)
     }
 
@@ -361,8 +448,8 @@ class DetailViewModel : ViewModel() {
             }
             withContext(Dispatchers.Main) {
                 if (sourceKey != key || vodId != vid) return@withContext
-                collected.value = isCollected
-                follow.value = followRecord
+                _collected.value = isCollected
+                _follow.value = followRecord
             }
         }
     }
@@ -371,7 +458,7 @@ class DetailViewModel : ViewModel() {
         if (vodId.isEmpty()) return
         detailRetryTarget = null
         loadDetail(vodId, sourceKey)
-        if (searchTitle.isNotEmpty() && !sourcesSearching.value) startSourceSearch()
+        if (searchTitle.isNotEmpty() && !_sourcesSearching.value) startSourceSearch()
     }
 
     private fun onDetailUnavailable() {
@@ -380,7 +467,7 @@ class DetailViewModel : ViewModel() {
             loadNextFallbackCandidate()
             return
         }
-        if (vodName.isNotEmpty() && !sourcesSearching.value) startSourceSearch()
+        if (vodName.isNotEmpty() && !_sourcesSearching.value) startSourceSearch()
         val staleSource = ApiConfig.get().getSource(sourceKey) == null
         if (!(staleSource && startFallbackIfNeeded(auto = true))) {
             if (!rollbackManualSwitch()) enterEmpty()
@@ -400,11 +487,11 @@ class DetailViewModel : ViewModel() {
             }
             if (wasFallback) {
                 val fallbackSource = ApiConfig.get().getSource(sourceKey)
-                toastEvent.value = str(R.string.detail_switch_site, fallbackSource?.name ?: sourceKey)
+                _toastEvent.tryEmit(str(R.string.detail_switch_site, fallbackSource?.name ?: sourceKey))
             }
             if (isSourceErrorMsg(absXml.msg)) {
                 if (!rollbackManualSwitch(absXml.msg)) {
-                    toastEvent.value = absXml.msg
+                    absXml.msg?.let { _toastEvent.tryEmit(it) }
                     enterEmpty(absXml.msg)
                 }
                 return
@@ -419,9 +506,8 @@ class DetailViewModel : ViewModel() {
             val keep = vodInfo?.takeIf { it.sourceKey == mVideo.sourceKey }
             val keepFlag = keep?.playFlag
             val keepIndex = keep?.playIndex
-            val info = VodInfo()
-            info.setVideo(mVideo)
-            info.sourceKey = mVideo.sourceKey
+            var info = VodInfo.fromVideo(mVideo)
+            info = info.copy(sourceKey = mVideo.sourceKey)
             sourceKey = mVideo.sourceKey ?: sourceKey
 
             val recordKey = sourceKey
@@ -431,47 +517,46 @@ class DetailViewModel : ViewModel() {
                     if (HistoryHelper.isIncognito()) null else AppGraph.historyRepository.getVodInfo(recordKey, recordId)
                 }
                 if (detailToken != detailBuildToken || sourceKey != recordKey || vodId != recordId) return@launch
-                if (record != null) {
-                    info.playIndex = maxOf(record.playIndex, 0)
-                    info.playFlag = record.playFlag
-                    info.playerCfg = record.playerCfg
-                    info.reverseSort = record.reverseSort
+                info = if (record != null) {
+                    info.copy(
+                        playIndex = maxOf(record.playIndex, 0),
+                        playFlag = record.playFlag,
+                        playerCfg = record.playerCfg,
+                        reverseSort = record.reverseSort,
+                    )
                 } else {
-                    info.playIndex = 0
-                    info.playFlag = null
-                    info.playerCfg = ""
-                    info.reverseSort = false
+                    info.copy(playIndex = 0, playFlag = null, playerCfg = "", reverseSort = false)
                 }
                 if (info.reverseSort) info.reverse()
                 if (info.playFlag == null || info.seriesMap?.containsKey(info.playFlag) != true) {
-                    info.playFlag = info.seriesMap?.keys?.firstOrNull()
+                    info = info.copy(playFlag = info.seriesMap?.keys?.firstOrNull())
                 }
                 if (keepFlag != null && info.seriesMap?.containsKey(keepFlag) == true) {
-                    info.playFlag = keepFlag
-                    info.playIndex = (keepIndex ?: 0).coerceIn(0, (info.seriesMap?.get(keepFlag)?.size ?: 1) - 1)
+                    info = info.copy(
+                        playFlag = keepFlag,
+                        playIndex = (keepIndex ?: 0).coerceIn(0, (info.seriesMap?.get(keepFlag)?.size ?: 1) - 1),
+                    )
                 }
-                restoreFallbackEpisode(info)
+                val restored = restoredSelection(info)
+                info = info.copy(playFlag = restored.first, playIndex = restored.second)
                 resetEngineState(keepChips = true)
                 val playingList = info.seriesMap?.get(info.playFlag)
                 if (!playingList.isNullOrEmpty()) {
-                    info.playIndex = info.playIndex.coerceIn(0, playingList.size - 1)
-                    for (flag in info.seriesFlags.orEmpty()) {
-                        flag.selected = flag.name == info.playFlag
-                    }
+                    info = info.copy(playIndex = info.playIndex.coerceIn(0, playingList.size - 1))
                 }
-                vodInfo = info
+                publishVodInfo(info)
                 if (searchTitle.isEmpty() && !info.name.isNullOrEmpty()) {
                     searchTitle = info.name.orEmpty().trim()
                     startSourceSearch()
                 }
                 vodName = mVideo.name ?: vodName
                 if (!playingList.isNullOrEmpty()) switchSnapshot = null
-                pageState.value = PageState.Ready
+                _pageState.value = PageState.Ready
                 bumpRevision()
                 if (playingList.isNullOrEmpty()) {
                     if (retryDetailOnce("no-line")) return@launch
                     LOG.i("echo-detail-no-line key=$sourceKey id=$vodId name=${info.name}")
-                    toastEvent.value = str(R.string.detail_no_playable_content)
+                    _toastEvent.tryEmit(str(R.string.detail_no_playable_content))
                 }
             }
         } else {
@@ -493,8 +578,8 @@ class DetailViewModel : ViewModel() {
             if (fallbackToPreviousTarget(msg)) return
             LOG.i("echo-detail-finish reason=source-msg msg=$msg key=$sourceKey id=$vodId")
             resetEngineState(keepChips = false)
-            toastEvent.value = msg
-            finishEvent.value = true
+            _toastEvent.tryEmit(msg)
+            _finishEvent.tryEmit(Unit)
             return
         }
         if (retryDetailOnce("empty-detail")) return
@@ -510,14 +595,14 @@ class DetailViewModel : ViewModel() {
     private fun fallbackToPreviousTarget(reason: String?): Boolean {
         val previous = navStack.pop() ?: return false
         applyTarget(previous)
-        if (!reason.isNullOrEmpty()) toastEvent.value = reason
+        if (!reason.isNullOrEmpty()) _toastEvent.tryEmit(reason)
         return true
     }
 
     private fun startSourceSearch() {
         val title = searchTitle.ifEmpty { vodName.trim() }
         if (title.isEmpty()) return
-        if (sourcesSearching.value && searchTitle == title) return
+        if (_sourcesSearching.value && searchTitle == title) return
         searchTitle = title
         searchToken = SEARCH_SEQ.incrementAndGet()
         val myToken = searchToken
@@ -527,8 +612,8 @@ class DetailViewModel : ViewModel() {
         val sources = ApiConfig.get().getSourceBeanList()
             .filter { it.isSearchable() && it.isQuickSearch() && (checked == null || checked.containsKey(it.key)) }
             .sortedBy { it.key != home.key }
-        sourcesSearching.value = sources.isNotEmpty()
-        relatedVideos.value = emptyList()
+        _sourcesSearching.value = sources.isNotEmpty()
+        _relatedVideos.value = emptyList()
         if (sources.isEmpty()) return
         searchJob = viewModelScope.launch {
             coroutineScope {
@@ -550,40 +635,35 @@ class DetailViewModel : ViewModel() {
                 }.awaitAll()
             }
             if (tokenStr == currentTokenStr()) {
-                sourcesSearching.value = false
+                _sourcesSearching.value = false
                 if (fallbackActive && fallbackAutoSwitch && !fallbackLoadingCandidate) loadNextFallbackCandidate()
             }
         }
     }
 
-    @Subscribe(threadMode = ThreadMode.MAIN)
-    fun onSearchResultEvent(event: RefreshEvent) {
-        if (event.type == RefreshEvent.TYPE_SEARCH_RESULT) {
-            val data = event.obj as? AbsXml ?: return
-            if (data.searchToken != currentTokenStr()) return
-            pendingSearchDone.remove(data.sourceKey)?.complete(Unit)
-            val videos = data.movie?.videoList.orEmpty()
-            val fresh = videos.filter {
-                !it.id.isNullOrEmpty() && it.name?.trim() == searchTitle
-                        && !usedSourceKeys.contains(it.sourceKey)
-                        && it.sourceKey != sourceKey
-            }.filter { candidateKeys.add(candidateKey(it)) }
-            if (fresh.isNotEmpty()) {
-                synchronized(fallbackCandidates) { fallbackCandidates.addAll(fresh) }
-                publishSourceChips()
-                if (fallbackActive && fallbackAutoSwitch && !fallbackLoadingCandidate) loadNextFallbackCandidate()
-            }
-            val related = videos.filter {
-                !it.id.isNullOrEmpty() && it.name?.trim() != searchTitle
-                        && !(it.sourceKey == sourceKey && it.id == vodId)
-            }
-            if (related.isNotEmpty()) {
-                val seen = relatedVideos.value.mapTo(HashSet()) { candidateKey(it) }
-                val deduped = related.filter { seen.add(candidateKey(it)) }
-                if (deduped.isNotEmpty()) relatedVideos.value = relatedVideos.value + deduped
-            }
-        } else if (event.type == RefreshEvent.TYPE_PLAY_QUALITY) {
-            updateQualityOptions(event.obj as? org.json.JSONObject)
+    private fun onSearchResult(data: AbsXml?) {
+        val info = data ?: return
+        if (info.searchToken != currentTokenStr()) return
+        pendingSearchDone.remove(info.sourceKey)?.complete(Unit)
+        val videos = info.movie?.videoList.orEmpty()
+        val fresh = videos.filter {
+            !it.id.isNullOrEmpty() && it.name?.trim() == searchTitle
+                    && !usedSourceKeys.contains(it.sourceKey)
+                    && it.sourceKey != sourceKey
+        }.filter { candidateKeys.add(candidateKey(it)) }
+        if (fresh.isNotEmpty()) {
+            synchronized(fallbackCandidates) { fallbackCandidates.addAll(fresh) }
+            publishSourceChips()
+            if (fallbackActive && fallbackAutoSwitch && !fallbackLoadingCandidate) loadNextFallbackCandidate()
+        }
+        val related = videos.filter {
+            !it.id.isNullOrEmpty() && it.name?.trim() != searchTitle
+                    && !(it.sourceKey == sourceKey && it.id == vodId)
+        }
+        if (related.isNotEmpty()) {
+            val seen = _relatedVideos.value.mapTo(HashSet()) { candidateKey(it) }
+            val deduped = related.filter { seen.add(candidateKey(it)) }
+            if (deduped.isNotEmpty()) _relatedVideos.value = _relatedVideos.value + deduped
         }
     }
 
@@ -591,7 +671,7 @@ class DetailViewModel : ViewModel() {
 
     private fun publishSourceChips() {
         val candidates = synchronized(fallbackCandidates) { fallbackCandidates.toList() }
-        sourceChips.value = candidates
+        _sourceChips.value = candidates
             .filter { !usedSourceKeys.contains(it.sourceKey) && it.sourceKey != sourceKey }
             .map { video ->
                 val key = video.sourceKey.orEmpty()
@@ -624,7 +704,7 @@ class DetailViewModel : ViewModel() {
                 firstsourceKey,
                 vodName,
                 vodPicture,
-                wasPlaying = fullScreen.value,
+                wasPlaying = _fullScreen.value,
             )
         }
         sendCommand(PlaybackCommand.StopForSourceSwitch(str(R.string.detail_switching_source)))
@@ -635,20 +715,21 @@ class DetailViewModel : ViewModel() {
         if (snapshot.vodInfo.seriesMap?.get(snapshot.vodInfo.playFlag).isNullOrEmpty()) return false
         switchSnapshot = null
         nextDetailRequestToken()
-        vodInfo = snapshot.vodInfo
+        publishVodInfo(snapshot.vodInfo)
         vodId = snapshot.vodId
         sourceKey = snapshot.sourceKey
         firstsourceKey = snapshot.firstsourceKey
         vodName = snapshot.vodName
         vodPicture = snapshot.vodPicture
         resetEngineState(keepChips = true)
-        toastEvent.value =
+        _toastEvent.tryEmit(
             if (reason.isNullOrEmpty()) {
                 str(R.string.detail_switch_failed)
             } else {
                 str(R.string.detail_switch_failed_reason, reason)
-            }
-        pageState.value = PageState.Ready
+            },
+        )
+        _pageState.value = PageState.Ready
         bumpRevision()
         applyPlaybackEntry(DetailPlaybackEntry.SwitchRollback, resumable = snapshot.wasPlaying)
         return true
@@ -657,7 +738,7 @@ class DetailViewModel : ViewModel() {
     private fun enterEmpty(msg: String? = null) {
         sendCommand(PlaybackCommand.ClearSourceSwitchTip)
         LOG.i("echo-detail-empty-state msg=$msg key=$sourceKey id=$vodId")
-        pageState.value = PageState.Empty(msg)
+        _pageState.value = PageState.Empty(msg)
     }
 
     fun startFallbackAfterLinesExhausted(): Boolean = startFallbackIfNeeded(auto = true, fromLinesExhausted = true)
@@ -699,7 +780,7 @@ class DetailViewModel : ViewModel() {
             return
         }
         publishSourceChips()
-        if (!sourcesSearching.value) finishFallbackWithoutResult()
+        if (!_sourcesSearching.value) finishFallbackWithoutResult()
     }
 
     private fun isAutoSwitchable(key: String): Boolean {
@@ -720,7 +801,7 @@ class DetailViewModel : ViewModel() {
         val keep = fallbackKeepCurrentDetail
         resetEngineState(keepChips = true)
         if (!keep && rollbackManualSwitch()) return
-        if (!keep && pageState.value != PageState.Ready) {
+        if (!keep && _pageState.value != PageState.Ready) {
             enterEmpty()
         }
     }
@@ -754,28 +835,28 @@ class DetailViewModel : ViewModel() {
         fallbackEpisode = list[fallbackEpisodeIndex]
     }
 
-    private fun restoreFallbackEpisode(info: VodInfo) {
+    private fun restoredSelection(info: VodInfo): Pair<String?, Int> {
         val episode = fallbackEpisode
-        if (episode == null || fallbackEpisodeIndex < 0 || info.seriesMap == null) return
+        if (episode == null || fallbackEpisodeIndex < 0 || info.seriesMap == null) {
+            return info.playFlag to info.playIndex
+        }
         val preferredFlag = info.playFlag
         val preferredList = info.seriesMap?.get(preferredFlag)
         var matched = findMatchingEpisodeIndex(episode, preferredList)
         if (matched >= 0) {
-            info.playIndex = matched
-            return
+            return preferredFlag to matched
         }
         for (flag in info.seriesFlags.orEmpty()) {
             if (flag.name.isNullOrEmpty() || flag.name == preferredFlag) continue
             matched = findMatchingEpisodeIndex(episode, info.seriesMap?.get(flag.name))
             if (matched >= 0) {
-                info.playFlag = flag.name
-                info.playIndex = matched
-                return
+                return flag.name to matched
             }
         }
         if (preferredList != null && preferredList.isNotEmpty()) {
-            info.playIndex = fallbackEpisodeIndex.coerceIn(0, preferredList.size - 1)
+            return preferredFlag to fallbackEpisodeIndex.coerceIn(0, preferredList.size - 1)
         }
+        return preferredFlag to info.playIndex
     }
 
     private fun resetEngineState(keepChips: Boolean) {
@@ -810,9 +891,7 @@ class DetailViewModel : ViewModel() {
         val list = info.seriesMap?.get(info.playFlag) ?: return
         if (position < 0 || position >= list.size) return
         if (position != manualLineSwitchTargetIndex) manualLineSwitchPending = false
-        info.playIndex = position
-        list.forEachIndexed { index, series -> series.selected = index == position }
-        bumpRevision()
+        commitVodInfo(info.copy(playIndex = position))
         onPlayRequested(DetailPlaybackEntry.Episode)
     }
 
@@ -822,34 +901,31 @@ class DetailViewModel : ViewModel() {
         val oldList = info.seriesMap?.get(info.playFlag)
         val currentIndex = info.playIndex.coerceAtLeast(0)
         val currentSeries = oldList?.getOrNull(currentIndex)
-        info.playFlag = flagName
         val newList = info.seriesMap?.get(flagName)
-        if (newList != null && newList.isNotEmpty()) {
-            info.playIndex = findSameEpisodeIndex(currentSeries, newList, currentIndex)
-            newList.forEachIndexed { index, series -> series.selected = index == info.playIndex }
+        val newIndex = if (newList != null && newList.isNotEmpty()) {
+            findSameEpisodeIndex(currentSeries, newList, currentIndex)
+        } else {
+            info.playIndex
         }
-        info.seriesFlags.orEmpty().forEach { it.selected = it.name == flagName }
         manualLineSwitchPending = true
-        manualLineSwitchTargetIndex = info.playIndex
-        qualityOptions.value = emptyList()
-        qualitySelected.value = 0
-        bumpRevision()
+        manualLineSwitchTargetIndex = newIndex
+        _qualityOptions.value = emptyList()
+        _qualitySelected.value = 0
+        commitVodInfo(info.copy(playFlag = flagName, playIndex = newIndex))
     }
 
     fun toggleReverse() {
         val info = vodInfo ?: return
         val list = info.seriesMap?.get(info.playFlag) ?: return
         if (list.size <= 1) return
-        info.reverseSort = !info.reverseSort
         info.reverse()
-        info.playIndex = (list.size - 1) - info.playIndex
-        bumpRevision()
+        commitVodInfo(info.copy(reverseSort = !info.reverseSort, playIndex = (list.size - 1) - info.playIndex))
     }
 
     fun toggleCollect() {
         val info = vodInfo ?: return
         val key = sourceKey
-        if (collected.value) {
+        if (_collected.value) {
             viewModelScope.launch(Dispatchers.IO) {
                 try {
                     AppGraph.collectRepository.deleteVodCollect(key, info)
@@ -857,7 +933,7 @@ class DetailViewModel : ViewModel() {
                     LOG.e("DetailViewModel", "collect delete failed: " + th, th)
                 }
             }
-            toastEvent.value = str(R.string.toast_removed_from_collect)
+            _toastEvent.tryEmit(str(R.string.toast_removed_from_collect))
         } else {
             viewModelScope.launch(Dispatchers.IO) {
                 try {
@@ -866,9 +942,9 @@ class DetailViewModel : ViewModel() {
                     LOG.e("DetailViewModel", "collect insert failed: " + th, th)
                 }
             }
-            toastEvent.value = str(R.string.toast_added_to_collect)
+            _toastEvent.tryEmit(str(R.string.toast_added_to_collect))
         }
-        collected.value = !collected.value
+        _collected.value = !_collected.value
     }
 
     fun saveFollow(days: Set<Int>, hour: Int) {
@@ -879,12 +955,12 @@ class DetailViewModel : ViewModel() {
             try {
                 AppGraph.followRepository.upsert(key, info, days, hour)
                 val record = AppGraph.followRepository.find(key, vid)
-                withContext(Dispatchers.Main) { follow.value = record }
+                withContext(Dispatchers.Main) { _follow.value = record }
             } catch (th: Throwable) {
                 LOG.e("DetailViewModel", "follow save failed: " + th, th)
             }
         }
-        toastEvent.value = str(R.string.toast_follow_saved)
+        _toastEvent.tryEmit(str(R.string.toast_follow_saved))
     }
 
     private fun updateQualityOptions(result: org.json.JSONObject?) {
@@ -906,9 +982,9 @@ class DetailViewModel : ViewModel() {
         } catch (ignored: Throwable) {
             LOG.d("DetailViewModel", "quality url list parse failed, keep empty options")
         }
-        if (options == qualityOptions.value) return
-        qualityOptions.value = options
-        qualitySelected.value = 0
+        if (options == _qualityOptions.value) return
+        _qualityOptions.value = options
+        _qualitySelected.value = 0
     }
 
     fun switchQuality(position: Int) {
@@ -916,47 +992,52 @@ class DetailViewModel : ViewModel() {
     }
 
     fun onQualitySelectionAccepted(position: Int) {
-        qualitySelected.value = position
+        _qualitySelected.value = position
     }
 
     private fun sendCommand(command: PlaybackCommand) {
         playbackCommandChannel.trySend(command)
     }
 
-    @Subscribe(threadMode = ThreadMode.MAIN)
-    fun onRefreshEvent(event: RefreshEvent) {
-        if (event.type == RefreshEvent.TYPE_PLAYBACK_STARTED) {
-            onPlaybackStarted()
-            return
-        }
-        if (event.type != RefreshEvent.TYPE_REFRESH) return
-        val info = vodInfo ?: return
-        when (val obj = event.obj) {
-            is VodInfo -> syncPlayingVodInfo(obj)
-            is Int -> {
-                val list = info.seriesMap?.get(info.playFlag) ?: return
-                list.forEachIndexed { index, series -> series.selected = index == obj }
-                info.playIndex = obj
-                insertVod()
-                bumpRevision()
-            }
-            is org.json.JSONObject -> {
-                info.playerCfg = obj.toString()
-                insertVod()
-                bumpRevision()
+    private fun observeUiEvents() {
+        viewModelScope.launch {
+            UiEvents.changes.collect { change ->
+                if (change is UiChange.PlaybackStarted) onPlaybackStarted()
             }
         }
     }
 
     private fun onPlaybackStarted() {
         val info = vodInfo ?: return
-        val playing = App.getInstance()?.getVodInfo() ?: return
+        val playing = PlaybackService.peek()?.controller()?.vod() ?: return
         if (playing.id != info.id || playing.sourceKey != info.sourceKey) return
         if (playing.playFlag != info.playFlag || playing.playIndex != info.playIndex) return
         val controller = PlaybackService.peek()?.controller() ?: return
         if (!controller.isSameStartedContent()) return
         LOG.i("echo-history insert on playback-started key=" + sourceKey + "|" + vodId)
         insertVod()
+    }
+
+    fun syncEpisodeAfterMusicReturn() {
+        val info = vodInfo ?: return
+        val playing = PlaybackService.peek()?.controller()?.vod() ?: return
+        if (playing.id != info.id) return
+        if (playing.playFlag == info.playFlag && playing.playIndex == info.playIndex) return
+        syncPlayingVodInfo(playing)
+    }
+
+    suspend fun isVideoCollected(video: Movie.Video): Boolean = withContext(Dispatchers.IO) {
+        AppGraph.collectRepository.isVodCollect(video.sourceKey, video.id)
+    }
+
+    fun toggleVideoCollect(video: Movie.Video, toCollect: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (toCollect) {
+                AppGraph.collectRepository.insertVodCollect(video.sourceKey, toVodInfo(video))
+            } else {
+                AppGraph.collectRepository.deleteVodCollect(video.sourceKey, toVodInfo(video))
+            }
+        }
     }
 
     private fun syncPlayingVodInfo(playing: VodInfo) {
@@ -969,29 +1050,29 @@ class DetailViewModel : ViewModel() {
         val playingList = playing.seriesMap?.get(newFlag)
         val playingSeries = playingList?.getOrNull(playing.playIndex.coerceIn(0, playingList.size - 1))
         val newIndex = findSameEpisodeIndex(playingSeries, newList, playing.playIndex)
-        info.playFlag = newFlag
-        info.playIndex = newIndex
-        if (playing.playerCfg != null) info.playerCfg = playing.playerCfg
-        info.seriesFlags.orEmpty().forEach { it.selected = it.name == newFlag }
-        info.seriesMap?.values?.forEach { list -> list.forEach { it.selected = false } }
-        newList[newIndex].selected = true
-        refreshPlayNote(info)
-        bumpRevision()
+        val cfg = playing.playerCfg ?: info.playerCfg
+        commitVodInfo(
+            info.copy(
+                playFlag = newFlag,
+                playIndex = newIndex,
+                playerCfg = cfg,
+                playNote = playNoteOf(info, newFlag, newIndex),
+            ),
+        )
         LOG.i("echo-detail sync -> $newFlag/$newIndex")
     }
 
     private fun insertVod() {
         val info = vodInfo ?: return
-        refreshPlayNote(info)
         EpisodeTotals.putFromVod(info)
-        HistoryWriter.write(firstsourceKey, info)
+        HistoryWriter.write(firstsourceKey, info.copy(playNote = playNoteOf(info, info.playFlag, info.playIndex)))
     }
 
-    private fun refreshPlayNote(info: VodInfo) {
-        try {
-            info.playNote = info.seriesMap?.get(info.playFlag)?.get(info.playIndex)?.name ?: ""
+    private fun playNoteOf(info: VodInfo, flag: String?, index: Int): String {
+        return try {
+            info.seriesMap?.get(flag)?.get(index)?.name ?: ""
         } catch (_: Throwable) {
-            info.playNote = ""
+            ""
         }
     }
 
@@ -999,21 +1080,36 @@ class DetailViewModel : ViewModel() {
         val info = vodInfo ?: return null
         val list = info.seriesMap?.get(info.playFlag) ?: return null
         if (list.isEmpty()) return null
-        refreshPlayNote(info)
-        val preview = previewVodInfo ?: VodInfo()
-        preview.id = info.id
-        preview.name = info.name
-        preview.pic = info.pic
-        preview.sourceKey = info.sourceKey
-        preview.playNote = info.playNote
-        preview.seriesFlags = info.seriesFlags
-        preview.seriesMap = info.seriesMap
-        preview.playerCfg = info.playerCfg
-        preview.playFlag = info.playFlag
-        preview.playIndex = info.playIndex
-        previewVodInfo = preview
-        App.getInstance()?.setVodInfo(preview)
+        val preview = info.copy(
+            playNote = playNoteOf(info, info.playFlag, info.playIndex),
+            seriesFlags = copySeriesFlags(info.seriesFlags),
+            seriesMap = copySeriesMap(info.seriesMap),
+        )
         return PlaybackSession(preview, sourceKey, consumeManualLineSwitch())
+    }
+
+    private fun copySeriesFlags(flags: ArrayList<VodInfo.VodSeriesFlag>?): ArrayList<VodInfo.VodSeriesFlag>? {
+        if (flags == null) return null
+        val copy = ArrayList<VodInfo.VodSeriesFlag>(flags.size)
+        for (flag in flags) {
+            copy.add(VodInfo.VodSeriesFlag(flag.name))
+        }
+        return copy
+    }
+
+    private fun copySeriesMap(
+        map: LinkedHashMap<String?, MutableList<VodInfo.VodSeries>>?,
+    ): LinkedHashMap<String?, MutableList<VodInfo.VodSeries>>? {
+        if (map == null) return null
+        val copy = LinkedHashMap<String?, MutableList<VodInfo.VodSeries>>()
+        for ((flag, list) in map) {
+            val items = ArrayList<VodInfo.VodSeries>(list.size)
+            for (series in list) {
+                items.add(VodInfo.VodSeries(series.name, series.url))
+            }
+            copy[flag] = items
+        }
+        return copy
     }
 
     private fun findSameEpisodeIndex(current: VodInfo.VodSeries?, target: List<VodInfo.VodSeries>, fallback: Int): Int {
@@ -1083,7 +1179,6 @@ class DetailViewModel : ViewModel() {
     }
 
     override fun onCleared() {
-        EventBus.getDefault().unregister(this)
         destroyEngine()
         super.onCleared()
     }

@@ -7,7 +7,6 @@ import com.github.tvbox.osc.bean.AbsSortJson
 import com.github.tvbox.osc.bean.AbsSortXml
 import com.github.tvbox.osc.bean.AbsXml
 import com.github.tvbox.osc.bean.MovieSort
-import com.github.tvbox.osc.event.RefreshEvent
 import com.github.tvbox.osc.util.LOG
 import com.google.gson.Gson
 import com.google.gson.JsonObject
@@ -17,7 +16,6 @@ import com.thoughtworks.xstream.XStream
 import com.thoughtworks.xstream.io.xml.DomDriver
 import kotlinx.coroutines.CancellationException
 
-import org.greenrobot.eventbus.EventBus
 
 import java.util.ArrayList
 import java.util.LinkedHashMap
@@ -133,7 +131,7 @@ class SourceResultParser(
             SourceHelper.absXml(data, sourceKey, searchToken)
             data.detailToken = detailToken
             if (searchResult === result) {
-                EventBus.getDefault().post(RefreshEvent(RefreshEvent.TYPE_SEARCH_RESULT, data))
+                searchResult.postValue(data)
             } else if (result != null) {
                 if (result === detailResult) {
                     data = pushDetailResolver.checkPush(data)
@@ -194,7 +192,7 @@ class SourceResultParser(
             SourceHelper.absXml(data, sourceKey, searchToken)
             data.detailToken = detailToken
             if (searchResult === result) {
-                EventBus.getDefault().post(RefreshEvent(RefreshEvent.TYPE_SEARCH_RESULT, data))
+                searchResult.postValue(data)
             } else if (result != null) {
                 if (result === detailResult) {
                     data = pushDetailResolver.checkPush(data)
@@ -229,7 +227,7 @@ class SourceResultParser(
         data.sourceKey = sourceKey
         data.searchToken = searchToken
         if (searchResult === result) {
-            EventBus.getDefault().post(RefreshEvent(RefreshEvent.TYPE_SEARCH_RESULT, data))
+            searchResult.postValue(data)
         } else if (result != null) {
             postSearchResult(result, data)
         }

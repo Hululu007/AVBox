@@ -143,8 +143,8 @@ object WatchProgressStore {
             val cleared = clearTitleLocked(owner)
             discard(cleared)
             LOG.i("echo-progress clear-owner owner=" + owner + " eps=" + cleared.size)
-            PlaybackPorts.discardStartedContentOf?.invoke(listOf(owner))
-            if (cleared.isNotEmpty()) PlaybackPorts.onProgressKeysCleared?.invoke(cleared)
+            PlaybackPorts.ports?.discardStartedContentOf(listOf(owner))
+            if (cleared.isNotEmpty()) PlaybackPorts.ports?.onProgressKeysCleared(cleared)
             PlaybackProgress.forget(owner)
             EpisodeTotals.remove(owner)
         }
@@ -183,8 +183,8 @@ object WatchProgressStore {
                 keys.addAll(clearTitleLocked(owner))
             }
             discard(keys)
-            PlaybackPorts.discardStartedContentOf?.invoke(owners)
-            if (keys.isNotEmpty()) PlaybackPorts.onProgressKeysCleared?.invoke(keys)
+            PlaybackPorts.ports?.discardStartedContentOf(owners)
+            if (keys.isNotEmpty()) PlaybackPorts.ports?.onProgressKeysCleared(keys)
             val stale = cache.clearAllProgress()
             discardHashed(stale)
             LOG.i("echo-progress clear-all titles=" + titles + " eps=" + keys.size + " stale=" + stale.size)
@@ -243,14 +243,14 @@ object WatchProgressStore {
             entries.add(owner to (WatchProgressIndex.decode(KV.get(key, ""))?.at ?: 0L))
         }
         val keep = entries.mapTo(HashSet(entries.size + 1)) { it.first }
-        val currentOwner = PlaybackPorts.currentVod?.invoke()?.let { ownerOf(it) }
+        val currentOwner = PlaybackPorts.ports?.currentVod()?.let { ownerOf(it) }
         if (!currentOwner.isNullOrEmpty()) keep.add(currentOwner)
         PlaybackProgress.retain(keep)
         EpisodeTotals.retain(keep)
         val evicted = WatchProgressIndex.pickEvictions(entries, WatchProgressIndex.MAX_TITLES)
             .filter { it != justSavedOwner && it != currentOwner }
         if (evicted.isEmpty()) return
-        PlaybackPorts.discardStartedContentOf?.invoke(evicted)
+        PlaybackPorts.ports?.discardStartedContentOf(evicted)
         for (owner in evicted) {
             val keys = clearTitleLocked(owner)
             discard(keys)

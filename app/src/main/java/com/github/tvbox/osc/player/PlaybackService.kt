@@ -26,6 +26,8 @@ import coil3.request.ImageRequest
 import coil3.target.Target
 import coil3.toBitmap
 import com.github.tvbox.osc.R
+import com.github.tvbox.osc.bean.VodInfo
+import com.github.tvbox.osc.data.PlaybackDataPorts
 import com.github.tvbox.osc.data.PlaybackPorts
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.KV
@@ -492,9 +494,18 @@ class PlaybackService : Service() {
         fun peek(): PlaybackEngine? = engine
 
         private fun installDataPorts() {
-            PlaybackPorts.isLiveMode = { peek()?.isLiveMode() == true }
-            PlaybackPorts.discardStartedContentOf = { peek()?.discardStartedContentOf(it) }
-            PlaybackPorts.onProgressKeysCleared = { peek()?.markZeroStartKeys(it) }
+            if (PlaybackPorts.ports == null) {
+                PlaybackPorts.ports = object : PlaybackDataPorts {
+                    override fun currentVod(): VodInfo? = peek()?.controller()?.vod()
+                    override fun isLiveMode(): Boolean = peek()?.isLiveMode() == true
+                    override fun discardStartedContentOf(owners: List<String>) {
+                        peek()?.discardStartedContentOf(owners)
+                    }
+                    override fun onProgressKeysCleared(keys: List<String>) {
+                        peek()?.markZeroStartKeys(keys)
+                    }
+                }
+            }
         }
 
         @JvmStatic

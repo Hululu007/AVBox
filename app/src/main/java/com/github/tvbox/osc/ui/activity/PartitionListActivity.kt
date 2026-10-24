@@ -196,7 +196,10 @@ private fun PartitionListScreen(mode: String, videosJson: String?, onBack: () ->
     val ui by vm.ui.collectAsState()
     val title by vm.title.collectAsState()
     val level by vm.level.collectAsState()
-    val vodMenu = rememberVodCardMenuState()
+    val vodMenu = rememberVodCardMenuState(
+        lookupCollected = vm::isVideoCollected,
+        onCollectToggle = vm::toggleVideoCollect,
+    )
 
     LaunchedEffect(vm) {
         vm.actionMessages.collect { msg ->

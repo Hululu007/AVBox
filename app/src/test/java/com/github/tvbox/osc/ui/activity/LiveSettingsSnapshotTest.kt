@@ -52,11 +52,10 @@ class LiveSettingsSnapshotTest {
         return group
     }
 
-    private fun channel(sourceNum: Int, sourceIndex: Int, urlCount: Int = sourceNum): LiveChannelItem {
+    private fun channel(sourceNum: Int, urlCount: Int = sourceNum): LiveChannelItem {
         val item = LiveChannelItem()
         item.channelName = "CCTV1"
         item.sourceNum = sourceNum
-        item.sourceIndex = sourceIndex
         item.channelUrls = ArrayList<String>().apply { repeat(urlCount) { add("http://example.com/$it") } }
         return item
     }
@@ -73,19 +72,19 @@ class LiveSettingsSnapshotTest {
 
     @Test
     fun withoutChannelSource_dropsFirstThreeGroups() {
-        val snapshot = LiveSettingsSnapshot.of(FakeSource(allGroups()), null)
+        val snapshot = LiveSettingsSnapshot.of(FakeSource(allGroups()), null, -1)
         assertEquals(listOf(3, 4, 5, 6), snapshot.map { it.groupIndex })
     }
 
     @Test
     fun withChannelSource_keepsAllGroups() {
-        val snapshot = LiveSettingsSnapshot.of(FakeSource(allGroups()), channel(sourceNum = 2, sourceIndex = 1))
+        val snapshot = LiveSettingsSnapshot.of(FakeSource(allGroups()), channel(sourceNum = 2), 1)
         assertEquals(listOf(0, 1, 2, 3, 4, 5, 6), snapshot.map { it.groupIndex })
     }
 
     @Test
     fun channelWithoutValidSourceIndex_countsAsNoSource() {
-        val snapshot = LiveSettingsSnapshot.of(FakeSource(allGroups()), channel(sourceNum = 2, sourceIndex = 5))
+        val snapshot = LiveSettingsSnapshot.of(FakeSource(allGroups()), channel(sourceNum = 2), 5)
         assertEquals(listOf(3, 4, 5, 6), snapshot.map { it.groupIndex })
     }
 
@@ -94,7 +93,7 @@ class LiveSettingsSnapshotTest {
         val bare = LiveSettingGroup()
         bare.groupIndex = 3
         bare.groupName = "G3"
-        val snapshot = LiveSettingsSnapshot.of(FakeSource(listOf(bare)), null)
+        val snapshot = LiveSettingsSnapshot.of(FakeSource(listOf(bare)), null, -1)
         assertEquals(emptyList<Int>(), snapshot.map { it.groupIndex })
     }
 
@@ -102,7 +101,7 @@ class LiveSettingsSnapshotTest {
     fun switchGroup_takesCheckedFromSourceAndNeverSelected() {
         val snapshot = LiveSettingsSnapshot.of(
             FakeSource(listOf(group(4, listOf("显示时间", "显示网速"))), checked = setOf(1)),
-            null,
+            null, -1,
         )
         val switchGroup = snapshot.single()
         assertTrue(switchGroup.switchRow)
@@ -114,7 +113,7 @@ class LiveSettingsSnapshotTest {
     fun selectedIndex_followsChannelSourceIndex() {
         val snapshot = LiveSettingsSnapshot.of(
             FakeSource(listOf(group(0, listOf("线路一", "线路二", "线路三")))),
-            channel(sourceNum = 3, sourceIndex = 2),
+            channel(sourceNum = 3), 2,
         )
         val items = snapshot.single().items
         assertEquals(listOf(0, 1, 2), items.map { it.itemIndex })
@@ -125,14 +124,14 @@ class LiveSettingsSnapshotTest {
     fun selectedIndex_outOfRangeChannelSourceSelectsNothing() {
         val snapshot = LiveSettingsSnapshot.of(
             FakeSource(listOf(group(0, listOf("线路一", "线路二")))),
-            channel(sourceNum = 6, sourceIndex = 5),
+            channel(sourceNum = 6), 5,
         )
         assertEquals(listOf(false, false), snapshot.single().items.map { it.selected })
     }
 
     @Test
     fun selectedIndex_matchesItemIndexWithinGroup() {
-        val snapshot = LiveSettingsSnapshot.of(FakeSource(allGroups(), timeout = 1), null)
+        val snapshot = LiveSettingsSnapshot.of(FakeSource(allGroups(), timeout = 1), null, -1)
         val timeout = snapshot.first { it.groupIndex == 3 }
         assertEquals(listOf(false, true), timeout.items.map { it.selected })
     }
@@ -141,7 +140,7 @@ class LiveSettingsSnapshotTest {
     fun selectedIndex_usesPlayerAndLiveGroupAndConfigIndex() {
         val snapshot = LiveSettingsSnapshot.of(
             FakeSource(allGroups(), scale = 1, type = 0, groupIndex = 1, configIndex = 1),
-            channel(sourceNum = 2, sourceIndex = 0),
+            channel(sourceNum = 2), 0,
         )
         assertEquals(listOf(false, true), snapshot.first { it.groupIndex == 1 }.items.map { it.selected })
         assertEquals(listOf(true, false), snapshot.first { it.groupIndex == 2 }.items.map { it.selected })
@@ -152,13 +151,13 @@ class LiveSettingsSnapshotTest {
     @Test
     fun longPressDelete_onlyInConfigGroupOutsideLineMode() {
         val config = LiveSettingsSnapshot.CONFIG_GROUP_INDEX
-        val outsideRepo = LiveSettingsSnapshot.of(FakeSource(allGroups()), null).first { it.groupIndex == config }
-        val inRepo = LiveSettingsSnapshot.of(FakeSource(allGroups(), lineMode = true), null)
+        val outsideRepo = LiveSettingsSnapshot.of(FakeSource(allGroups()), null, -1).first { it.groupIndex == config }
+        val inRepo = LiveSettingsSnapshot.of(FakeSource(allGroups(), lineMode = true), null, -1)
             .first { it.groupIndex == config }
         assertTrue(outsideRepo.longPressDelete)
         assertFalse(inRepo.longPressDelete)
         assertFalse(
-            LiveSettingsSnapshot.of(FakeSource(allGroups()), null)
+            LiveSettingsSnapshot.of(FakeSource(allGroups()), null, -1)
                 .filter { it.groupIndex != config }
                 .any { it.longPressDelete },
         )
@@ -167,7 +166,7 @@ class LiveSettingsSnapshotTest {
     @Test
     fun snapshotDetachesItemTitlesFromBeans() {
         val config = group(6, listOf("跟随点播源", "配置A"))
-        val snapshot = LiveSettingsSnapshot.of(FakeSource(listOf(config)), null)
+        val snapshot = LiveSettingsSnapshot.of(FakeSource(listOf(config)), null, -1)
         config.liveSettingItems!![1].itemName = "改过的名字"
         assertEquals("配置A", snapshot.single().items[1].title)
     }

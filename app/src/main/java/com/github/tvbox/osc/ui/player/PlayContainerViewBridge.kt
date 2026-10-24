@@ -5,9 +5,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
 import android.widget.Toast
-import com.github.tvbox.osc.player.KernelDecision
+import com.github.tvbox.osc.bean.VodInfo
 import com.github.tvbox.osc.player.KernelPlayer
-import com.github.tvbox.osc.player.KernelReusePolicy
 import com.github.tvbox.osc.player.engine.MediaSources
 import com.github.tvbox.osc.player.PreloadCoordinator
 import com.github.tvbox.osc.player.PlaybackHostApi
@@ -56,8 +55,8 @@ class PlayContainerViewBridge(private val container: PlayContainer) : PlaybackVi
 
     override fun currentUrl(): String? = container.mVideoView?.currentUrl
 
-    override fun onContentUrlSet(url: String?) {
-        container.mController?.onContentUrlSet(url)
+    override fun onSessionVodUpdated(vod: VodInfo) {
+        container.syncSessionVod()
     }
 
     override fun context(): Context = container.context
@@ -82,12 +81,6 @@ class PlayContainerViewBridge(private val container: PlayContainer) : PlaybackVi
     override fun ensureRenderViewMatchesConfig() {
         container.mVideoView?.ensureRenderViewMatchesConfig()
     }
-
-    override fun setAudioOnlyMode(audioOnly: Boolean) {
-        container.setAudioOnlyMode(audioOnly)
-    }
-
-    override fun isAudioOnlyMode(): Boolean = container.isAudioOnlyMode()
 
     override fun releasePlayer() {
         container.releasePlayerKernel()
@@ -179,43 +172,18 @@ class PlayContainerViewBridge(private val container: PlayContainer) : PlaybackVi
     ) {
         val view = container.mVideoView ?: return
         container.mController?.hidePauseRoot()
-        if (view.mediaPlayer != null && view.needsRenderRebuild(view.factoryRenderType())) {
-            view.requireKernelRebuild()
-            LOG.i("echo-render-changed: rebuild kernel on next start")
-        }
-        if (view.isKernelErrored()) {
-            view.requireKernelRebuild()
-            LOG.i("echo-kernel-error: rebuild errored kernel on start")
-        }
-        val rebuildKernel = view.consumeKernelRebuildRequired()
-        val kernelPresent = view.mediaPlayer != null
-        val reusePlayer =
-            KernelReusePolicy.decide(kernelPresent, rebuildKernel, forceExoPlayer, true) == KernelDecision.REUSE
+        val reusePlayer = container.scheduler.startVideoPlayback(
+            view,
+            url,
+            headers,
+            forceExoPlayer,
+            releaseKernel = { container.releasePlayerKernel() },
+            trackMemoryKey = container.trackMemoryKey(),
+            renderRebuildGuard = { true },
+            startLineTimeoutIso = MediaSources.isoHeaders(headers),
+        )
         if (!reusePlayer) container.hideTip()
-        val sameContent = reusePlayer && container.scheduler.isSameStartedContent()
-        if (!reusePlayer && kernelPresent) {
-            container.releasePlayerKernel()
-        } else if (sameContent) {
-            view.saveCurrentProgress()
-        }
-        view.setProgressKey(container.scheduler.progressKey())
-        view.setTrackMemoryKey(container.trackMemoryKey())
-        container.scheduler.markContentStarted()
-        if (headers != null) {
-            view.setUrl(url, headers)
-        } else {
-            view.setUrl(url)
-        }
-        // 记录本轮内容地址：播放器切换完成前仍会返回上一部影片的进度，进度回调靠它判陈旧。
-        container.mController?.onContentUrlSet(url)
-        container.scheduler.startSwitchLinePlayTimeout(MediaSources.isoHeaders(headers))
-        if (reusePlayer) {
-            val base = container.scheduler.playTimeoutBasePosition()
-            view.skipPositionWhenPlay((if (sameContent) view.resumePositionForReplay(base) else base).toInt())
-            view.replay(false)
-        } else {
-            view.start()
-        }
+        container.mController?.adoptCurrentContent()
         container.mController?.resetSpeed()
     }
 

@@ -15,7 +15,6 @@ import android.widget.FrameLayout
 import android.widget.Toast
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.dlna.CastVideo
-import com.github.tvbox.osc.event.RefreshEvent
 import com.github.tvbox.osc.player.ExoPlayer
 import com.github.tvbox.osc.player.MyVideoView
 import com.github.tvbox.osc.player.PageHost
@@ -40,9 +39,6 @@ import com.github.tvbox.osc.util.HistoryHelper
 import com.github.tvbox.osc.util.LOG
 import me.jessyan.autosize.AutoSize
 import me.jessyan.autosize.internal.CustomAdapt
-import org.greenrobot.eventbus.EventBus
-import org.greenrobot.eventbus.Subscribe
-import org.greenrobot.eventbus.ThreadMode
 import java.util.HashMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -69,8 +65,6 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
 
     private val mContext: Context = activity
 
-    private val tipStateListener: TipStateListener = TipStateListener { overlays.onTipStateChanged(it) }
-
     private val viewBridge: PlaybackViewBridge = PlayContainerViewBridge(this)
 
     private val controlListener: PlayContainerControlListener = PlayContainerControlListener(this)
@@ -85,17 +79,14 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
 
     private var touchBlocked = false
 
-    private var lifecyclePaused: Boolean = false
     private var ownedPlaybackKey: String? = null
     private var handedOver: Boolean = false
-    private var castPrepareOnly: Boolean = false
     private var hostSuspended: Boolean = false
 
     var mVideoView: MyVideoView? = null
     lateinit var mController: PlayerControlApi
     internal var mHandler: Handler? = null
     var mExitingPreview: Boolean = false
-    internal var previewMode: Boolean = false
     var danmuLoadController: DanmuLoadController? = null
     private val videoDuration: Long = -1
 
@@ -105,10 +96,8 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
         scheduler = e.controller()
         AutoSize.autoConvertDensity(activity, getSizeInDp(), isBaseOnWidth())
         LayoutInflater.from(activity).inflate(R.layout.view_play_container, this, true)
-        PlayerTipBridge.hide()
         init()
-        PlayerTipBridge.setTipStateListener(tipStateListener)
-        scheduler.setViewBridge(viewBridge)
+        scheduler.attachViewBridge(viewBridge)
         engine?.attach(this)
     }
 
@@ -123,9 +112,6 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
     override fun onServiceStopped() {
         mVideoView = null
         engine = null
-        if (EventBus.getDefault().isRegistered(this)) {
-            EventBus.getDefault().unregister(this)
-        }
     }
 
     fun isAttached(): Boolean {
@@ -139,7 +125,7 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
     }
 
     fun setEpisodeSheetOpen(open: Boolean) {
-        if (mController != null) mController.getUiState().episodeSheetOpen = open
+        if (mController != null) mController.getUiState().setEpisodeSheetVisible(open)
     }
 
     fun interface OnQualitySelectedListener {
@@ -172,12 +158,13 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
 
     override fun hostResume() {
         mExitingPreview = false
+        val resumeFromLifecycle = mController != null && mController.getUiState().lifecyclePaused
         if (mController != null) mController.setLifecyclePaused(false)
         LOG.i(
             "echo-p2 hostResume claimed=" + hasClaimedPlayback()
                 + " owns=" + ownsEngineContent()
                 + " playing=" + (mVideoView?.isPlaying ?: false)
-                + " lifecyclePaused=" + lifecyclePaused
+                + " lifecyclePaused=" + resumeFromLifecycle
                 + " suspended=" + hostSuspended
                 + " handedOver=" + handedOver,
         )
@@ -187,8 +174,7 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
         if (resumedFromBackground) rebuildRenderViewAfterBackground()
         engine?.consumeServiceLostKeep(ownsEngineContent())
         val view = mVideoView
-        if (view != null && lifecyclePaused) {
-            lifecyclePaused = false
+        if (view != null && resumeFromLifecycle) {
             if (ownsEngineContent()) {
                 view.resume()
             }
@@ -242,8 +228,7 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
         hostSuspended = true
         val view = mVideoView
         if (view != null && !mExitingPreview && !scheduler.isConfirmedAudioOnly()) {
-            lifecyclePaused = view.isPlaying
-            if (mController != null) mController.setLifecyclePaused(lifecyclePaused)
+            if (mController != null) mController.setLifecyclePaused(view.isPlaying)
             view.pause()
         }
     }
@@ -268,14 +253,10 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
     override fun hostDestroy() {
         LOG.i("echo-music destroy: hostDestroy enter")
         endCastPrepare()
-        PlayerTipBridge.clearTipStateListener(tipStateListener)
         qualitySelectedListener = null
         videoSizeReadyListener = null
         if (!handedOver) engine?.detach(this)
         overlays.cancelPreloadToast()
-        if (EventBus.getDefault().isRegistered(this)) {
-            EventBus.getDefault().unregister(this)
-        }
         danmuLoadController?.destroy()
         danmuLoadController = null
         mVideoView = null
@@ -290,18 +271,6 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
 
     override fun isBaseOnWidth(): Boolean {
         return mActivity !is CustomAdapt || (mActivity as CustomAdapt).isBaseOnWidth()
-    }
-
-    @Subscribe(threadMode = ThreadMode.MAIN)
-    fun refresh(event: RefreshEvent) {
-        if (event.type == RefreshEvent.TYPE_SUBTITLE_SIZE_CHANGE) {
-            subtitles.applySubtitleTextSize()
-        }
-        if (event.type == RefreshEvent.TYPE_SET_DANMU_SETTINGS) {
-            overlays.setDanmuViewSettings(event.obj is Boolean && event.obj as Boolean)
-        } else if (event.type == RefreshEvent.TYPE_DANMU_REFRESH) {
-            overlays.checkDanmu(if (event.obj is String) event.obj as String else "")
-        }
     }
 
     private fun init() {
@@ -321,7 +290,6 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
     fun reloadDanmuForPlayback() = overlays.reloadDanmuForPlayback()
 
     private fun initView() {
-        EventBus.getDefault().register(this)
         mHandler = Handler { msg ->
             when (msg.what) {
                 MSG_PARSE_TIMEOUT -> {
@@ -340,7 +308,7 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
             }
         }
 
-        mController.getLyricView().setTextSize(if (previewMode) 16f else 24f)
+        mController.getLyricView().setTextSize(if (mController.getUiState().previewMode) 16f else 24f)
         mController.setCanChangePosition(true)
         mController.setEnableInNormal(true)
         mController.setGestureEnabled(true)
@@ -376,17 +344,16 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
         scope.launch {
             val video = CastVideo(castUrl, title, headers, getCastPosition())
             val uiState = mController.getUiState()
-            uiState.castSheet = CastSheetState(video) {
+            uiState.openCastSheet(CastSheetState(video) {
                 mVideoView?.pause()
-            }
+            })
         }
     }
 
     fun openDanmuSearchSheet() = overlays.openDanmuSearchSheet()
 
     fun beginCastPrepare() {
-        castPrepareOnly = true
-        scheduler.setCastPrepareOnly(true)
+        scheduler.beginCastPrepare()
     }
 
     fun clearCastAbort() {
@@ -394,17 +361,16 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
     }
 
     fun endCastPrepare() {
-        if (!castPrepareOnly && !scheduler.isCastPrepareOnly()) return
-        castPrepareOnly = false
+        if (!scheduler.isCastPrepareOnly()) return
         scheduler.closeCastPrepare()
         scheduler.stopParse()
         scheduler.cancelPlayTimeout()
         LOG.i("echo-cast prepare end")
     }
 
-    private fun syncSessionVod() {
+    internal fun syncSessionVod() {
         if (mController == null || scheduler == null) return
-        mController.getUiState().sessionVod = scheduler.vod()
+        mController.getUiState().updateSessionVod(scheduler.vod())
     }
 
     private fun getCastTitle(): String {
@@ -483,13 +449,6 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
         }
     }
 
-    fun setAudioOnlyMode(audioOnly: Boolean) {
-        (mVideoView?.mediaPlayer as? ExoPlayer)?.setAudioOnlyMode(audioOnly)
-    }
-
-    fun isAudioOnlyMode(): Boolean =
-        (mVideoView?.mediaPlayer as? ExoPlayer)?.isAudioOnlyMode() == true
-
     fun reviveEngineIfReleased(): Boolean {
         if (engine?.isReleased() == false) return false
         val activity = mActivity
@@ -532,36 +491,34 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
         val engineRef = engine ?: return
         LOG.i(
             "echo-p2 setData: key=" + session.playbackKey()
-                + " sameOwned=" + (!castPrepareOnly && isSamePlaybackOwned(session))
+                + " sameOwned=" + (!scheduler.isCastPrepareOnly() && isSamePlaybackOwned(session))
                 + " mediaPlayer=" + (mVideoView?.mediaPlayer != null)
                 + " state=" + mVideoView?.playState,
         )
-        if (!castPrepareOnly && isSamePlaybackOwned(session)) {
+        if (!scheduler.isCastPrepareOnly() && isSamePlaybackOwned(session)) {
             LOG.i("echo-p3 take over same playback: " + session.playbackKey())
             engineRef.setData(session)
             syncSessionVod()
             mController.setPlayerConfig(requireNotNull(scheduler.playerCfg()) { "player cfg missing on takeover" })
-            scheduler.markContentStarted()
+            scheduler.onSessionTakenOver(session.userPickedLine())
             scheduler.publishTitle()
             scheduler.clearTriedLines()
-            scheduler.setUserPickedLine(session.userPickedLine())
             rebindPlaybackOverlay()
             ownedPlaybackKey = session.playbackKey()
-            if (mController != null) mController.onContentUrlSet(mVideoView?.currentUrl)
+            if (mController != null) mController.adoptCurrentContent()
             if (alignInstanceConfigOnTakeover()) return
             val view = mVideoView
             if (view != null && !view.isPlaying) view.start()
             return
         }
-        val sameVodSwitch = !castPrepareOnly && isSameVodEpisodeSwitch(session)
+        val sameVodSwitch = !scheduler.isCastPrepareOnly() && isSameVodEpisodeSwitch(session)
         mVideoView?.forgetVideoSize()
         engineRef.setData(session)
         syncSessionVod()
         mController.setPlayerConfig(requireNotNull(scheduler.playerCfg()) { "player cfg missing on setData" })
         scheduler.clearTriedLines()
-        scheduler.setUserPickedLine(session.userPickedLine())
-        ownedPlaybackKey = if (castPrepareOnly) null else session.playbackKey()
-        if (sameVodSwitch) scheduler.setReusePlayerOnSwitch(true)
+        ownedPlaybackKey = if (scheduler.isCastPrepareOnly()) null else session.playbackKey()
+        scheduler.onNewPlayArmed(session.userPickedLine(), sameVodSwitch)
         playViaScheduler(false)
     }
 
@@ -679,31 +636,13 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
     }
 
     override fun playNext(isProgress: Boolean) {
-        scheduler.clearTriedLines()
-        val vod = scheduler.vod()
-        val episodes = vod?.seriesMap?.get(vod.playFlag)
-        if (vod == null || episodes == null || vod.playIndex + 1 >= episodes.size) {
-            Toast.makeText(mContext, mContext.getString(R.string.player_last_episode), Toast.LENGTH_SHORT).show()
-            return
-        }
-        vod.playIndex++
-        scheduler.setUserPickedLine(false)
-        scheduler.setReusePlayerOnSwitch(true)
-        playViaScheduler(false)
+        reviveEngineIfReleased()
+        scheduler.playAdjacentEpisode(true)
     }
 
     override fun playPrevious() {
-        scheduler.clearTriedLines()
-        val vod = scheduler.vod()
-        val episodes = vod?.seriesMap?.get(vod.playFlag)
-        if (vod == null || episodes == null || vod.playIndex - 1 < 0) {
-            Toast.makeText(mContext, mContext.getString(R.string.player_first_episode), Toast.LENGTH_SHORT).show()
-            return
-        }
-        vod.playIndex--
-        scheduler.setUserPickedLine(false)
-        scheduler.setReusePlayerOnSwitch(true)
-        playViaScheduler(false)
+        reviveEngineIfReleased()
+        scheduler.playAdjacentEpisode(false)
     }
 
     override fun setPlayTitle(show: Boolean) {
@@ -749,12 +688,7 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
         }
     }
 
-    override fun setAutoSwitchLineEnabled(enabled: Boolean) {
-        scheduler.setAutoSwitchLineEnabled(enabled)
-    }
-
     override fun setPreviewMode(previewMode: Boolean) {
-        this.previewMode = previewMode
         if (mController != null) {
             mController.setPreviewMode(previewMode)
             mController.getLyricView().setTextSize(if (previewMode) 16f else 24f)
@@ -771,13 +705,8 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
     override fun stopForSourceSwitch(tip: String) {
         endCastPrepare()
         val view = mVideoView ?: return
-        scheduler.cancelPlayTimeout()
-        scheduler.stopParse()
-        scheduler.markStoppedForSourceSwitch()
-        scheduler.stopMusicSessionForFailedPlayback()
-
         val position = view.currentPosition
-        scheduler.setPendingInherit(scheduler.progressKey(), position)
+        scheduler.beginSourceSwitch(position)
         view.pause()
         if (scheduler.isCrossContentReuseAllowed()) {
             view.saveCurrentProgress()
@@ -787,9 +716,6 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
         }
         if (mController != null) mController.stopOther()
         overlays.resetDanmuState()
-        scheduler.setWebPlayUrl(null)
-        scheduler.setWebHeaderMap(null)
-        scheduler.initParseLoadFound()
         LOG.i("echo-switchSource stop at " + position + "ms, key=" + scheduler.progressKey())
         if (!TextUtils.isEmpty(tip)) setTip(tip, true, false)
     }

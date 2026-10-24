@@ -1,5 +1,6 @@
 package com.github.tvbox.osc.ui.page
 
+import com.github.tvbox.osc.api.AppBootstrap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.tvbox.osc.bean.VodInfo
@@ -14,6 +15,7 @@ import com.github.tvbox.osc.data.VodFollow
 import com.github.tvbox.osc.util.HistoryHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
@@ -29,16 +31,24 @@ internal class FollowingViewModel(
     private val history: HistoryRepository = AppGraph.historyRepository,
 ) : ViewModel() {
 
-    val loading = MutableStateFlow(true)
-    val items = MutableStateFlow<List<FollowEntry>>(emptyList())
+    private val _loading = MutableStateFlow(true)
+    val loading = _loading.asStateFlow()
+    private val _items = MutableStateFlow<List<FollowEntry>>(emptyList())
+    val items = _items.asStateFlow()
     private val entries = MutableStateFlow<List<FollowEntry>>(emptyList())
-    val episodeTotals = MutableStateFlow<Map<String, Int>>(emptyMap())
-    val playedPercents = MutableStateFlow<Map<String, Int>>(emptyMap())
-    val today = MutableStateFlow(FollowDays.todayIndex())
+    private val _episodeTotals = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val episodeTotals = _episodeTotals.asStateFlow()
+    private val _playedPercents = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val playedPercents = _playedPercents.asStateFlow()
+    private val _today = MutableStateFlow(FollowDays.todayIndex())
+    val today = _today.asStateFlow()
 
-    val selectedDay = MutableStateFlow<Int?>(null)
-    val editMode = MutableStateFlow(false)
-    val selected = MutableStateFlow<Set<Int>>(emptySet())
+    private val _selectedDay = MutableStateFlow<Int?>(null)
+    val selectedDay = _selectedDay.asStateFlow()
+    private val _editMode = MutableStateFlow(false)
+    val editMode = _editMode.asStateFlow()
+    private val _selected = MutableStateFlow<Set<Int>>(emptySet())
+    val selected = _selected.asStateFlow()
 
     init {
         refresh()
@@ -49,11 +59,11 @@ internal class FollowingViewModel(
                         watchedDays = watched[FollowWatched.ownerOf(entry.follow.sourceKey, entry.follow.vodId)].orEmpty(),
                     )
                 }
-            }.collect { items.value = it; loading.value = false }
+            }.collect { _items.value = it; _loading.value = false }
         }
         viewModelScope.launch(Dispatchers.IO) {
             PlaybackProgress.percents.collect { map ->
-                playedPercents.value = if (HistoryHelper.isIncognito()) emptyMap() else map
+                _playedPercents.value = if (HistoryHelper.isIncognito()) emptyMap() else map
             }
         }
         viewModelScope.launch(Dispatchers.IO) {
@@ -67,7 +77,7 @@ internal class FollowingViewModel(
     }
 
     fun refresh() {
-        today.value = FollowDays.todayIndex()
+        _today.value = FollowDays.todayIndex()
         viewModelScope.launch(Dispatchers.IO) {
             val list = follows.getAll()
             entries.value = list.map { follow ->
@@ -81,17 +91,17 @@ internal class FollowingViewModel(
                     watchedDays = emptySet(),
                 )
             }
-            episodeTotals.value = EpisodeTotals.snapshot()
+            _episodeTotals.value = EpisodeTotals.snapshot()
         }
     }
 
     fun setWatched(id: Int, watched: Boolean) {
-        val entry = items.value.firstOrNull { it.follow.id == id } ?: return
+        val entry = _items.value.firstOrNull { it.follow.id == id } ?: return
         val days = targetDays(entry)
         if (days.isEmpty()) return
         val owner = FollowWatched.ownerOf(entry.follow.sourceKey, entry.follow.vodId)
         val updated = if (watched) entry.watchedDays + days else entry.watchedDays - days
-        items.value = items.value.map { if (it.follow.id == id) it.copy(watchedDays = updated) else it }
+        _items.value = _items.value.map { if (it.follow.id == id) it.copy(watchedDays = updated) else it }
         viewModelScope.launch(Dispatchers.IO) {
             val week = FollowWatched.weekStart()
             if (watched) {
@@ -103,34 +113,34 @@ internal class FollowingViewModel(
     }
 
     private fun targetDays(entry: FollowEntry): Set<Int> =
-        selectedDay.value?.let { setOf(it) } ?: FollowDays.decode(entry.follow.updateDays)
+        _selectedDay.value?.let { setOf(it) } ?: FollowDays.decode(entry.follow.updateDays)
 
     fun selectDay(day: Int?) {
-        selectedDay.value = day
+        _selectedDay.value = day
     }
 
     fun enterEdit(id: Int? = null) {
-        editMode.value = true
-        selected.value = if (id == null) emptySet() else setOf(id)
+        _editMode.value = true
+        _selected.value = if (id == null) emptySet() else setOf(id)
     }
 
     fun exitEdit() {
-        editMode.value = false
-        selected.value = emptySet()
+        _editMode.value = false
+        _selected.value = emptySet()
     }
 
     fun toggleSelected(id: Int) {
-        selected.value = if (id in selected.value) selected.value - id else selected.value + id
+        _selected.value = if (id in _selected.value) _selected.value - id else _selected.value + id
     }
 
     fun pruneSelection(ids: Set<Int>) {
-        val pruned = selected.value.intersect(ids)
-        if (pruned.size != selected.value.size) selected.value = pruned
-        if (ids.isEmpty()) editMode.value = false
+        val pruned = _selected.value.intersect(ids)
+        if (pruned.size != _selected.value.size) _selected.value = pruned
+        if (ids.isEmpty()) _editMode.value = false
     }
 
     fun deleteSelected() {
-        val ids = selected.value.toList()
+        val ids = _selected.value.toList()
         if (ids.isEmpty()) return
         exitEdit()
         viewModelScope.launch(Dispatchers.IO) {

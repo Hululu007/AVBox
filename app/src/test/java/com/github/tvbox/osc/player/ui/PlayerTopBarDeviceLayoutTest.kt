@@ -62,11 +62,11 @@ private class NoopTopBarActions : PlayerActions {
 }
 
 private fun stateWithTopBar(): PlayerUiState = PlayerUiState().apply {
-    topLeftVisible = true
-    topRightVisible = true
-    title = "兰香如故 1"
-    videoSize = "1920 X 1080"
-    videoQuality = "1080P"
+    updateTopLeftVisible(true)
+    updateTopRightVisible(true)
+    updateTitle("兰香如故 1")
+    updateVideoSize("1920 X 1080")
+    updateVideoQuality("1080P")
 }
 
 @RunWith(AndroidJUnit4::class)

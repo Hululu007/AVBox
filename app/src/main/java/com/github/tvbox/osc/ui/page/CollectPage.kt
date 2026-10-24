@@ -49,11 +49,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.github.tvbox.osc.R
+import com.github.tvbox.osc.api.AppBootstrap
 import com.github.tvbox.osc.api.ApiConfig
+import com.github.tvbox.osc.event.UiChange
+import com.github.tvbox.osc.event.UiEvents
 import com.github.tvbox.osc.data.AppGraph
 import com.github.tvbox.osc.data.CollectRepository
 import com.github.tvbox.osc.data.VodCollect
-import com.github.tvbox.osc.event.RefreshEvent
 import com.github.tvbox.osc.ui.WindowSize
 import com.github.tvbox.osc.ui.components.LoadState
 import com.github.tvbox.osc.ui.components.LoadStateBox
@@ -63,11 +65,10 @@ import com.github.tvbox.osc.util.KV
 import com.github.tvbox.osc.util.SubscribeList
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
-import org.greenrobot.eventbus.EventBus
-import org.greenrobot.eventbus.Subscribe
-import org.greenrobot.eventbus.ThreadMode
 
 class CollectViewModel(
     private val collect: CollectRepository = AppGraph.collectRepository,
@@ -79,8 +80,13 @@ class CollectViewModel(
 
     val unavailableKeys = MutableStateFlow<Set<String>>(emptySet())
 
+    private val _editMode = MutableStateFlow(false)
+    val editMode: StateFlow<Boolean> = _editMode.asStateFlow()
+    private val _selected = MutableStateFlow<Set<Int>>(emptySet())
+    val selected: StateFlow<Set<Int>> = _selected.asStateFlow()
+
     init {
-        EventBus.getDefault().register(this)
+        observeUiEvents()
         viewModelScope.launch(Dispatchers.IO) {
             AppBootstrap.subscriptionCid.drop(1).collect { recomputeUnavailableNow() }
         }
@@ -98,10 +104,6 @@ class CollectViewModel(
                 }
             }
         }
-    }
-
-    override fun onCleared() {
-        EventBus.getDefault().unregister(this)
     }
 
     val placementAnim = MutableStateFlow(false)
@@ -124,11 +126,33 @@ class CollectViewModel(
         }.mapNotNull { it.sourceKey }.toSet()
     }
 
-    @Subscribe(threadMode = ThreadMode.MAIN)
-    fun onRefreshEvent(event: RefreshEvent) {
-        if (event.type == RefreshEvent.TYPE_COLLECT_LAYOUT_CHANGE) {
-            columns.value = KV.get(HawkConfig.COLLECT_COLUMNS, 3)
+    private fun observeUiEvents() {
+        viewModelScope.launch {
+            UiEvents.changes.collect { change ->
+                if (change is UiChange.CollectLayoutChanged) {
+                    columns.value = KV.get(HawkConfig.COLLECT_COLUMNS, 3)
+                }
+            }
         }
+    }
+
+    fun enterEdit() {
+        _editMode.value = true
+    }
+
+    fun exitEdit() {
+        _editMode.value = false
+        _selected.value = emptySet()
+    }
+
+    fun toggleSelected(id: Int) {
+        _selected.value = if (id in _selected.value) _selected.value - id else _selected.value + id
+    }
+
+    fun pruneSelection(ids: Set<Int>) {
+        val pruned = _selected.value.intersect(ids)
+        if (pruned.size != _selected.value.size) _selected.value = pruned
+        if (ids.isEmpty()) _editMode.value = false
     }
 
     fun deleteSelected(list: List<VodCollect>) {

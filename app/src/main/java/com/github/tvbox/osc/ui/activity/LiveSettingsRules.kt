@@ -10,11 +10,10 @@ internal object LiveSettingsRules {
     internal fun visibleGroups(groups: List<LiveSettingGroup>, hasChannelSource: Boolean): List<LiveSettingGroup> =
         groups.filter { group -> !(group.groupIndex in 0..2 && !hasChannelSource) }
 
-    internal fun hasChannelSource(item: LiveChannelItem?): Boolean {
+    internal fun hasChannelSource(item: LiveChannelItem?, sourceIndex: Int): Boolean {
         val channel = item ?: return false
         val urls = channel.channelUrls ?: return false
-        return channel.sourceNum > 0 &&
-                channel.sourceIndex >= 0 && channel.sourceIndex < urls.size
+        return channel.sourceNum > 0 && sourceIndex >= 0 && sourceIndex < urls.size
     }
 
     internal fun currentConfigIndex(followVod: Boolean, history: List<String>, currentUrl: String): Int {

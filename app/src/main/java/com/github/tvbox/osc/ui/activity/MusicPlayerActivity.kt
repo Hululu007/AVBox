@@ -1,5 +1,6 @@
 package com.github.tvbox.osc.ui.activity
 
+import androidx.activity.viewModels
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -15,14 +16,7 @@ import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.base.BaseActivity
 import com.github.tvbox.osc.ui.components.SheetHostScaffold
 import com.github.tvbox.osc.bean.VodInfo
-import com.github.tvbox.osc.data.AppGraph
-import com.github.tvbox.osc.data.EpisodeTotals
-import com.github.tvbox.osc.data.HistoryWriter
-import com.github.tvbox.osc.data.WatchProgressStore
 import com.github.tvbox.osc.dlna.CastVideo
-import com.github.tvbox.osc.event.RefreshEvent
-import com.github.tvbox.osc.player.KernelDecision
-import com.github.tvbox.osc.player.KernelReusePolicy
 import com.github.tvbox.osc.player.MyVideoView
 import com.github.tvbox.osc.player.PlaybackController
 import com.github.tvbox.osc.player.PlaybackEngine
@@ -32,19 +26,15 @@ import com.github.tvbox.osc.player.PlaybackService
 import com.github.tvbox.osc.player.PlaybackSession
 import com.github.tvbox.osc.player.PlaybackViewBridge
 import com.github.tvbox.osc.player.engine.MediaSources
-import com.github.tvbox.osc.player.engine.iso.IsoSessionSignal
 import com.github.tvbox.osc.player.PlayerHelper
 import com.github.tvbox.osc.player.state.CastSheetState
 import com.github.tvbox.osc.player.state.PlayState
 import com.github.tvbox.osc.ui.music.MusicLrc
-import com.github.tvbox.osc.ui.music.MusicPlayMode
 import com.github.tvbox.osc.ui.music.MusicPlayerScreen
 import com.github.tvbox.osc.ui.music.MusicPlayerState
-import com.github.tvbox.osc.ui.player.PlayerTipBridge
 import com.github.tvbox.osc.ui.theme.AVBoxTheme
 import com.github.tvbox.osc.ui.theme.enableTransparentEdgeToEdge
 import com.github.tvbox.osc.util.LOG
-import com.github.tvbox.osc.util.MusicSettings
 import com.github.tvbox.osc.util.PermissionHelper
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -53,7 +43,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import com.github.tvbox.osc.player.host.EngineTextureRenderViewFactory
 
 private const val POSITION_TICK_MS = 400L
@@ -78,7 +67,9 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
     private lateinit var bridge: MusicPageBridge
     private lateinit var host: MusicHost
 
-    private val ui = MusicPlayerState()
+    private val dataViewModel: MusicPlayerViewModel by viewModels()
+
+    private val ui: MusicPlayerState get() = dataViewModel.ui
     private val main = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
@@ -88,7 +79,6 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
     private var ready = false
     private var isoBailed = false
     private var lifecyclePaused = false
-    private var lyricSource: String? = null
     private var lyricJob: Job? = null
 
     override fun shouldRefreshAutoSize(): Boolean = true
@@ -100,6 +90,7 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
         controller = engine.controller()
         player = engine.player()
         vod = controller.vod() ?: run {
+            controller.setMusicAudioOnly(false)
             finish()
             return
         }
@@ -122,6 +113,9 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
         scope.launch(Dispatchers.Main.immediate) {
             player.playStateFlow.collect { playState -> onPlayStateChanged(playState) }
         }
+        scope.launch(Dispatchers.Main.immediate) {
+            controller.selection.collect { controller.vod()?.let { vod = it } }
+        }
         findViewById<ComposeView>(R.id.compose_view).setContent {
             AVBoxTheme {
                 SheetHostScaffold {
@@ -140,16 +134,8 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
                 }
             }
         }
-        ui.playMode = MusicPlayMode.of(MusicSettings.playMode())
-        scope.launch {
-            val isCollected = try {
-                withContext(Dispatchers.IO) { AppGraph.collectRepository.isVodCollect(sourceKey, vod.id) }
-            } catch (th: Throwable) {
-                LOG.e("MusicPlayerActivity", "collect state read failed: " + th, th)
-                false
-            }
-            ui.collected = isCollected
-        }
+        dataViewModel.initPlayMode()
+        dataViewModel.refreshCollected(sourceKey, vod.id)
         refreshMeta()
         syncLyric()
         controller.setMusicAudioOnly(true)
@@ -165,7 +151,7 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
 
     override fun onServiceStopped() {
         main.removeCallbacksAndMessages(null)
-        PlayerTipBridge.hide()
+        dataViewModel.clearTip()
     }
 
     override fun onResume() {
@@ -192,7 +178,7 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
         scope.cancel()
         lyricJob = null
         if (ready || engine.attachedPage() === this) {
-            PlayerTipBridge.hide()
+            dataViewModel.clearTip()
             syncHistory()
             controller.setMusicAudioOnly(false)
             if (isoBailed) {
@@ -206,11 +192,13 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
 
     private val positionTick = object : Runnable {
         override fun run() {
-            ui.positionMs = player.currentPosition.coerceAtLeast(0L)
-            ui.durationMs = player.duration.coerceAtLeast(0L)
             val state = player.playState
-            ui.buffering = state == PlayState.PREPARING || state == PlayState.BUFFERING
-            ui.playing = player.isPlaying
+            dataViewModel.applyTick(
+                positionMs = player.currentPosition.coerceAtLeast(0L),
+                durationMs = player.duration.coerceAtLeast(0L),
+                buffering = state == PlayState.PREPARING || state == PlayState.BUFFERING,
+                playing = player.isPlaying,
+            )
             main.postDelayed(this, POSITION_TICK_MS)
         }
     }
@@ -225,29 +213,8 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
                 return
             }
         }
-        when (playState) {
-            PlayState.PREPARING, PlayState.BUFFERING -> ui.buffering = true
-            PlayState.PREPARED, PlayState.BUFFERED -> ui.buffering = false
-            PlayState.PLAYING -> {
-                ui.buffering = false
-                ui.playing = true
-            }
-            PlayState.PAUSED -> {
-                ui.buffering = false
-                ui.playing = false
-            }
-            PlayState.COMPLETED -> {
-                ui.buffering = false
-                ui.playing = false
-                onSongCompleted()
-            }
-            PlayState.ERROR -> {
-                ui.buffering = false
-                ui.playing = false
-            }
-            PlayState.IDLE, PlayState.START_ABORT -> {}
-        }
-        ui.durationMs = player.duration.coerceAtLeast(0L)
+        dataViewModel.applyPlayState(playState, player.duration.coerceAtLeast(0L))
+        if (playState == PlayState.COMPLETED) onSongCompleted()
         if (playState == PlayState.PREPARING
             || playState == PlayState.PREPARED
             || playState == PlayState.PLAYING
@@ -258,7 +225,7 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
     }
 
     private fun isIsoSession(): Boolean =
-        MediaSources.isoHeaders(controller.webHeaderMap()) || IsoSessionSignal.escalated()
+        MediaSources.isoHeaders(controller.webHeaderMap()) || controller.isIsoEscalated()
 
     private fun bailIsoSession() {
         if (isoBailed) return
@@ -271,14 +238,14 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
 
     private fun togglePlay() {
         if (player.isPlaying) player.pause() else player.start()
-        ui.playing = player.isPlaying
+        dataViewModel.setPlaying(player.isPlaying)
         controller.updateMusicSession()
     }
 
     private fun seekTo(positionMs: Long) {
         player.seekTo(positionMs)
         player.saveCurrentProgress()
-        ui.positionMs = positionMs.coerceAtLeast(0L)
+        dataViewModel.setPosition(positionMs.coerceAtLeast(0L))
         controller.updateMusicSession()
     }
 
@@ -290,72 +257,44 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
         if (index < 0 || index >= list.size || index == vod.playIndex) return
         controller.beginSwitchPlayback()
         if (removeProgress) {
-            controller.progressKey()?.let { WatchProgressStore.clear(controller.progressOwner(), it, discard = true) }
+            controller.progressKey()?.let { dataViewModel.clearWatchProgress(controller.progressOwner(), it) }
         }
-        vod.playIndex = index
-        list.forEachIndexed { i, series -> series.selected = i == index }
+        controller.updateSelection(vod.playFlag, index)
+        controller.vod()?.let { vod = it }
         controller.clearTriedLines()
         controller.setReusePlayerOnSwitch(true)
         engine.play(false)
-        ui.queueIndex = index
+        dataViewModel.setQueueIndex(index)
         refreshMeta()
         syncHistory()
     }
 
     private fun syncHistory() {
-        vod.playNote = queueList().getOrNull(vod.playIndex)?.name.orEmpty()
-        EpisodeTotals.putFromVod(vod)
-        HistoryWriter.write(historySourceKey, vod)
+        dataViewModel.syncHistory(historySourceKey, vod)
     }
 
     private fun onSongCompleted() {
-        when (ui.playMode) {
-            MusicPlayMode.SINGLE -> replayCurrent()
-            MusicPlayMode.LIST -> {
-                val list = queueList()
-                if (list.isEmpty()) return
-                val next = (vod.playIndex + 1) % list.size
-                if (next == vod.playIndex) replayCurrent() else playAt(next, true)
-            }
-            MusicPlayMode.ORDER -> playAt(vod.playIndex + 1, true)
+        when (val action = dataViewModel.songCompletedAction(vod.playIndex, queueList().size)) {
+            SongAction.None -> {}
+            SongAction.Replay -> replayCurrent()
+            is SongAction.Play -> playAt(action.index, action.removeProgress)
         }
     }
 
     private fun replayCurrent() {
         controller.beginSwitchPlayback()
-        controller.progressKey()?.let { WatchProgressStore.clear(controller.progressOwner(), it, discard = true) }
+        controller.progressKey()?.let { dataViewModel.clearWatchProgress(controller.progressOwner(), it) }
         controller.clearTriedLines()
         controller.setReusePlayerOnSwitch(true)
         engine.play(true)
     }
 
     private fun cyclePlayMode() {
-        val mode = ui.playMode.toggled()
-        ui.playMode = mode
-        MusicSettings.setPlayMode(mode.name)
+        dataViewModel.cyclePlayMode()
     }
 
     private fun toggleCollect() {
-        val key = sourceKey
-        if (ui.collected) {
-            scope.launch(Dispatchers.IO) {
-                try {
-                    AppGraph.collectRepository.deleteVodCollect(key, vod)
-                } catch (th: Throwable) {
-                    LOG.e("MusicPlayerActivity", "collect delete failed: " + th, th)
-                }
-            }
-            ui.collected = false
-        } else {
-            scope.launch(Dispatchers.IO) {
-                try {
-                    AppGraph.collectRepository.insertVodCollect(key, vod)
-                } catch (th: Throwable) {
-                    LOG.e("MusicPlayerActivity", "collect insert failed: " + th, th)
-                }
-            }
-            ui.collected = true
-        }
+        dataViewModel.toggleCollect(sourceKey, vod)
     }
 
     private fun showCast() {
@@ -369,7 +308,7 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
             .joinToString(" ")
             .ifBlank { "TVBox" }
         val headers = controller.webHeaderMap()?.let { HashMap(it) }
-        ui.castSheet = CastSheetState(
+        ui.openCastSheet(CastSheetState(
             CastVideo(
                 controller.getCastUrl(url) ?: url,
                 title,
@@ -380,37 +319,33 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
                 player.pause()
                 controller.updateMusicSession()
             },
-        )
+        ))
     }
 
     private fun refreshMeta() {
         val series = vod.seriesMap?.get(vod.playFlag)?.getOrNull(vod.playIndex)
-        val title = vod.name.orEmpty().ifBlank { getString(R.string.music_default_name) }
-        val sourceName = ApiConfig.get().getSource(sourceKey)?.name.orEmpty()
-        ui.title = title
-        ui.subtitle = series?.name?.takeIf { it.isNotBlank() }.orEmpty()
-        ui.sourceName = sourceName
-        ui.artwork = listOfNotNull(
-            controller.currentArtwork()?.takeIf { it.isNotBlank() },
-            controller.playArtwork()?.takeIf { it.isNotBlank() },
-            vod.pic?.takeIf { it.isNotBlank() },
-        ).firstOrNull().orEmpty()
-        ui.queue = queueList().map { it.name.orEmpty() }
-        ui.queueIndex = vod.playIndex
-        ui.waveSeed = (vod.id.orEmpty() + "#" + vod.playIndex).hashCode()
+        dataViewModel.applyMeta(
+            title = vod.name.orEmpty().ifBlank { getString(R.string.music_default_name) },
+            subtitle = series?.name?.takeIf { it.isNotBlank() }.orEmpty(),
+            sourceName = ApiConfig.get().getSource(sourceKey)?.name.orEmpty(),
+            artwork = listOfNotNull(
+                controller.currentArtwork()?.takeIf { it.isNotBlank() },
+                controller.playArtwork()?.takeIf { it.isNotBlank() },
+                vod.pic?.takeIf { it.isNotBlank() },
+            ).firstOrNull().orEmpty(),
+            queue = queueList().map { it.name.orEmpty() },
+            queueIndex = vod.playIndex,
+            seedKey = vod.id.orEmpty() + "#" + vod.playIndex,
+        )
     }
 
     private fun syncLyric() {
         val source = controller.playLyric()
         if (source.isNullOrBlank()) {
-            if (lyricSource != null) {
-                lyricSource = null
-                ui.lyrics = emptyList()
-            }
+            dataViewModel.clearLyric()
             return
         }
-        if (source == lyricSource) return
-        lyricSource = source
+        if (!dataViewModel.beginLyric(source)) return
         lyricJob?.cancel()
         lyricJob = scope.launch {
             val lines = try {
@@ -422,7 +357,7 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
                 emptyList()
             }
             LOG.i("echo-music lyric parsed: ${lines.size} lines")
-            if (source == lyricSource) ui.lyrics = lines
+            dataViewModel.applyLyric(source, lines)
         }
     }
 
@@ -436,36 +371,17 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
     }
 
     private fun startPlayback(url: String, headers: HashMap<String, String>?, forceExoPlayer: Boolean) {
-        PlayerTipBridge.hide()
-        if (player.mediaPlayer != null
-            && !controller.isConfirmedAudioOnly()
-            && player.needsRenderRebuild(player.factoryRenderType())
-        ) {
-            player.requireKernelRebuild()
-            LOG.i("echo-render-changed: rebuild kernel on next start")
-        }
-        if (player.isKernelErrored()) {
-            player.requireKernelRebuild()
-            LOG.i("echo-kernel-error: rebuild errored kernel on start")
-        }
-        val rebuildKernel = player.consumeKernelRebuildRequired()
-        val kernelPresent = player.mediaPlayer != null
-        val reusePlayer = KernelReusePolicy.decide(kernelPresent, rebuildKernel, forceExoPlayer, true) == KernelDecision.REUSE
-        val sameContent = reusePlayer && controller.isSameStartedContent()
-        if (!reusePlayer && kernelPresent) engine.releasePlayer()
-        if (sameContent) player.saveCurrentProgress()
-        player.setProgressKey(controller.progressKey())
-        player.setTrackMemoryKey("")
-        controller.markContentStarted()
-        if (headers != null) player.setUrl(url, headers) else player.setUrl(url)
-        controller.startSwitchLinePlayTimeout(false)
-        if (reusePlayer) {
-            val base = controller.playTimeoutBasePosition()
-            player.skipPositionWhenPlay((if (sameContent) player.resumePositionForReplay(base) else base).toInt())
-            player.replay(false)
-        } else {
-            player.start()
-        }
+        dataViewModel.clearTip()
+        controller.startVideoPlayback(
+            player,
+            url,
+            headers,
+            forceExoPlayer,
+            releaseKernel = { engine.releasePlayer() },
+            trackMemoryKey = "",
+            renderRebuildGuard = { !controller.isConfirmedAudioOnly() },
+            startLineTimeoutIso = false,
+        )
     }
 
     private inner class MusicHost : PlaybackHostApi {
@@ -487,10 +403,6 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
         }
 
         override fun selectQuality(position: Int): Boolean = controller.selectQuality(position)
-
-        override fun setAutoSwitchLineEnabled(enabled: Boolean) {
-            controller.setAutoSwitchLineEnabled(enabled)
-        }
 
         override fun setPreviewMode(previewMode: Boolean) {}
 
@@ -574,15 +486,15 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
         }
 
         override fun showTip(msg: String, loading: Boolean, error: Boolean) {
-            PlayerTipBridge.setTip(msg.orEmpty(), loading, error)
+            activity.dataViewModel.setTip(msg.orEmpty(), loading, error)
         }
 
         override fun hideTipOnUiThread() {
-            main.post { PlayerTipBridge.hide() }
+            main.post { activity.dataViewModel.clearTip() }
         }
 
         override fun showErrorWithRetry(err: String, finish: Boolean) {
-            PlayerTipBridge.setTip(err.orEmpty(), false, true)
+            activity.dataViewModel.setTip(err.orEmpty(), false, true)
             toast(err)
         }
 
@@ -591,16 +503,15 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
         }
 
         override fun setArtwork(url: String) {
-            activity.ui.artwork = url.orEmpty()
+            activity.dataViewModel.setArtwork(url)
         }
 
         override fun clearArtwork() {
-            activity.ui.artwork = ""
+            activity.dataViewModel.setArtwork("")
         }
 
         override fun clearLyric() {
-            activity.lyricSource = null
-            activity.ui.lyrics = emptyList()
+            activity.dataViewModel.clearLyric()
         }
 
         override fun onNewPlayStarted(sameContent: Boolean) {

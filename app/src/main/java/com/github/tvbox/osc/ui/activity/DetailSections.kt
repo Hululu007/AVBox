@@ -162,8 +162,7 @@ private fun SourceCard(name: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-internal fun SourceSection(vm: DetailViewModel, currentSourceName: String?, revision: Int) {
-    @Suppress("UNUSED_EXPRESSION") revision
+internal fun SourceSection(vm: DetailViewModel, currentSourceName: String?) {
     val sourceChips by vm.sourceChips.collectAsState()
     val sourcesSearching by vm.sourcesSearching.collectAsState()
     if (!sourcesSearching && sourceChips.isEmpty()) return

@@ -1,14 +1,11 @@
 package com.github.tvbox.osc.sourcedata
 
 import com.github.tvbox.osc.bean.AbsXml
-import com.github.tvbox.osc.event.RefreshEvent
 import com.github.tvbox.osc.ui.activity.DetailResponseGuard
 import com.google.gson.Gson
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
-import org.greenrobot.eventbus.EventBus
-import org.greenrobot.eventbus.Subscribe
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -24,15 +21,6 @@ class SourceResultParserRoutingTest {
         }
     }
 
-    class EventRecorder {
-        val events = ArrayList<RefreshEvent>()
-
-        @Subscribe
-        fun onRefresh(event: RefreshEvent) {
-            events.add(event)
-        }
-    }
-
     private val payload =
         """{"list":[{"vod_id":"1","vod_name":"测试片","vod_play_from":"线路甲","vod_play_url":"第1集${'$'}http://a.example/1.m3u8"}]}"""
 
@@ -40,21 +28,12 @@ class SourceResultParserRoutingTest {
         SourceResultParser(gson, search, detail, PushDetailResolver(gson, detail))
 
     @Test
-    fun searchChannelGoesToEventBusNotChannel() {
+    fun searchChannelReceivesSearchResult() {
         val search = RecordingChannel()
         val detail = RecordingChannel()
-        val recorder = EventRecorder()
-        EventBus.getDefault().register(recorder)
-        try {
-            runBlocking { newParser(search, detail).json(search, payload, "src", "token") }
-        } finally {
-            EventBus.getDefault().unregister(recorder)
-        }
-        assertTrue("搜索通道不应直接投递(面板从 EventBus 收)", search.posted.isEmpty())
-        assertTrue(
-            "应发出搜索结果的 RefreshEvent",
-            recorder.events.any { it.type == RefreshEvent.TYPE_SEARCH_RESULT && it.obj is AbsXml },
-        )
+        runBlocking { newParser(search, detail).json(search, payload, "src", "token") }
+        assertEquals("搜索结果应统一经 searchResult 通道投递", 1, search.posted.size)
+        assertTrue("载荷应为 AbsXml", search.posted[0] is AbsXml)
     }
 
     @Test

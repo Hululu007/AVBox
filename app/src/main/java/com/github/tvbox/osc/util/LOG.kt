@@ -68,6 +68,7 @@ object LOG {
 
     @JvmStatic
     fun i(msg: String?) {
+        if (!BuildConfig.DEBUG) return
         Log.i(TAG, "" + msg)
         fileLog("I", msg.toString())
     }
@@ -80,6 +81,7 @@ object LOG {
 
     @JvmStatic
     fun d(tag: String?, msg: String?) {
+        if (!BuildConfig.DEBUG) return
         Log.d(TAG, tag + ": " + msg)
         fileLog("D", msg.toString())
     }
@@ -98,6 +100,7 @@ object LOG {
 
     @JvmStatic
     fun longI(prefix: String?, msg: String?) {
+        if (!BuildConfig.DEBUG) return
         longLog(Log.INFO, prefix, msg)
     }
 

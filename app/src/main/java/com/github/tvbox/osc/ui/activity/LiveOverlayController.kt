@@ -198,7 +198,7 @@ internal class LiveOverlayController(
         ui = if (channel.sourceNum <= 0) {
             ui.copy(sourceText = "1/1")
         } else {
-            ui.copy(sourceText = host.text(R.string.live_line_index, channel.sourceIndex + 1, channel.sourceNum))
+            ui.copy(sourceText = host.text(R.string.live_line_index, vm.currentSourceIndex() + 1, channel.sourceNum))
         }
         var current = ""
         var currentTitle = ""

@@ -2,6 +2,7 @@ package com.github.tvbox.osc.player
 
 import android.content.Context
 import android.webkit.WebView
+import com.github.tvbox.osc.bean.VodInfo
 import com.github.tvbox.osc.player.state.PlayState
 import org.json.JSONObject
 import java.util.HashMap
@@ -41,8 +42,7 @@ interface PlaybackViewBridge {
     /** 已下发给播放器的地址；与 webPlayUrl 不一致说明内容还在切换途中。 */
     fun currentUrl(): String?
 
-    /** 通知控制器本轮内容地址，用于识别切换途中的陈旧进度。 */
-    fun onContentUrlSet(url: String?)
+    fun onSessionVodUpdated(vod: VodInfo)
 
     fun releasePlayer()
 
@@ -71,10 +71,6 @@ interface PlaybackViewBridge {
     fun switchRenderToTexture()
 
     fun ensureRenderViewMatchesConfig()
-
-    fun setAudioOnlyMode(audioOnly: Boolean)
-
-    fun isAudioOnlyMode(): Boolean
 
     fun playExternalPlayer(
         playerType: Int,

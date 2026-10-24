@@ -18,7 +18,11 @@ class PlaybackConfigDelegate(private val host: Host) {
 
         fun setPlayerCfg(cfg: JSONObject)
 
+        fun commitPlayerCfg(mutate: (JSONObject) -> Unit, persist: Boolean): Boolean
+
         fun attemptState(): PlaybackAttemptState
+
+        fun updateAttemptState(block: (PlaybackAttemptState) -> PlaybackAttemptState)
     }
 
     fun initPlayerCfg() {
@@ -60,18 +64,14 @@ class PlaybackConfigDelegate(private val host: Host) {
     }
 
     fun setAllowSwitchPlayer(allow: Boolean) {
-        val st = host.attemptState()
-        st.allowSwitchPlayer = allow
-        if (!allow) {
-            st.autoSwitchedPlayerType = -1
+        host.updateAttemptState {
+            if (allow) it.copy(allowSwitchPlayer = true) else it.copy(allowSwitchPlayer = false, autoSwitchedPlayerType = -1)
         }
     }
 
     fun setAllowDecodeFallback(allow: Boolean) {
         if (allow) return
-        val st = host.attemptState()
-        st.hasAutoSwitchedDecode = true
-        st.autoSwitchedDecodeOld = null
+        host.updateAttemptState { it.copy(hasAutoSwitchedDecode = true, autoSwitchedDecodeOld = null) }
     }
 
     fun playerCfgForPersist(): JSONObject? {
@@ -95,12 +95,9 @@ class PlaybackConfigDelegate(private val host: Host) {
         val cfg = host.playerCfg() ?: return
         val st = host.attemptState()
         val autoExo = st.autoSwitchedDecodeOld != null && "exo" == st.autoSwitchedDecodeKey
-        try {
-            if (cfg.optInt("exoSet", 0) == 0 && !autoExo) {
-                cfg.put("exo", KV.get(HawkConfig.EXO_DECODE, "硬解码")) // i18n: keep
-            }
-        } catch (th: Throwable) {
-            LOG.d("PlaybackController", "syncDecodeFromGlobal failed, keep current cfg")
-        }
+        if (cfg.optInt("exoSet", 0) != 0 || autoExo) return
+        val global = KV.get(HawkConfig.EXO_DECODE, "硬解码") // i18n: keep
+        if (cfg.optString("exo", "") == global) return
+        host.commitPlayerCfg({ it.put("exo", global) }, false)
     }
 }

@@ -135,7 +135,6 @@ class PlayerEngine(
     private var pendingOutputHeight = 0
     private var outputSurfacePresent = false
     private var redrawScheduled = false
-    private var audioOnlyRequested = false
     private var videoOutputInvalid = false
     private var videoRenderersDisabled = false
 
@@ -511,7 +510,6 @@ class PlayerEngine(
             it.release()
         }
         internalPlayer = null
-        audioOnlyRequested = false
         videoOutputInvalid = false
         videoRenderersDisabled = false
         pendingOutputWidth = 0
@@ -713,23 +711,10 @@ class PlayerEngine(
     val isTunnelingEnabled: Boolean
         get() = tunnelingEnabled
 
-    val isAudioOnlyMode: Boolean
-        get() = audioOnlyRequested
-
-    fun setAudioOnlyMode(audioOnly: Boolean) {
-        if (Looper.myLooper() != Looper.getMainLooper()) {
-            mainHandler.post { setAudioOnlyMode(audioOnly) }
-            return
-        }
-        if (audioOnly == audioOnlyRequested) return
-        audioOnlyRequested = audioOnly
-        applyRendererEnablement()
-    }
-
     private fun applyRendererEnablement() {
         val exo = internalPlayer ?: return
         if (videoRendererIndices.isEmpty()) return
-        val disable = audioOnlyRequested || videoOutputInvalid
+        val disable = videoOutputInvalid
         if (disable == videoRenderersDisabled) return
         val rendererCount = exo.rendererCount
         val builder = trackSelector.buildUponParameters()
@@ -743,8 +728,8 @@ class PlayerEngine(
         videoRenderersDisabled = disable
         trackSelector.setParameters(builder.build())
         LOG.i(
-            "echo-music audio-only mode=$disable videoRenderers=$applied" +
-                " requested=$audioOnlyRequested outputInvalid=$videoOutputInvalid",
+            "echo-surface renderers disabled=$disable videoRenderers=$applied" +
+                " outputInvalid=$videoOutputInvalid",
         )
     }
 

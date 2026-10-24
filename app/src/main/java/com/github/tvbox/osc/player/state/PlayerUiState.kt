@@ -14,71 +14,143 @@ import com.github.tvbox.osc.player.AppPlayerView
 class PlayerUiState {
 
     var playState: PlayState by mutableStateOf(PlayState.IDLE)
+        private set
     var playerState: Int by mutableStateOf(AppPlayerView.PLAYER_NORMAL)
+        private set
     var duration: Int by mutableStateOf(0)
+        private set
     var position: Int by mutableStateOf(0)
+        private set
     var bufferedPercent: Int by mutableStateOf(0)
+        private set
     var locked: Boolean by mutableStateOf(false)
-    var showing: Boolean by mutableStateOf(false)
+        private set
 
     var controlsVisible: Boolean by mutableStateOf(false)
+        private set
     var dragging: Boolean by mutableStateOf(false)
+        private set
     var seekPreviewPositionMs: Long by mutableStateOf(0L)
+        private set
 
     var seekHintVisible: Boolean by mutableStateOf(false)
+        private set
     var seekHintForward: Boolean by mutableStateOf(true)
+        private set
     var seekHintText: String by mutableStateOf("")
+        private set
 
     var slideHintVisible: Boolean by mutableStateOf(false)
+        private set
     var slideHintText: String by mutableStateOf("")
+        private set
     var slideHintBrightness: Boolean by mutableStateOf(true)
+        private set
 
     var speedBoostVisible: Boolean by mutableStateOf(false)
+        private set
     var speedBoostValue: Float by mutableStateOf(3.0f)
+        private set
 
     var title: String by mutableStateOf("")
+        private set
     var videoSize: String by mutableStateOf(VideoSizeGate.UNKNOWN)
+        private set
     var videoRect: VideoRect by mutableStateOf(VideoRect(0, 0, 0, 0))
+        private set
     var videoQuality: String by mutableStateOf("")
+        private set
     var sysTime: String by mutableStateOf("")
+        private set
     var batteryPercent: Int by mutableStateOf(-1)
+        private set
     var batteryCharging: Boolean by mutableStateOf(false)
+        private set
     var netSpeedTopRight: String by mutableStateOf("")
+        private set
     var netSpeedCenter: String by mutableStateOf("")
+        private set
 
     var topLeftVisible: Boolean by mutableStateOf(false)
+        private set
     var topRightVisible: Boolean by mutableStateOf(false)
+        private set
     var sysTimeVisible: Boolean by mutableStateOf(false)
+        private set
     var netSpeedTopRightVisible: Boolean by mutableStateOf(false)
+        private set
 
     var backVisible: Boolean by mutableStateOf(false)
+        private set
     var lockState: LockVisibility by mutableStateOf(LockVisibility.GONE)
+        private set
 
     var infoOsdVisible: Boolean by mutableStateOf(false)
+        private set
     var infoOsdLeft: List<Pair<String, String>> by mutableStateOf(emptyList())
+        private set
     var infoOsdRight: List<Pair<String, String>> by mutableStateOf(emptyList())
+        private set
     var infoOsdFooter: Pair<String, String>? by mutableStateOf(null)
+        private set
     var showParseRow: Boolean by mutableStateOf(false)
+        private set
     var isPortrait: Boolean by mutableStateOf(true)
+        private set
     var playerType: Int by mutableStateOf(2)
+        private set
     var liveButtonsVisible: Boolean by mutableStateOf(true)
+        private set
     var danmuOpen: Boolean by mutableStateOf(false)
+        private set
     var danmuSearchAvailable: Boolean by mutableStateOf(false)
+        private set
     var sessionVod: VodInfo? by mutableStateOf(null)
+        private set
     var previewMode: Boolean by mutableStateOf(false)
+        private set
     var timeStartText: String by mutableStateOf("")
+        private set
     var timeEndText: String by mutableStateOf("")
+        private set
     var parseListVersion: Int by mutableStateOf(0)
+        private set
 
     var selectDialog: SelectDialogState? by mutableStateOf(null)
+        private set
 
     var paramsSheet: ParamsSheetState? by mutableStateOf(null)
+        private set
 
     var paramsTab: ParamsTab by mutableStateOf(ParamsTab.Playback)
+        private set
+
+    fun openSelectDialog(dialog: SelectDialogState) {
+        selectDialog = dialog
+    }
+
+    fun dismissSelectDialog() {
+        selectDialog = null
+    }
+
+    fun openParamsSheet(sheet: ParamsSheetState?) {
+        paramsSheet = sheet
+    }
+
+    fun dismissParamsSheet() {
+        paramsSheet = null
+    }
+
+    fun selectParamsTab(tab: ParamsTab) {
+        paramsTab = tab
+    }
 
     var tipMsg: String by mutableStateOf("")
+        private set
     var tipLoading: Boolean by mutableStateOf(false)
+        private set
     var tipErr: Boolean by mutableStateOf(false)
+        private set
 
     val tipVisible: Boolean get() = tipLoading || tipErr
 
@@ -89,11 +161,61 @@ class PlayerUiState {
     }
 
     var danmuSettingSheet: DanmuSettingSheetState? by mutableStateOf(null)
+        private set
     var danmuSearchSheet: DanmuSearchSheetState? by mutableStateOf(null)
+        private set
     var subtitleSheet: SubtitleSheetState? by mutableStateOf(null)
+        private set
     var subtitleSearchSheet: SubtitleSearchSheetState? by mutableStateOf(null)
+        private set
     var castSheet: CastSheetState? by mutableStateOf(null)
+        private set
     var episodeSheetOpen: Boolean by mutableStateOf(false)
+        private set
+
+    fun openDanmuSettingSheet(sheet: DanmuSettingSheetState) {
+        danmuSettingSheet = sheet
+    }
+
+    fun dismissDanmuSettingSheet() {
+        danmuSettingSheet = null
+    }
+
+    fun openDanmuSearchSheet(sheet: DanmuSearchSheetState) {
+        danmuSearchSheet = sheet
+    }
+
+    fun dismissDanmuSearchSheet() {
+        danmuSearchSheet = null
+    }
+
+    fun openSubtitleSheet(sheet: SubtitleSheetState) {
+        subtitleSheet = sheet
+    }
+
+    fun dismissSubtitleSheet() {
+        subtitleSheet = null
+    }
+
+    fun openSubtitleSearchSheet(sheet: SubtitleSearchSheetState) {
+        subtitleSearchSheet = sheet
+    }
+
+    fun dismissSubtitleSearchSheet() {
+        subtitleSearchSheet = null
+    }
+
+    fun openCastSheet(sheet: CastSheetState) {
+        castSheet = sheet
+    }
+
+    fun dismissCastSheet() {
+        castSheet = null
+    }
+
+    fun setEpisodeSheetVisible(open: Boolean) {
+        episodeSheetOpen = open
+    }
 
     val overlayPanelOpen: Boolean
         get() = selectDialog != null || paramsSheet != null || danmuSettingSheet != null ||
@@ -110,8 +232,25 @@ class PlayerUiState {
         }
 
     var lifecyclePaused: Boolean by mutableStateOf(false)
+        private set
+
+    var canChangePosition: Boolean by mutableStateOf(true)
+        private set
+
+    var enableInNormal: Boolean by mutableStateOf(false)
+        private set
+
+    var gestureSwitch: Boolean by mutableStateOf(true)
+        private set
+
+    var speedOld: Float by mutableStateOf(1.0f)
+        private set
+
+    var isClickBackBtn: Boolean by mutableStateOf(false)
+        private set
 
     var exitPaused: Boolean by mutableStateOf(false)
+        private set
 
     val playbackActive: Boolean
         get() = lifecyclePaused ||
@@ -133,6 +272,222 @@ class PlayerUiState {
 
     val netSpeedCenterVisible: Boolean
         get() = playState == PlayState.IDLE && !previewMode
+
+    fun updateDragging(value: Boolean) {
+        dragging = value
+    }
+
+    fun updateLockState(value: LockVisibility) {
+        lockState = value
+    }
+
+    fun updateLocked(value: Boolean) {
+        locked = value
+    }
+
+    fun updatePosition(value: Int) {
+        position = value
+    }
+
+    fun updateSysTimeVisible(value: Boolean) {
+        sysTimeVisible = value
+    }
+
+    fun updateVideoSize(value: String) {
+        videoSize = value
+    }
+
+    fun updateExitPaused(value: Boolean) {
+        exitPaused = value
+    }
+
+    fun updateSeekPreviewPositionMs(value: Long) {
+        seekPreviewPositionMs = value
+    }
+
+    fun updateBackVisible(value: Boolean) {
+        backVisible = value
+    }
+
+    fun updateSpeedBoostVisible(value: Boolean) {
+        speedBoostVisible = value
+    }
+
+    fun updateTopLeftVisible(value: Boolean) {
+        topLeftVisible = value
+    }
+
+    fun updateControlsVisible(value: Boolean) {
+        controlsVisible = value
+    }
+
+    fun updateSpeedOld(value: Float) {
+        speedOld = value
+    }
+
+    fun updateNetSpeedTopRightVisible(value: Boolean) {
+        netSpeedTopRightVisible = value
+    }
+
+    fun updateDuration(value: Int) {
+        duration = value
+    }
+
+    fun updateSlideHintVisible(value: Boolean) {
+        slideHintVisible = value
+    }
+
+    fun updateTopRightVisible(value: Boolean) {
+        topRightVisible = value
+    }
+
+    fun updateIsPortrait(value: Boolean) {
+        isPortrait = value
+    }
+
+    fun updateIsClickBackBtn(value: Boolean) {
+        isClickBackBtn = value
+    }
+
+    fun updateSeekHintVisible(value: Boolean) {
+        seekHintVisible = value
+    }
+
+    fun updateNetSpeedCenter(value: String) {
+        netSpeedCenter = value
+    }
+
+    fun updateInfoOsdVisible(value: Boolean) {
+        infoOsdVisible = value
+    }
+
+    fun updateSlideHintText(value: String) {
+        slideHintText = value
+    }
+
+    fun updateSeekHintForward(value: Boolean) {
+        seekHintForward = value
+    }
+
+    fun updateDanmuOpen(value: Boolean) {
+        danmuOpen = value
+    }
+
+    fun updateBatteryCharging(value: Boolean) {
+        batteryCharging = value
+    }
+
+    fun updatePlayState(value: PlayState) {
+        playState = value
+    }
+
+    fun updateNetSpeedTopRight(value: String) {
+        netSpeedTopRight = value
+    }
+
+    fun updateSlideHintBrightness(value: Boolean) {
+        slideHintBrightness = value
+    }
+
+    fun updateTitle(value: String) {
+        title = value
+    }
+
+    fun updateSysTime(value: String) {
+        sysTime = value
+    }
+
+    fun updateSessionVod(value: VodInfo?) {
+        sessionVod = value
+    }
+
+    fun updateLiveButtonsVisible(value: Boolean) {
+        liveButtonsVisible = value
+    }
+
+    fun updatePlayerState(value: Int) {
+        playerState = value
+    }
+
+    fun updateInfoOsdLeft(value: List<Pair<String, String>>) {
+        infoOsdLeft = value
+    }
+
+    fun updateCanChangePosition(value: Boolean) {
+        canChangePosition = value
+    }
+
+    fun updateGestureSwitch(value: Boolean) {
+        gestureSwitch = value
+    }
+
+    fun updateLifecyclePaused(value: Boolean) {
+        lifecyclePaused = value
+    }
+
+    fun updatePlayerType(value: Int) {
+        playerType = value
+    }
+
+    fun updateShowParseRow(value: Boolean) {
+        showParseRow = value
+    }
+
+    fun updateBatteryPercent(value: Int) {
+        batteryPercent = value
+    }
+
+    fun updateEnableInNormal(value: Boolean) {
+        enableInNormal = value
+    }
+
+    fun updateInfoOsdFooter(value: Pair<String, String>?) {
+        infoOsdFooter = value
+    }
+
+    fun updatePreviewMode(value: Boolean) {
+        previewMode = value
+    }
+
+    fun updateDanmuSearchAvailable(value: Boolean) {
+        danmuSearchAvailable = value
+    }
+
+    fun updateTimeStartText(value: String) {
+        timeStartText = value
+    }
+
+    fun updateVideoQuality(value: String) {
+        videoQuality = value
+    }
+
+    fun updateSeekHintText(value: String) {
+        seekHintText = value
+    }
+
+    fun updateInfoOsdRight(value: List<Pair<String, String>>) {
+        infoOsdRight = value
+    }
+
+    fun updateTimeEndText(value: String) {
+        timeEndText = value
+    }
+
+    fun updateBufferedPercent(value: Int) {
+        bufferedPercent = value
+    }
+
+    fun updateVideoRect(value: VideoRect) {
+        videoRect = value
+    }
+
+    fun updateSpeedBoostValue(value: Float) {
+        speedBoostValue = value
+    }
+
+    fun updateParseListVersion(value: Int) {
+        parseListVersion = value
+    }
 }
 
 enum class LockVisibility { GONE, HIDDEN, SHOWN }
@@ -195,6 +550,7 @@ class PictureParamsState(
 class DanmuSettingSheetState(
     val onOpenSearch: () -> Unit,
     val onReset: () -> Unit = {},
+    val onSettingsApplied: (Boolean) -> Unit = {},
 )
 
 class DanmuSearchSheetState(

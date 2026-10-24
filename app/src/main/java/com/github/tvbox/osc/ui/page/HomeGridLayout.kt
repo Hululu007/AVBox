@@ -115,21 +115,10 @@ fun HomeGridLayout(
         titleMeasurer.measure("M", style = MaterialTheme.typography.titleSmall).size.height.toDp()
     }
 
-    var selectedSortId by remember { mutableStateOf("") }
+    val activeSortId by vm.activeSortId.collectAsStateWithLifecycle()
+    val selectedSortId = activeSortId.orEmpty()
     var filterOpen by remember { mutableStateOf(false) }
     val gridStates = remember(sourceKey?.key) { mutableMapOf<String, LazyGridState>() }
-
-    LaunchedEffect(sorts) {
-        val kept = selectedSortId.isNotEmpty() && sorts.any { it.id == selectedSortId }
-        if (!kept) {
-            selectedSortId = vm.activeSortId?.takeIf { id -> sorts.any { it.id == id } }
-                ?: sorts.firstOrNull()?.id.orEmpty()
-        }
-    }
-
-    LaunchedEffect(selectedSortId) {
-        if (selectedSortId.isNotEmpty()) vm.ensureLoaded(selectedSortId)
-    }
 
     val partition = partitions.firstOrNull { it.sort.id == selectedSortId }
     val sort = partition?.sort ?: sorts.firstOrNull { it.id == selectedSortId }
@@ -145,7 +134,7 @@ fun HomeGridLayout(
             HomeSortTabRow(
                 sorts = sorts,
                 selectedId = selectedSortId,
-                onSelect = { selectedSortId = it },
+                onSelect = { vm.ensureLoaded(it) },
                 showFilter = sort?.filters?.isNotEmpty() == true,
                 onFilter = { filterOpen = true },
                 startInset = navStart,

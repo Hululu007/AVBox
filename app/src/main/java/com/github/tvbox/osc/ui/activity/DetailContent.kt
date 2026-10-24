@@ -49,13 +49,12 @@ internal fun heroScrollProgress(firstVisibleIndex: Int, firstVisibleOffset: Int,
 internal fun DetailContent(
     activity: DetailActivity,
     vm: DetailViewModel,
-    revision: Int,
     listState: LazyListState,
     onPosterPic: (String) -> Unit,
     onSeed: (Int?) -> Unit,
 ) {
-    val info = vm.vodInfo ?: return
-    @Suppress("UNUSED_EXPRESSION") revision
+    val vodUi by vm.vodUi.collectAsState()
+    val info = vodUi?.info ?: return
 
     val flags = info.seriesFlags.orEmpty()
     val currentFlag = info.playFlag
@@ -155,7 +154,7 @@ internal fun DetailContent(
         }
 
         item(key = "sources") {
-            SourceSection(vm, currentSourceName = displaySourceName, revision = revision)
+            SourceSection(vm, currentSourceName = displaySourceName)
         }
 
         item(key = "tmdb_info") {

@@ -36,7 +36,7 @@ class TrackSelectorDelegate(private val host: Host) {
             "echo-setTrack list: count=" + bean.size +
                 " selected=" + selected + " names=" + names,
         )
-        host.uiState().selectDialog = SelectDialogState(
+        host.uiState().openSelectDialog(SelectDialogState(
             context.getString(R.string.player_switch_audio_track),
             names,
             selected,
@@ -48,7 +48,7 @@ class TrackSelectorDelegate(private val host: Host) {
                 }
                 switchTrack(value, false)
             }
-        }
+        })
     }
 
     fun selectVideoTrack() {
@@ -62,7 +62,7 @@ class TrackSelectorDelegate(private val host: Host) {
         val tracks = trackInfo.getVideo()
         val names = ArrayList<String>()
         for (item in tracks) names.add(item.name ?: "")
-        host.uiState().selectDialog = SelectDialogState(
+        host.uiState().openSelectDialog(SelectDialogState(
             context.getString(R.string.player_switch_video_track),
             names,
             trackInfo.getVideoSelected(false),
@@ -74,7 +74,7 @@ class TrackSelectorDelegate(private val host: Host) {
                 }
                 switchTrack(value, true)
             }
-        }
+        })
     }
 
     private fun switchTrack(track: TrackInfoBean, seekBack: Boolean) {

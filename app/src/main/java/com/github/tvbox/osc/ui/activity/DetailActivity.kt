@@ -14,7 +14,6 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -27,7 +26,6 @@ import com.github.tvbox.osc.player.PageHost
 import com.github.tvbox.osc.player.PlaybackController
 import com.github.tvbox.osc.player.PlaybackService
 import com.github.tvbox.osc.player.engine.MediaSources
-import com.github.tvbox.osc.player.engine.iso.IsoSessionSignal
 import com.github.tvbox.osc.player.state.PlayState
 import com.github.tvbox.osc.ui.player.PlayContainer
 import com.github.tvbox.osc.ui.theme.AVBoxTheme
@@ -51,7 +49,7 @@ class DetailActivity : BaseActivity(), PageHost {
 
     var playContainer: PlayContainer? by mutableStateOf<PlayContainer?>(null)
         private set
-    private var fullScreen = false
+    private var appliedFullscreen = false
     private var pendingEpisodeSync = false
     private var videoSizeWatchArmed = false
     private var castWaitAttempts = 0
@@ -92,10 +90,10 @@ class DetailActivity : BaseActivity(), PageHost {
     override fun shouldRefreshAutoSize(): Boolean = true
 
     override fun hideSysBar() {
-        if (fullScreen) super.hideSysBar()
+        if (vm.fullScreen.value) super.hideSysBar()
     }
 
-    override fun keepStatusBarHidden(): Boolean = fullScreen
+    override fun keepStatusBarHidden(): Boolean = vm.fullScreen.value
 
     private var statusBarIconsLight = false
 
@@ -126,7 +124,7 @@ class DetailActivity : BaseActivity(), PageHost {
                     return
                 }
                 if (vm.exitingFullscreen.value) return
-                if (fullScreen) {
+                if (vm.fullScreen.value) {
                     if (container != null && container.onBackPressed()) return
                     if (DetailPlaybackPolicy.plan(DetailPlaybackEntry.ExitFullscreen).stopPlayback) {
                         container?.stopForExitFullscreen()
@@ -322,7 +320,7 @@ class DetailActivity : BaseActivity(), PageHost {
     private fun isIsoPlayback(): Boolean {
         val controller = PlaybackService.peek()?.controller() ?: return false
         if (!engineOwnsDetailContent()) return false
-        return MediaSources.isoHeaders(controller.webHeaderMap()) || IsoSessionSignal.escalated()
+        return MediaSources.isoHeaders(controller.webHeaderMap()) || controller.isIsoEscalated()
     }
 
     private fun prepareAudioOnlyForMusicPage() {
@@ -334,7 +332,10 @@ class DetailActivity : BaseActivity(), PageHost {
     }
 
     fun handOffToMusicPlayer(): Boolean {
-        val container = playContainer ?: return false
+        val container = playContainer ?: run {
+            restoreVideoAfterMusicPage()
+            return false
+        }
         val playing = PlaybackService.peek()?.controller()?.vod()
         if (playing == null) {
             restoreVideoAfterMusicPage()
@@ -359,18 +360,12 @@ class DetailActivity : BaseActivity(), PageHost {
     private fun syncEpisodeAfterMusicPage() {
         if (!pendingEpisodeSync) return
         pendingEpisodeSync = false
-        val playing = PlaybackService.peek()?.controller()?.vod() ?: return
-        val info = vm.vodInfo ?: return
-        if (playing.id != info.id) return
-        if (playing.playFlag == info.playFlag && playing.playIndex == info.playIndex) return
-        info.playFlag = playing.playFlag
-        info.playIndex = playing.playIndex
-        vm.bumpRevision()
+        vm.syncEpisodeAfterMusicReturn()
     }
 
     fun applyFullscreen(full: Boolean) {
-        if (fullScreen == full) return
-        fullScreen = full
+        if (appliedFullscreen == full) return
+        appliedFullscreen = full
         requestedOrientation = orientationPolicyValue()
         if (full) {
             armVideoSizeWatch()
@@ -408,7 +403,7 @@ class DetailActivity : BaseActivity(), PageHost {
     }
 
     private fun applyVideoOrientation(portraitVideo: Boolean) {
-        if (!fullScreen || portraitVideo) return
+        if (!vm.fullScreen.value || portraitVideo) return
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
     }
 
@@ -419,7 +414,7 @@ class DetailActivity : BaseActivity(), PageHost {
 
     fun settleRotationAfterExit() {
         if (!vm.rotating.value) return
-        vm.rotating.value = false
+        vm.settleRotation()
         syncFullBoxSideEffects()
     }
 
@@ -429,7 +424,7 @@ class DetailActivity : BaseActivity(), PageHost {
 
     fun isFullBox(): Boolean {
         val landNow = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-        return DetailFullScreenFrame.playerFullScreen(vm.rotating.value, fullScreen, landNow)
+        return DetailFullScreenFrame.playerFullScreen(vm.rotating.value, vm.fullScreen.value, landNow)
     }
 
     private fun syncFullBoxSideEffects() {

@@ -42,12 +42,12 @@ internal class PlayerActionsDelegate(private val host: VideoPlayerController) : 
 
     fun applyShowBottom() {
         host.updateDanmuSearchBtnState()
-        host.state.controlsVisible = true
-        host.state.topLeftVisible = true
-        host.state.topRightVisible = true
-        host.state.netSpeedTopRightVisible = true
-        host.state.sysTimeVisible = true
-        host.state.backVisible = !host.state.isPortrait
+        host.state.updateControlsVisible(true)
+        host.state.updateTopLeftVisible(true)
+        host.state.updateTopRightVisible(true)
+        host.state.updateNetSpeedTopRightVisible(true)
+        host.state.updateSysTimeVisible(true)
+        host.state.updateBackVisible(!host.state.isPortrait)
         host.showLockView()
         keepControlsAlive()
     }
@@ -55,15 +55,15 @@ internal class PlayerActionsDelegate(private val host: VideoPlayerController) : 
     fun hideBottom() {
         host.uiHandler.removeCallbacks(host.idleHideRunnable)
         if (host.state.dragging) onSeekCancelled()
-        host.state.controlsVisible = false
-        host.state.topLeftVisible = false
-        host.state.topRightVisible = false
-        host.state.netSpeedTopRightVisible = false
-        host.state.sysTimeVisible = false
-        host.state.backVisible = false
+        host.state.updateControlsVisible(false)
+        host.state.updateTopLeftVisible(false)
+        host.state.updateTopRightVisible(false)
+        host.state.updateNetSpeedTopRightVisible(false)
+        host.state.updateSysTimeVisible(false)
+        host.state.updateBackVisible(false)
         host.uiHandler.removeCallbacks(host.lockHideRunnable)
         if (host.state.lockState != LockVisibility.GONE) {
-            host.state.lockState = LockVisibility.HIDDEN
+            host.state.updateLockState(LockVisibility.HIDDEN)
         }
     }
 
@@ -140,7 +140,7 @@ internal class PlayerActionsDelegate(private val host: VideoPlayerController) : 
                     defaultPos = p
                 }
             }
-            host.state.selectDialog = SelectDialogState(
+            host.state.openSelectDialog(SelectDialogState(
                 tip = host.context.getString(R.string.player_select_player),
                 items = names,
                 defaultIndex = defaultPos,
@@ -150,7 +150,7 @@ internal class PlayerActionsDelegate(private val host: VideoPlayerController) : 
                         hideBottom()
                     }
                 },
-            )
+            ))
         } catch (e: JSONException) {
             LOG.e("VideoPlayerController", e)
         }
@@ -176,14 +176,9 @@ internal class PlayerActionsDelegate(private val host: VideoPlayerController) : 
 
     override fun onTimeResetClicked() {
         keepControlsAlive()
-        try {
-            val cfg = host.playerConfig ?: return
-            cfg.put("st", 0)
-            cfg.put("et", 0)
-            host.config.updatePlayerCfgState()
-            host.listener?.updatePlayerCfg()
-        } catch (e: JSONException) {
-            LOG.e("VideoPlayerController", e)
+        host.listener?.updatePlayerCfg {
+            it.put("st", 0)
+            it.put("et", 0)
         }
     }
 
@@ -249,11 +244,11 @@ internal class PlayerActionsDelegate(private val host: VideoPlayerController) : 
 
     override fun onParamsClicked() {
         keepControlsAlive()
-        host.state.paramsSheet = host.config.buildParamsSheet()
+        host.state.openParamsSheet(host.config.buildParamsSheet())
     }
 
     override fun onInfoOsdClicked() {
-        host.state.infoOsdVisible = !host.state.infoOsdVisible
+        host.state.updateInfoOsdVisible(!host.state.infoOsdVisible)
         val exo = host.videoView?.mediaPlayer as? ExoPlayer
         if (host.state.infoOsdVisible) {
             exo?.setFrameRateTracking(true)
@@ -268,13 +263,13 @@ internal class PlayerActionsDelegate(private val host: VideoPlayerController) : 
     }
 
     override fun onBackClicked() {
-        host.isClickBackBtn = host.state.controlsVisible && !host.previewMode
+        host.state.updateIsClickBackBtn(host.state.controlsVisible && !host.state.previewMode)
         (host.playerActivity() as? ComponentActivity)?.onBackPressedDispatcher?.onBackPressed()
     }
 
     override fun onLockClicked() {
         val newLocked = !host.state.locked
-        host.state.locked = newLocked
+        host.state.updateLocked(newLocked)
         if (newLocked) hideBottom()
         host.showLockView()
     }
@@ -284,7 +279,7 @@ internal class PlayerActionsDelegate(private val host: VideoPlayerController) : 
         if (position < 0 || position >= parseBeanList.size) return
         val parseBean: ParseBean = parseBeanList[position]
         ApiConfig.get().setDefaultParse(parseBean)
-        host.state.parseListVersion++
+        host.state.updateParseListVersion(host.state.parseListVersion + 1)
         host.listener?.changeParse(parseBean)
         hideBottom()
     }
@@ -292,7 +287,7 @@ internal class PlayerActionsDelegate(private val host: VideoPlayerController) : 
     override fun onSeekStarted() {
         if (!host.state.controlsVisible) applyShowBottom()
         if (host.state.dragging) return
-        host.state.dragging = true
+        host.state.updateDragging(true)
         host.stopProgress()
         host.uiHandler.removeCallbacks(host.idleHideRunnable)
         keepControlsAlive()
@@ -300,7 +295,7 @@ internal class PlayerActionsDelegate(private val host: VideoPlayerController) : 
 
     override fun onSeekPreview(progress: Int) {
         val snapshot = host.progressSnapshot() ?: return
-        host.state.seekPreviewPositionMs = seekBarToPosition(progress, snapshot.durationMs)
+        host.state.updateSeekPreviewPositionMs(seekBarToPosition(progress, snapshot.durationMs))
     }
 
     override fun onSeekFinished(progress: Int) {
@@ -313,15 +308,15 @@ internal class PlayerActionsDelegate(private val host: VideoPlayerController) : 
             view.seekTo(seekTarget.toLong())
             view.saveCurrentProgress()
         }
-        if (seekTarget >= 0) host.state.position = seekTarget
-        host.state.dragging = false
+        if (seekTarget >= 0) host.state.updatePosition(seekTarget)
+        host.state.updateDragging(false)
         keySeekProgress = 0
         host.startProgress()
         keepControlsAlive()
     }
 
     override fun onSeekCancelled() {
-        host.state.dragging = false
+        host.state.updateDragging(false)
         keySeekProgress = 0
         host.startProgress()
         keepControlsAlive()
@@ -333,12 +328,12 @@ internal class PlayerActionsDelegate(private val host: VideoPlayerController) : 
         if (duration <= 0) return
         if (!host.state.controlsVisible) applyShowBottom()
         if (!host.state.dragging) {
-            host.state.dragging = true
+            host.state.updateDragging(true)
             host.stopProgress()
             host.uiHandler.removeCallbacks(host.idleHideRunnable)
         }
         keySeekProgress = (keySeekProgress + keySeekIncrement(duration) * dir).coerceIn(0, SEEK_MAX)
-        host.state.seekPreviewPositionMs = seekBarToPosition(keySeekProgress, duration)
+        host.state.updateSeekPreviewPositionMs(seekBarToPosition(keySeekProgress, duration))
         host.updateSeekUiHint(
             snapshot.positionMs,
             host.state.seekPreviewPositionMs.toInt(),
@@ -355,11 +350,11 @@ internal class PlayerActionsDelegate(private val host: VideoPlayerController) : 
         if (!host.state.controlsVisible) applyShowBottom()
         val current = snapshot.positionMs
         val target = (current + deltaMs).coerceIn(0L, duration.toLong())
-        host.state.dragging = false
+        host.state.updateDragging(false)
         keySeekProgress = 0
         view.seekTo(target)
-        host.state.position = target.toInt()
-        host.state.seekPreviewPositionMs = target
+        host.state.updatePosition(target.toInt())
+        host.state.updateSeekPreviewPositionMs(target)
         host.updateSeekUiHint(current, target.toInt())
         view.saveCurrentProgress()
         keepControlsAlive()
@@ -388,22 +383,22 @@ internal class PlayerActionsDelegate(private val host: VideoPlayerController) : 
 
     override fun refreshSystemInfo() {
         val view = host.videoView ?: return
-        host.state.sysTime = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+        host.state.updateSysTime(SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()))
         InfoOsdText.readBattery(host.context, host.state)
         val speed = runCatching { view.tcpSpeed }.getOrDefault(0L)
-        host.state.netSpeedTopRight = PlayerHelper.getDisplaySpeed(speed, true)
-        host.state.netSpeedCenter = PlayerHelper.getDisplaySpeed(speed, false)
+        host.state.updateNetSpeedTopRight(PlayerHelper.getDisplaySpeed(speed, true))
+        host.state.updateNetSpeedCenter(PlayerHelper.getDisplaySpeed(speed, false))
         val size = runCatching { view.videoSize }.getOrDefault(intArrayOf(0, 0))
-        host.state.videoSize = host.videoSizeGate.textFor(size[0], size[1])
-        host.state.videoQuality = host.videoSizeGate.qualityFor(size[0], size[1])
+        host.state.updateVideoSize(host.videoSizeGate.textFor(size[0], size[1]))
+        host.state.updateVideoQuality(host.videoSizeGate.qualityFor(size[0], size[1]))
         if (host.state.infoOsdVisible) InfoOsdText.refreshInfoOsd(host.context, host.state, host.videoView, host.playerActivity(), speed)
     }
 
     override fun hideSeekHint() {
-        host.state.seekHintVisible = false
+        host.state.updateSeekHintVisible(false)
     }
 
     override fun hideSlideHint() {
-        host.state.slideHintVisible = false
+        host.state.updateSlideHintVisible(false)
     }
 }

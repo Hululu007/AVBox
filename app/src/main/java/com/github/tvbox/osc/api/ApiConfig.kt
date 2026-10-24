@@ -88,7 +88,10 @@ class ApiConfig private constructor() {
     private var searchSourceBeanList: MutableList<SourceBean> = ArrayList()
 
     @Volatile
-    var liveSettingGroupList: MutableList<LiveSettingGroup> = ArrayList()
+    private var liveSettingGroups: MutableList<LiveSettingGroup> = ArrayList()
+
+    val liveSettingGroupList: List<LiveSettingGroup>
+        get() = java.util.Collections.unmodifiableList(liveSettingGroups)
 
     init {
         clearLoader()
@@ -125,11 +128,6 @@ class ApiConfig private constructor() {
 
     fun hasLiveConfigResult(): Boolean {
         return !liveChannelGroupList.isEmpty()
-    }
-
-    fun shouldReloadLiveConfig(): Boolean {
-        val apiUrl = getEffectiveLiveUrl()
-        return liveChannelGroupList.isEmpty() || apiUrl != loadedLiveConfigUrl
     }
 
     fun invalidateLiveConfig() {
@@ -282,7 +280,7 @@ class ApiConfig private constructor() {
                 if (live_group_index > lives_groups.size() - 1) live_group_index = 0
                 KV.put(HawkConfig.LIVE_GROUP_LIST, lives_groups)
                 try {
-                    liveSettingGroupList[5].liveSettingItems = ConfigParser.parseLiveSettingItems(lives_groups)
+                    liveSettingGroups[5].liveSettingItems = ConfigParser.parseLiveSettingItems(lives_groups)
                 } catch (e: Exception) {
                     LOG.e("ApiConfig", e)
                 }
@@ -378,7 +376,7 @@ class ApiConfig private constructor() {
             if (live_group_index > lives_groups.size() - 1) live_group_index = 0
             KV.put(HawkConfig.LIVE_GROUP_LIST, lives_groups)
             try {
-                liveSettingGroupList[5].liveSettingItems = ConfigParser.parseLiveSettingItems(lives_groups)
+                liveSettingGroups[5].liveSettingItems = ConfigParser.parseLiveSettingItems(lives_groups)
             } catch (e: Exception) {
                 LOG.e("ApiConfig", e)
             }
@@ -444,12 +442,12 @@ class ApiConfig private constructor() {
             liveSettingGroup.liveSettingItems = liveSettingItemList
             groups.add(liveSettingGroup)
         }
-        liveSettingGroupList = groups
+        liveSettingGroups = groups
         refreshLiveApiHistoryItems()
     }
 
     fun refreshLiveApiHistoryItems() {
-        if (liveSettingGroupList.size < 7) return
+        if (liveSettingGroups.size < 7) return
         val liveSettingItemList = ArrayList<LiveSettingItem>()
         val followItem = LiveSettingItem()
         followItem.itemIndex = 0
@@ -462,7 +460,7 @@ class ApiConfig private constructor() {
             liveSettingItem.itemName = HistoryHelper.getApiLineName(entries[i])
             liveSettingItemList.add(liveSettingItem)
         }
-        liveSettingGroupList[6].liveSettingItems = liveSettingItemList
+        liveSettingGroups[6].liveSettingItems = liveSettingItemList
     }
 
     fun isLiveApiLineMode(): Boolean {
@@ -872,8 +870,8 @@ class ApiConfig private constructor() {
         return mHomeSource ?: emptyHome
     }
 
-    val channelGroupList: MutableList<LiveChannelGroup>
-        get() = liveChannelGroupList
+    val channelGroupList: List<LiveChannelGroup>
+        get() = java.util.Collections.unmodifiableList(liveChannelGroupList)
 
     fun getMyHost(): MutableMap<String, String> {
         val merged = HashMap<String, String>()

@@ -4,7 +4,6 @@ package com.github.tvbox.osc.ui.activity
 
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
-import android.graphics.Bitmap
 import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
@@ -25,7 +24,6 @@ import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.base.App
 import com.github.tvbox.osc.base.BaseActivity
 import com.github.tvbox.osc.bean.Epginfo
-import com.github.tvbox.osc.bean.LiveChannelGroup
 import com.github.tvbox.osc.bean.LiveChannelItem
 import com.github.tvbox.osc.bean.LiveSettingGroup
 import com.github.tvbox.osc.player.KernelDecision
@@ -62,174 +60,25 @@ class LivePlayActivity : BaseActivity() {
 
     private val uiState: StateFlow<LivePlayUiState> get() = vm.state
 
-    private var pageState: PageState
-        get() = vm.state.value.frame.pageState
-        set(value) {
-            vm.updateFrame { it.copy(pageState = value) }
-        }
-    private var playState: PlayState
-        get() = vm.state.value.player.playState
-        set(value) {
-            vm.updatePlayer { it.copy(playState = value) }
-        }
-    private var snapshotVisible: Boolean
-        get() = vm.state.value.player.snapshotVisible
-        set(value) {
-            vm.updatePlayer { it.copy(snapshotVisible = value) }
-        }
-    private var snapshotBitmap: Bitmap?
-        get() = vm.state.value.player.snapshotBitmap
-        set(value) {
-            vm.updatePlayer { it.copy(snapshotBitmap = value) }
-        }
-    private var fullScreen: Boolean
-        get() = vm.state.value.frame.fullScreen
-        set(value) {
-            vm.updateFrame { it.copy(fullScreen = value) }
-        }
-    private var rotating: Boolean
-        get() = vm.state.value.frame.rotating
-        set(value) {
-            vm.updateFrame { it.copy(rotating = value) }
-        }
-    private var overlayVisible: Boolean
-        get() = vm.state.value.overlay.visible
-        set(value) {
-            vm.updateOverlay { it.copy(visible = value) }
-        }
-    private var isBackState: Boolean
-        get() = vm.state.value.timeshift.isBackState
-        set(value) {
-            vm.updateTimeshift { it.copy(isBackState = value) }
-        }
-    private var epgSheetVisible: Boolean
-        get() = vm.state.value.epg.sheetVisible
-        set(value) {
-            vm.updateEpg { it.copy(sheetVisible = value) }
-        }
-    private var settingsSheetVisible: Boolean
-        get() = vm.state.value.settings.sheetVisible
-        set(value) {
-            vm.updateSettings { it.copy(sheetVisible = value) }
-        }
-    private var passwordDialogTarget: Pair<Int, Int>?
-        get() = vm.state.value.passwordDialogTarget
-        set(value) {
-            vm.updatePasswordDialogTarget(value)
-        }
-    private var resolutionText: String
-        get() = vm.state.value.player.resolutionText
-        set(value) {
-            vm.updatePlayer { it.copy(resolutionText = value) }
-        }
-    private var resolutionVisible: Boolean
-        get() = vm.state.value.player.resolutionVisible
-        set(value) {
-            vm.updatePlayer { it.copy(resolutionVisible = value) }
-        }
-    private var showTimeOn: Boolean
-        get() = vm.state.value.overlay.showTimeOn
-        set(value) {
-            vm.updateOverlay { it.copy(showTimeOn = value) }
-        }
-    private var showNetSpeedOn: Boolean
-        get() = vm.state.value.overlay.showNetSpeedOn
-        set(value) {
-            vm.updateOverlay { it.copy(showNetSpeedOn = value) }
-        }
-    private var timeText: String
-        get() = vm.state.value.overlay.timeText
-        set(value) {
-            vm.updateOverlay { it.copy(timeText = value) }
-        }
-    private var netSpeedText: String
-        get() = vm.state.value.overlay.netSpeedText
-        set(value) {
-            vm.updateOverlay { it.copy(netSpeedText = value) }
-        }
-    private var gestureHintText: String?
-        get() = vm.state.value.player.gestureHintText
-        set(value) {
-            vm.updatePlayer { it.copy(gestureHintText = value) }
-        }
-    private var tsPosition: Int
-        get() = vm.state.value.timeshift.position
-        set(value) {
-            vm.updateTimeshift { it.copy(position = value) }
-        }
-    private var tsDuration: Int
-        get() = vm.state.value.timeshift.duration
-        set(value) {
-            vm.updateTimeshift { it.copy(duration = value) }
-        }
-    private var channelInfoUi: ChannelInfoUi
-        get() = vm.state.value.channelInfo
-        set(value) {
-            vm.updateChannelInfo(value)
-        }
+    private val fullScreen: Boolean get() = vm.state.value.frame.fullScreen
+    private val currentChannelGroupIndex: Int get() = vm.state.value.channelList.playingGroupIndex
+    private val currentLiveChannelIndex: Int get() = vm.state.value.channelList.playingChannelIndex
+    private val currentLiveChannelItem: LiveChannelItem? get() = vm.state.value.channelList.playingChannel
+    private val selectedChannelGroupIndex: Int get() = vm.state.value.channelList.tappedGroupIndex
     private var mVideoView: MyVideoView? = null
     private var liveController: ComposeLiveController? = null
     private val mHandler = Handler(Looper.getMainLooper())
-    private val liveChannelGroupList = ArrayList<LiveChannelGroup>()
-    private var currentChannelGroupIndex: Int
-        get() = vm.state.value.channelList.playingGroupIndex
-        set(value) {
-            vm.updateChannelList { it.copy(playingGroupIndex = value) }
-        }
-    private var currentLiveChannelIndex: Int
-        get() = vm.state.value.channelList.playingChannelIndex
-        set(value) {
-            vm.updateChannelList { it.copy(playingChannelIndex = value) }
-        }
-    private var currentLiveLookBackIndex: Int
-        get() = vm.state.value.epg.lookBackIndex
-        set(value) {
-            vm.updateEpg { it.copy(lookBackIndex = value) }
-        }
-    private var currentLiveChangeSourceTimes = 0
-    private var currentLiveChannelItem: LiveChannelItem?
-        get() = vm.state.value.channelList.playingChannel
-        set(value) {
-            vm.updateChannelList { it.copy(playingChannel = value) }
-        }
     private val livePlayerManager = LivePlayerManager()
-    private var epgdata: List<Epginfo>
-        get() = vm.state.value.epg.epgList
-        set(value) {
-            vm.updateEpg { it.copy(epgList = value) }
-        }
-    private var epgChannelName: String
-        get() = vm.state.value.epg.channelName
-        set(value) {
-            vm.updateEpg { it.copy(channelName = value) }
-        }
-    private var epgCanCatchup: Boolean
-        get() = vm.state.value.epg.canCatchup
-        set(value) {
-            vm.updateEpg { it.copy(canCatchup = value) }
-        }
-    private var logoUrl: String? = null
-    private var isSHIYI: Boolean
-        get() = vm.state.value.timeshift.isShiyi
-        set(value) {
-            vm.updateTimeshift { it.copy(isShiyi = value) }
-        }
-    private var selectedChannelGroupIndex: Int
-        get() = vm.state.value.channelList.tappedGroupIndex
-        set(value) {
-            vm.updateChannelList { it.copy(tappedGroupIndex = value) }
-        }
     private var exitingLivePlay = false
-    private var liveSettingGroupList: List<LiveSettingGroup> = ArrayList()
     private var nowday = Date()
 
     private val epgController = LiveEpgController(object : LiveEpgController.Host {
         override fun currentChannel(): LiveChannelItem? = currentLiveChannelItem
 
-        override fun currentChannelHasLogo(): Boolean = !logoUrl.isNullOrEmpty()
+        override fun currentChannelHasLogo(): Boolean = !vm.state.value.epg.logoUrl.isNullOrEmpty()
 
         override fun onEpgListChanged(list: ArrayList<Epginfo>) {
-            epgdata = list
+            vm.setEpgList(list)
         }
 
         override fun onEpgSettled() {
@@ -254,15 +103,13 @@ class LivePlayActivity : BaseActivity() {
 
         override fun liveChannelHeader(): HashMap<String, String>? = this@LivePlayActivity.liveChannelHeader()
 
+        override fun updateLogoUrl(url: String?) {
+            vm.updateLogoUrl(url)
+        }
+
         override fun loadEpgAfterChannelStarted() {
             epgController.loadAfterChannelStarted()
         }
-
-        override var logoUrl: String?
-            get() = this@LivePlayActivity.logoUrl
-            set(value) {
-                this@LivePlayActivity.logoUrl = value
-            }
 
         override fun initPlayer(view: MyVideoView) {
             livePlayerManager.init(view)
@@ -278,14 +125,6 @@ class LivePlayActivity : BaseActivity() {
 
         override fun changeSourceTimeout(): Runnable = mConnectTimeoutChangeSourceRun
 
-        override var changeSourceTimes: Int
-            get() = currentLiveChangeSourceTimes
-            set(value) {
-                currentLiveChangeSourceTimes = value
-            }
-
-        override fun groups(): MutableList<LiveChannelGroup> = liveChannelGroupList
-
         override fun isNeedInputPassword(groupIndex: Int): Boolean = this@LivePlayActivity.isNeedInputPassword(groupIndex)
 
         override fun selectChannelGroup(groupIndex: Int, liveChannelIndex: Int) {
@@ -294,10 +133,6 @@ class LivePlayActivity : BaseActivity() {
 
         override fun initLiveSettingGroupList() {
             this@LivePlayActivity.initLiveSettingGroupList()
-        }
-
-        override fun onChannelGroupsChanged() {
-            this@LivePlayActivity.onChannelGroupsChanged()
         }
 
         override fun onSettingsInputsChanged() {
@@ -334,10 +169,10 @@ class LivePlayActivity : BaseActivity() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 when {
-                    epgSheetVisible -> epgSheetVisible = false
-                    settingsSheetVisible -> settingsSheetVisible = false
+                    vm.state.value.epg.sheetVisible -> vm.hideEpgSheet()
+                    vm.state.value.settings.sheetVisible -> vm.hideSettingsSheet()
                     fullScreen -> applyFullscreen(false)
-                    isBackState -> catchupController.backToLiveFromEpg()
+                    vm.state.value.timeshift.isBackState -> catchupController.backToLiveFromEpg()
                     else -> {
                         exitingLivePlay = true
                         finish()
@@ -411,13 +246,13 @@ class LivePlayActivity : BaseActivity() {
     private fun replayCurrentChannelAfterTakeover() {
         val item = currentLiveChannelItem ?: return
         val videoView = mVideoView ?: return
-        currentLiveLookBackIndex = -1
-        isSHIYI = false
-        isBackState = false
-        overlayVisible = false
+        vm.setLookBackIndex(-1)
+        vm.setShiyi(false)
+        vm.setTimeshiftBack(false)
+        vm.setOverlayVisible(false)
         overlay.stopTimeshiftTicker()
         overlay.hideSwitchChannelSnapshot()
-        videoView.setUrl(item.url, liveChannelHeader())
+        videoView.setUrl(item.urlAt(vm.currentSourceIndex()), liveChannelHeader())
         videoView.start()
         overlay.showResolutionAfterChannelSwitch()
         catchupController.loadEpgAfterChannelStarted()
@@ -432,8 +267,7 @@ class LivePlayActivity : BaseActivity() {
     private val liveControlListener = object : ComposeLiveController.LiveControlListener {
         override fun onSingleTap(): Boolean {
             if (fullScreen) {
-                overlayVisible = !overlayVisible
-                if (overlayVisible) overlay.scheduleOverlayHide()
+                if (vm.toggleOverlay()) overlay.scheduleOverlayHide()
             } else {
                 applyFullscreen(true)
             }
@@ -441,8 +275,8 @@ class LivePlayActivity : BaseActivity() {
         }
 
         override fun onLongPress() {
-            if (isBackState) {
-                overlayVisible = true
+            if (vm.state.value.timeshift.isBackState) {
+                vm.setOverlayVisible(true)
                 overlay.scheduleOverlayHide()
             } else {
                 openSettingsSheet()
@@ -450,7 +284,7 @@ class LivePlayActivity : BaseActivity() {
         }
 
         override fun onPlayStateChanged(playState: PlayState) {
-            this@LivePlayActivity.playState = playState
+            vm.onPlayStateChanged(playState)
             handleAutoSourceSwitch(playState)
         }
 
@@ -469,7 +303,7 @@ class LivePlayActivity : BaseActivity() {
             PlayState.IDLE, PlayState.PAUSED -> {}
             PlayState.PREPARED, PlayState.BUFFERED, PlayState.PLAYING -> {
                 overlay.onPlaybackStarted()
-                currentLiveChangeSourceTimes = 0
+                vm.resetSourceSwitchAttempts()
             }
             PlayState.ERROR, PlayState.COMPLETED -> {
                 overlay.hideSwitchChannelSnapshot()
@@ -487,19 +321,19 @@ class LivePlayActivity : BaseActivity() {
 
     fun applyFullscreen(full: Boolean) {
         if (fullScreen == full) return
-        rotating = (full != (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE))
-        fullScreen = full
+        vm.setRotating(full != (resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE))
+        vm.setFullscreen(full)
         requestedOrientation = if (full) {
             ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         } else {
             orientationPolicyValue()
         }
         if (full) {
-            overlayVisible = true
+            vm.setOverlayVisible(true)
             overlay.scheduleOverlayHide()
             super.hideSysBar()
         } else {
-            overlayVisible = false
+            vm.setOverlayVisible(false)
             val controller = WindowCompat.getInsetsController(window, window.decorView)
             controller.show(WindowInsetsCompat.Type.navigationBars())
             applyHideStatusBarPref()
@@ -521,7 +355,7 @@ class LivePlayActivity : BaseActivity() {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        rotating = false
+        vm.setRotating(false)
         syncLandscapeNow()
         applyStatusBarAppearance()
     }
@@ -530,7 +364,7 @@ class LivePlayActivity : BaseActivity() {
 
     private fun syncLandscapeNow() {
         val landNow = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-        vm.updateFrame { it.copy(landscapeNow = landNow) }
+        vm.setLandscapeNow(landNow)
     }
 
     private fun playChannel(channelGroupIndex: Int, liveChannelIndex: Int, changeSource: Boolean): Boolean {
@@ -546,22 +380,23 @@ class LivePlayActivity : BaseActivity() {
         val showPreviousFrame = currentLiveChannelItem != null && mVideoView?.isPlaying == true
         val previousLivePlayerType = livePlayerManager.livePlayerType
         if (!changeSource) {
-            currentChannelGroupIndex = channelGroupIndex
-            currentLiveChannelIndex = liveChannelIndex
-            currentLiveChannelItem = channelSourceLoader.getLiveChannels(currentChannelGroupIndex)?.get(currentLiveChannelIndex)
+            vm.setPlayingGroupIndex(channelGroupIndex)
+            vm.setPlayingChannelIndex(liveChannelIndex)
+            vm.setPlayingChannel(channelSourceLoader.getLiveChannels(currentChannelGroupIndex)?.get(currentLiveChannelIndex))
+            vm.updateSourceIndex(vm.consumePendingSourceIndex())
             KV.put(HawkConfig.LIVE_CHANNEL, currentLiveChannelItem?.channelName ?: "")
             requestChannelScroll()
         }
-        epgChannelName = currentLiveChannelItem?.channelName.orEmpty()
+        vm.setEpgChannelName(currentLiveChannelItem?.channelName.orEmpty())
         onSettingsInputsChanged()
-        currentLiveLookBackIndex = -1
-        isSHIYI = false
-        isBackState = false
-        overlayVisible = false
+        vm.setLookBackIndex(-1)
+        vm.setShiyi(false)
+        vm.setTimeshiftBack(false)
+        vm.setOverlayVisible(false)
         overlay.stopTimeshiftTicker()
         val item = currentLiveChannelItem ?: return false
         item.include_back = canCurrentChannelCatchup()
-        epgCanCatchup = item.include_back
+        vm.setCanCatchup(item.include_back)
         overlay.updateChannelInfoUi()
         val videoView = mVideoView
         if (videoView != null) {
@@ -574,7 +409,7 @@ class LivePlayActivity : BaseActivity() {
             } else {
                 overlay.hideSwitchChannelSnapshot()
             }
-            val liveUrl = item.url
+            val liveUrl = item.urlAt(vm.currentSourceIndex())
             if (reusePlayer) {
                 videoView.setUrl(liveUrl, liveChannelHeader())
                 videoView.replay(true)
@@ -609,14 +444,17 @@ class LivePlayActivity : BaseActivity() {
 
     private fun playNextSource() {
         if (!isCurrentLiveChannelValid()) return
-        currentLiveChannelItem?.nextSource()
+        val item = currentLiveChannelItem ?: return
+        val num = item.sourceNum
+        val next = if (num > 0) (vm.currentSourceIndex() + 1) % num else vm.currentSourceIndex() + 1
+        vm.updateSourceIndex(next)
         playChannel(currentChannelGroupIndex, currentLiveChannelIndex, true)
     }
 
     internal val mConnectTimeoutChangeSourceRun = Runnable {
-        currentLiveChangeSourceTimes++
-        if (currentLiveChannelItem?.sourceNum == currentLiveChangeSourceTimes) {
-            currentLiveChangeSourceTimes = 0
+        val attempts = vm.bumpSourceSwitchAttempts()
+        if (currentLiveChannelItem?.sourceNum == attempts) {
+            vm.resetSourceSwitchAttempts()
             val next = getNextChannel(if (KV.get(HawkConfig.LIVE_CHANNEL_REVERSE, false)) -1 else 1)
             playChannel(next[0], next[1], false)
         } else {
@@ -626,7 +464,7 @@ class LivePlayActivity : BaseActivity() {
 
     private fun getNextChannel(direction: Int): IntArray {
         return LiveChannelNavigator.nextPosition(
-            groups = liveChannelGroupList,
+            groups = vm.channelGroups(),
             currentGroupIndex = currentChannelGroupIndex,
             currentChannelIndex = currentLiveChannelIndex,
             direction = direction,
@@ -644,7 +482,7 @@ class LivePlayActivity : BaseActivity() {
     }
 
     internal fun selectChannelGroup(groupIndex: Int, liveChannelIndex: Int) {
-        selectedChannelGroupIndex = groupIndex
+        vm.setTappedGroupIndex(groupIndex)
         if (isNeedInputPassword(groupIndex)) {
             showPasswordDialog(groupIndex, liveChannelIndex)
             return
@@ -673,19 +511,19 @@ class LivePlayActivity : BaseActivity() {
 
     internal fun expandChannelGroup(groupIndex: Int) {
         if (isChannelGroupExpanded(groupIndex)) return
-        vm.updateChannelList { it.copy(expandedGroups = it.expandedGroups + groupIndex) }
+        vm.expandChannelGroup(groupIndex)
     }
 
     private fun collapseChannelGroup(groupIndex: Int) {
-        vm.updateChannelList { it.copy(expandedGroups = it.expandedGroups - groupIndex) }
+        vm.collapseChannelGroup(groupIndex)
     }
 
     private fun requestChannelScroll() {
-        vm.updateChannelList { it.copy(scrollRequestId = it.scrollRequestId + 1) }
+        vm.requestChannelScroll()
     }
 
     fun selectChannel(groupIndex: Int, position: Int) {
-        selectedChannelGroupIndex = groupIndex
+        vm.setTappedGroupIndex(groupIndex)
         clickLiveChannel(position)
     }
 
@@ -694,7 +532,7 @@ class LivePlayActivity : BaseActivity() {
     }
 
     private fun loadChannelGroupDataAndPlay(groupIndex: Int, liveChannelIndex: Int) {
-        selectedChannelGroupIndex = groupIndex
+        vm.setTappedGroupIndex(groupIndex)
         expandChannelGroup(groupIndex)
         requestChannelScroll()
         if (liveChannelIndex > -1) {
@@ -703,15 +541,15 @@ class LivePlayActivity : BaseActivity() {
     }
 
     private fun showPasswordDialog(groupIndex: Int, liveChannelIndex: Int) {
-        passwordDialogTarget = groupIndex to liveChannelIndex
+        vm.updatePasswordDialogTarget(groupIndex to liveChannelIndex)
     }
 
     internal fun onPasswordConfirmed(password: String) {
-        val target = passwordDialogTarget ?: return
-        passwordDialogTarget = null
+        val target = vm.state.value.passwordDialogTarget ?: return
+        vm.updatePasswordDialogTarget(null)
         val groupIndex = target.first
-        if (password == liveChannelGroupList.getOrNull(groupIndex)?.groupPassword) {
-            vm.updateChannelList { it.copy(confirmedPasswordGroups = it.confirmedPasswordGroups + groupIndex) }
+        if (password == vm.channelGroups().getOrNull(groupIndex)?.groupPassword) {
+            vm.confirmPasswordGroup(groupIndex)
             loadChannelGroupDataAndPlay(groupIndex, target.second)
         } else {
             Toast.makeText(this, getString(R.string.live_wrong_password), Toast.LENGTH_SHORT).show()
@@ -719,7 +557,7 @@ class LivePlayActivity : BaseActivity() {
     }
 
     internal fun isNeedInputPassword(groupIndex: Int): Boolean {
-        val group = liveChannelGroupList.getOrNull(groupIndex) ?: return false
+        val group = vm.channelGroups().getOrNull(groupIndex) ?: return false
         return group.groupPassword.orEmpty().isNotEmpty() && !isPasswordConfirmed(groupIndex)
     }
 
@@ -735,16 +573,18 @@ class LivePlayActivity : BaseActivity() {
         channelSourceLoader.setEmptyLiveChannelList(releasePlayer)
 
     internal fun initLiveSettingGroupList() {
-        liveSettingGroupList = ApiConfig.get().liveSettingGroupList
+        vm.updateSettingGroups(ApiConfig.get().liveSettingGroupList)
     }
 
     private fun loadCurrentSourceList() {
-        liveSettingGroupList.getOrNull(0)?.liveSettingItems =
+        vm.updateCurrentSourceItems(
             LiveSettingsRules.sourceItems(currentLiveChannelItem?.channelSourceNames)
+        )
     }
 
     internal fun openSettingsSheet() {
         ApiConfig.get().refreshLiveApiHistoryItems()
+        initLiveSettingGroupList()
         loadCurrentSourceList()
         vm.onSettingsOpened()
     }
@@ -758,7 +598,7 @@ class LivePlayActivity : BaseActivity() {
     }
 
     private val settingSource = object : LiveSettingsSource {
-        override fun settingGroups(): List<LiveSettingGroup> = liveSettingGroupList
+        override fun settingGroups(): List<LiveSettingGroup> = vm.settingGroups()
 
         override fun playerScale(): Int = livePlayerManager.livePlayerScale
 
@@ -808,7 +648,7 @@ class LivePlayActivity : BaseActivity() {
             val videoView = mVideoView ?: return
             releasePlayerKernel()
             livePlayerManager.changeLivePlayerType(videoView, position)
-            currentLiveChannelItem?.let { videoView.setUrl(it.url, liveChannelHeader()) }
+            currentLiveChannelItem?.let { videoView.setUrl(it.urlAt(vm.currentSourceIndex()), liveChannelHeader()) }
             videoView.start()
         }
 
@@ -854,6 +694,9 @@ class LivePlayActivity : BaseActivity() {
             history.removeAt(itemIndex)
             KV.put(HawkConfig.LIVE_API_HISTORY, history)
             ApiConfig.get().refreshLiveApiHistoryItems()
+            initLiveSettingGroupList()
+            loadCurrentSourceList()
+            onSettingsInputsChanged()
             Toast.makeText(
                 this@LivePlayActivity,
                 getString(R.string.toast_removed_from_history),
@@ -890,35 +733,34 @@ class LivePlayActivity : BaseActivity() {
     internal fun onEpgRowClicked(position: Int): Boolean = catchupController.onEpgRowClicked(position)
 
     fun onTimeshiftSeek(progress: Float) {
-        catchupController.onTimeshiftSeek(progress)
+        overlay.onTimeshiftSeek(progress)
     }
 
     fun onTimeshiftTogglePlay() {
-        catchupController.onTimeshiftTogglePlay()
+        overlay.onTimeshiftTogglePlay()
     }
 
     internal fun canCurrentChannelCatchup(): Boolean = catchupController.canCurrentChannelCatchup()
-
-    internal fun onChannelGroupsChanged() {
-        vm.onChannelGroupsChanged(liveChannelGroupList)
-    }
 
     private fun liveActions(): LivePlayActions = LivePlayActions(
         page = LivePageActions(
             onRetryLoad = { loadLiveConfigOnEnter() },
             onPasswordConfirm = { onPasswordConfirmed(it) },
-            onPasswordDismiss = { passwordDialogTarget = null },
+            onPasswordDismiss = {
+                vm.updatePasswordDialogTarget(null)
+                vm.setPendingSourceIndex(0)
+            },
         ),
         player = LivePlayerActions(
             videoView = { mVideoView },
             onExitFullscreen = { applyFullscreen(false) },
-            onEpgSheetOpen = { epgSheetVisible = true },
+            onEpgSheetOpen = { vm.showEpgSheet() },
             onSettingsSheetOpen = { openSettingsSheet() },
             onTimeshiftSeek = { onTimeshiftSeek(it) },
             onTimeshiftTogglePlay = { onTimeshiftTogglePlay() },
         ),
         epg = LiveEpgActions(
-            onDismiss = { epgSheetVisible = false },
+            onDismiss = { vm.hideEpgSheet() },
             onRowClicked = { onEpgRowClicked(it) },
         ),
         list = LiveChannelListActions(
@@ -926,7 +768,7 @@ class LivePlayActivity : BaseActivity() {
             onSelectChannel = { groupIndex, position -> selectChannel(groupIndex, position) },
         ),
         settings = LiveSettingsActions(
-            onDismiss = { settingsSheetVisible = false },
+            onDismiss = { vm.hideSettingsSheet() },
             onItemClick = { groupIndex, itemIndex -> clickSettingItem(groupIndex, itemIndex) },
             onItemLongClick = { removeLiveConfigHistory(it) },
         ),

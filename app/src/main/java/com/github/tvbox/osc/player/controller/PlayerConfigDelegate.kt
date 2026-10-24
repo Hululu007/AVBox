@@ -40,11 +40,11 @@ internal class PlayerConfigDelegate(private val host: VideoPlayerController) {
         val cfg = host.playerConfig ?: return
         try {
             val playerType = cfg.getInt("pl")
-            host.state.playerType = playerType
+            host.state.updatePlayerType(playerType)
             val start = cfg.getInt("st")
             val end = cfg.getInt("et")
-            host.state.timeStartText = if (start == 0) "" else PlayerUtils.stringForTime(start * 1000)
-            host.state.timeEndText = if (end == 0) "" else PlayerUtils.stringForTime(end * 1000)
+            host.state.updateTimeStartText(if (start == 0) "" else PlayerUtils.stringForTime(start * 1000))
+            host.state.updateTimeEndText(if (end == 0) "" else PlayerUtils.stringForTime(end * 1000))
             refreshParamsSheet()
         } catch (e: JSONException) {
             LOG.e("VideoPlayerController", e)
@@ -139,7 +139,7 @@ internal class PlayerConfigDelegate(private val host: VideoPlayerController) {
 
     internal fun refreshParamsSheet() {
         if (host.state.paramsSheet == null) return
-        host.state.paramsSheet = buildParamsSheet()
+        host.state.openParamsSheet(buildParamsSheet())
     }
 
     private fun restartForPictureIfNeeded() {
@@ -192,65 +192,39 @@ internal class PlayerConfigDelegate(private val host: VideoPlayerController) {
 
     fun applySpeed(value: Float) {
         host.actions.keepControlsAlive()
-        try {
-            val cfg = host.playerConfig ?: return
-            cfg.put("sp", value.toDouble())
-            updatePlayerCfgState()
-            host.listener?.updatePlayerCfg()
-            host.speedOld = value
-            host.videoView?.setSpeed(value)
-        } catch (e: JSONException) {
-            LOG.e("VideoPlayerController", e)
-        }
+        host.listener?.updatePlayerCfg { it.put("sp", value.toDouble()) }
+        host.state.updateSpeedOld(value)
+        host.videoView?.setSpeed(value)
     }
 
     fun applyScale(index: Int) {
         host.actions.keepControlsAlive()
-        try {
-            val cfg = host.playerConfig ?: return
-            cfg.put("sc", index)
-            updatePlayerCfgState()
-            host.listener?.updatePlayerCfg()
-            host.videoView?.setScreenScaleType(index)
-        } catch (e: JSONException) {
-            LOG.e("VideoPlayerController", e)
-        }
+        host.listener?.updatePlayerCfg { it.put("sc", index) }
+        host.videoView?.setScreenScaleType(index)
     }
 
     fun applyPlayer(playerType: Int) {
         host.actions.keepControlsAlive()
-        try {
-            val cfg = host.playerConfig ?: return
-            if (playerType == cfg.optInt("pl", 2)) return
-            cfg.put("pl", playerType)
-            host.listener?.setAllowSwitchPlayer(false)
-            updatePlayerCfgState()
-            host.listener?.updatePlayerCfg()
-            host.listener?.replay(false)
-        } catch (e: JSONException) {
-            LOG.e("VideoPlayerController", e)
-        }
+        val cfg = host.playerConfig ?: return
+        if (playerType == cfg.optInt("pl", 2)) return
+        host.listener?.updatePlayerCfg(suppressAutoSwitch = true) { it.put("pl", playerType) }
+        host.listener?.replay(false)
     }
 
     fun applyDecode(value: String) {
         host.actions.keepControlsAlive()
-        try {
-            val cfg = host.playerConfig ?: return
-            if (decodeDisplayedIndex(cfg) == (if (value == "软解码") 1 else 0)) return // i18n: keep
-            cfg.put("exo", value) // i18n: keep
-            cfg.put("exoSet", 1)
-            pendingDecode.value = PendingDecode(
-                value,
-                SystemClock.elapsedRealtime(),
-                host.videoCodecFlow.value.generation,
-            )
-            host.listener?.setAllowDecodeFallback(false)
-            updatePlayerCfgState()
-            host.listener?.updatePlayerCfg()
-            host.listener?.replay(false)
-        } catch (e: JSONException) {
-            LOG.e("VideoPlayerController", e)
+        val cfg = host.playerConfig ?: return
+        if (decodeDisplayedIndex(cfg) == (if (value == "软解码") 1 else 0)) return // i18n: keep
+        pendingDecode.value = PendingDecode(
+            value,
+            SystemClock.elapsedRealtime(),
+            host.videoCodecFlow.value.generation,
+        )
+        host.listener?.updatePlayerCfg(suppressDecodeFallback = true) {
+            it.put("exo", value) // i18n: keep
+            it.put("exoSet", 1)
         }
+        host.listener?.replay(false)
     }
 
     fun applySpeedWhenReady() {
@@ -285,14 +259,7 @@ internal class PlayerConfigDelegate(private val host: VideoPlayerController) {
 
     fun setTimeMark(key: String, seconds: Int) {
         host.actions.keepControlsAlive()
-        try {
-            val cfg = host.playerConfig ?: return
-            cfg.put(key, seconds)
-            updatePlayerCfgState()
-            host.listener?.updatePlayerCfg()
-        } catch (e: JSONException) {
-            LOG.e("VideoPlayerController", e)
-        }
+        host.listener?.updatePlayerCfg { it.put(key, seconds) }
     }
 
     fun showScaleDialog() {
@@ -303,12 +270,12 @@ internal class PlayerConfigDelegate(private val host: VideoPlayerController) {
             for (i in 0..5) {
                 scales.add(PlayerHelper.getScaleName(i))
             }
-            host.state.selectDialog = SelectDialogState(
+            host.state.openSelectDialog(SelectDialogState(
                 tip = host.context.getString(R.string.player_select_scale),
                 items = scales,
                 defaultIndex = scaleType.coerceIn(0, 5),
                 onSelected = { index -> applyScale(index) },
-            )
+            ))
         } catch (e: JSONException) {
             LOG.e("VideoPlayerController", e)
         }
@@ -319,12 +286,12 @@ internal class PlayerConfigDelegate(private val host: VideoPlayerController) {
             val cfg = host.playerConfig ?: return
             val speed = cfg.getDouble("sp").toFloat()
             val speeds = speedOptions.map { "${it}x" }
-            host.state.selectDialog = SelectDialogState(
+            host.state.openSelectDialog(SelectDialogState(
                 tip = host.context.getString(R.string.player_select_speed),
                 items = speeds,
                 defaultIndex = speedIndex(speed),
                 onSelected = { index -> applySpeed(speedOptions[index]) },
-            )
+            ))
         } catch (e: JSONException) {
             LOG.e("VideoPlayerController", e)
         }

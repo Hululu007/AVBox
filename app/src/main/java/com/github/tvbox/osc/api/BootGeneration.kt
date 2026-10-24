@@ -1,4 +1,4 @@
-package com.github.tvbox.osc.ui.page
+package com.github.tvbox.osc.api
 
 import java.util.concurrent.atomic.AtomicLong
 

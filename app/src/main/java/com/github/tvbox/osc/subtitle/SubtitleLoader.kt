@@ -3,7 +3,6 @@ package com.github.tvbox.osc.subtitle
 import android.net.Uri
 import android.text.TextUtils
 import android.util.Base64
-import android.util.Log
 import com.github.tvbox.osc.util.LOG
 
 import com.github.tvbox.osc.io.FileUtils
@@ -149,7 +148,7 @@ object SubtitleLoader {
 
     @Throws(IOException::class, FatalParsingException::class, Exception::class)
     private suspend fun loadFromRemote(remoteSubtitlePath: String): SubtitleLoadSuccessResult {
-        Log.d(TAG, "parseRemote: remoteSubtitlePath = $remoteSubtitlePath")
+        LOG.d(TAG, "parseRemote: remoteSubtitlePath = $remoteSubtitlePath")
         var referer = ""
         if (remoteSubtitlePath.contains("alicloud") || remoteSubtitlePath.contains("aliyundrive")) {
             referer = "https://www.aliyundrive.com/"
@@ -200,10 +199,10 @@ object SubtitleLoader {
 
     @Throws(IOException::class, FatalParsingException::class)
     private fun loadFromLocal(localSubtitlePath: String): SubtitleLoadSuccessResult? {
-        Log.d(TAG, "parseLocal: localSubtitlePath = $localSubtitlePath")
+        LOG.d(TAG, "parseLocal: localSubtitlePath = $localSubtitlePath")
         val file = File(localSubtitlePath)
         if (!file.exists()) {
-            Log.d(TAG, "parseLocal: localSubtitlePath = $localSubtitlePath file not exsits")
+            LOG.d(TAG, "parseLocal: localSubtitlePath = $localSubtitlePath file not exsits")
             return null
         }
         val bytes = FileUtils.readSimple(file)
@@ -233,7 +232,7 @@ object SubtitleLoader {
         if (fileName.lastIndexOf(".") > 0) {
             ext = fileName.substring(fileName.lastIndexOf("."))
         }
-        Log.d(TAG, "parse: name = $fileName, ext = $ext")
+        LOG.d(TAG, "parse: name = $fileName, ext = $ext")
         val reader = UnicodeReader(`is`)
         val newInputStream = ReaderInputStream(reader, Charset.defaultCharset())
         if (".srt".equals(ext, ignoreCase = true)) {

@@ -6,7 +6,9 @@ import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.bean.AbsXml
 import com.github.tvbox.osc.bean.Movie
 import com.github.tvbox.osc.bean.MovieSort
+import com.github.tvbox.osc.data.AppGraph
 import com.github.tvbox.osc.sourcedata.SourceViewModel
+import com.github.tvbox.osc.ui.components.toVodInfo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -15,8 +17,12 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 
 class PartitionListVM : ViewModel() {
@@ -39,9 +45,12 @@ class PartitionListVM : ViewModel() {
         const val FIRST_PAGE = 1
     }
 
-    val ui = MutableStateFlow(UiState())
-    val title = MutableStateFlow("")
-    val level = MutableStateFlow(0)
+    private val _ui = MutableStateFlow(UiState())
+    val ui = _ui.asStateFlow()
+    private val _title = MutableStateFlow("")
+    val title = _title.asStateFlow()
+    private val _level = MutableStateFlow(0)
+    val level = _level.asStateFlow()
 
     var sort: MovieSort.SortData? = null
         private set
@@ -50,10 +59,11 @@ class PartitionListVM : ViewModel() {
     private val scope = viewModelScope
     private val nav = PartitionNavStack()
 
-    val actionMessages = MutableSharedFlow<String>(
+    private val _actionMessages = MutableSharedFlow<String>(
         extraBufferCapacity = 4,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
+    val actionMessages: SharedFlow<String> = _actionMessages.asSharedFlow()
 
     private val actionViewModel = SourceViewModel()
 
@@ -61,7 +71,7 @@ class PartitionListVM : ViewModel() {
         scope.launch {
             actionViewModel.actionResult.flow.collect { json ->
                 val msg = json?.optString("msg").orEmpty()
-                if (msg.isNotEmpty()) actionMessages.tryEmit(msg)
+                if (msg.isNotEmpty()) _actionMessages.tryEmit(msg)
                 refresh()
             }
         }
@@ -119,6 +129,20 @@ class PartitionListVM : ViewModel() {
         actionViewModel.action(video.sourceKey, video.action)
     }
 
+    suspend fun isVideoCollected(video: Movie.Video): Boolean = withContext(Dispatchers.IO) {
+        AppGraph.collectRepository.isVodCollect(video.sourceKey, video.id)
+    }
+
+    fun toggleVideoCollect(video: Movie.Video, toCollect: Boolean) {
+        scope.launch(Dispatchers.IO) {
+            if (toCollect) {
+                AppGraph.collectRepository.insertVodCollect(video.sourceKey, toVodInfo(video))
+            } else {
+                AppGraph.collectRepository.deleteVodCollect(video.sourceKey, toVodInfo(video))
+            }
+        }
+    }
+
     fun refresh() {
         if (nav.isEmpty()) return
         reload()
@@ -139,16 +163,16 @@ class PartitionListVM : ViewModel() {
     fun isRoot(): Boolean = nav.isRoot()
 
     fun setStaticTitle(title: String) {
-        if (nav.isEmpty()) this.title.value = title
+        if (nav.isEmpty()) _title.value = title
     }
 
     private fun reload() {
         val target = nav.current() ?: return
         sort = target.sort
         sourceKey = target.sourceKey ?: ApiConfig.get().getHomeSourceBean().key
-        title.value = target.title
-        level.value = level.value + 1
-        ui.value = UiState(State.Loading)
+        _title.value = target.title
+        _level.value = _level.value + 1
+        _ui.value = UiState(State.Loading)
         loader.release()
         loader = Loader()
         request(FIRST_PAGE)
@@ -162,7 +186,7 @@ class PartitionListVM : ViewModel() {
 
     fun loadMore() {
         if (nav.isEmpty()) return
-        val s = ui.value
+        val s = _ui.value
         if (s.state != State.Ready || !s.hasMore || loader.busy) return
         request(s.nextPage)
     }
@@ -180,8 +204,8 @@ class PartitionListVM : ViewModel() {
     private fun applyResult(page: Int, abs: AbsXml?) {
         val videos = abs?.movie?.videoList ?: emptyList()
         val maxPage = abs?.movie?.pagecount ?: 0
-        val cur = ui.value
-        ui.value = when {
+        val cur = _ui.value
+        _ui.value = when {
             videos.isEmpty() && page == FIRST_PAGE -> UiState(State.Empty, emptyList(), FIRST_PAGE, maxPage)
             else -> UiState(State.Ready, if (page == 0) videos else cur.videos + videos, page + 1, maxPage)
         }

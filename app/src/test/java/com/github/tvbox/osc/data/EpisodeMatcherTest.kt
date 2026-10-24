@@ -11,12 +11,12 @@ class EpisodeMatcherTest {
     private fun seriesList(vararg names: String): List<VodInfo.VodSeries> =
         names.map { series(it) }
 
-    private fun vod(flagNames: List<String>, vararg mapFlags: String): VodInfo = VodInfo().apply {
-        seriesFlags = ArrayList(flagNames.map { VodInfo.VodSeriesFlag(it) })
+    private fun vod(flagNames: List<String>, vararg mapFlags: String): VodInfo = VodInfo(
+        seriesFlags = ArrayList(flagNames.map { VodInfo.VodSeriesFlag(it) }),
         seriesMap = LinkedHashMap<String?, MutableList<VodInfo.VodSeries>>().apply {
             for (flag in mapFlags) put(flag, seriesList("第1集").toMutableList())
-        }
-    }
+        },
+    )
 
     @Test
     fun episodeNumber_fromCommonNameForms() {

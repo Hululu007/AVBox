@@ -81,17 +81,17 @@ class DefaultSubtitleEngine : SubtitleEngine {
                     return
                 }
                 if (result == null) {
-                    Log.d(TAG, "onSuccess: subtitleLoadSuccessResult is null.")
+                    LOG.d(TAG, "onSuccess: subtitleLoadSuccessResult is null.")
                     return
                 }
                 val timedTextObject = result.timedTextObject
                 if (timedTextObject == null) {
-                    Log.d(TAG, "onSuccess: timedTextObject is null.")
+                    LOG.d(TAG, "onSuccess: timedTextObject is null.")
                     return
                 }
                 val captions = timedTextObject.captions
                 if (captions == null) {
-                    Log.d(TAG, "onSuccess: captions is null.")
+                    LOG.d(TAG, "onSuccess: captions is null.")
                     return
                 }
                 val subtitles = buildSubtitles(captions)
@@ -222,7 +222,7 @@ class DefaultSubtitleEngine : SubtitleEngine {
     }
 
     override fun start() {
-        Log.d(TAG, "start: ")
+        LOG.d(TAG, "start: ")
         if (mMediaPlayer == null) {
             Log.w(TAG, "MediaPlayer is not bind, You must bind MediaPlayer to " +
                     SubtitleEngine::class.java.simpleName +
@@ -248,7 +248,7 @@ class DefaultSubtitleEngine : SubtitleEngine {
     }
 
     override fun destroy() {
-        Log.d(TAG, "destroy: ")
+        LOG.d(TAG, "destroy: ")
         stopWorkThread()
         reset()
     }

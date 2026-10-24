@@ -23,7 +23,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.tvbox.osc.R
-import com.github.tvbox.osc.event.RefreshEvent
 import com.github.tvbox.osc.ui.components.AVBoxAlertDialog
 import com.github.tvbox.osc.ui.components.AppTopBarScaffold
 import com.github.tvbox.osc.ui.components.LocalSheetDismiss
@@ -36,13 +35,14 @@ import com.github.tvbox.osc.ui.components.SettingsRow
 import com.github.tvbox.osc.ui.components.SettingsSliderRow
 import com.github.tvbox.osc.ui.components.SettingsSwitchRow
 import com.github.tvbox.osc.ui.components.TopBarActionBox
+import com.github.tvbox.osc.event.UiChange
+import com.github.tvbox.osc.event.UiEvents
 import com.github.tvbox.osc.util.AppLanguage
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.HistoryMerge
 import com.github.tvbox.osc.util.LanguageManager
 import com.github.tvbox.osc.util.restartApp
 import kotlin.math.roundToInt
-import org.greenrobot.eventbus.EventBus
 
 @Composable
 fun PreferenceSettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = viewModel()) {
@@ -83,7 +83,7 @@ fun PreferenceSettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel =
                         columns = state.collectColumns,
                         onSelect = { columns ->
                             vm.put(HawkConfig.COLLECT_COLUMNS, columns)
-                            EventBus.getDefault().post(RefreshEvent(RefreshEvent.TYPE_COLLECT_LAYOUT_CHANGE))
+                            UiEvents.post(UiChange.CollectLayoutChanged)
                         },
                     )
                 }
@@ -100,7 +100,7 @@ fun PreferenceSettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel =
                         onCheckedChange = {
                             HistoryMerge.setEnabled(it)
                             vm.refresh()
-                            EventBus.getDefault().post(RefreshEvent(RefreshEvent.TYPE_HISTORY_REFRESH))
+                            UiEvents.post(UiChange.HistoryChanged)
                         },
                     )
                 }
@@ -111,7 +111,7 @@ fun PreferenceSettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel =
                         checked = state.incognito,
                         onCheckedChange = {
                             vm.put(HawkConfig.INCOGNITO, it)
-                            EventBus.getDefault().post(RefreshEvent(RefreshEvent.TYPE_HISTORY_REFRESH))
+                            UiEvents.post(UiChange.HistoryChanged)
                         },
                     )
                 }

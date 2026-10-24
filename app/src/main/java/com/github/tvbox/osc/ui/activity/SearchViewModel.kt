@@ -6,7 +6,6 @@ import com.github.catvod.crawler.JsLoader
 import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.bean.AbsXml
 import com.github.tvbox.osc.bean.Movie
-import com.github.tvbox.osc.net.SearchHelper
 import com.github.tvbox.osc.net.SearchSettings
 import com.github.tvbox.osc.sourcedata.SourceViewModel
 import com.github.tvbox.osc.util.HawkConfig
@@ -14,6 +13,7 @@ import com.github.tvbox.osc.util.HistoryHelper
 import com.github.tvbox.osc.util.KV
 import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.util.UA
+import com.github.tvbox.osc.api.SearchSourcesState
 import com.github.tvbox.osc.util.net.Http
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -22,11 +22,15 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import com.github.tvbox.osc.data.AppGraph
+import com.github.tvbox.osc.ui.components.toVodInfo
 
 class SearchViewModel(initialTitle: String? = null) : ViewModel() {
 
@@ -40,15 +44,51 @@ class SearchViewModel(initialTitle: String? = null) : ViewModel() {
         val arrivedAt: Int = Int.MAX_VALUE,
     )
 
-    val results = MutableStateFlow<List<SourceResult>>(emptyList())
-    val running = MutableStateFlow(false)
-    val searchedTitle = MutableStateFlow("")
-    val exactMatch = MutableStateFlow(false)
-    val sitesEmpty = MutableStateFlow(false)
+    private val _results = MutableStateFlow<List<SourceResult>>(emptyList())
+    val results = _results.asStateFlow()
+    private val _running = MutableStateFlow(false)
+    val running = _running.asStateFlow()
+    private val _searchedTitle = MutableStateFlow("")
+    val searchedTitle = _searchedTitle.asStateFlow()
+    private val _exactMatch = MutableStateFlow(false)
+    val exactMatch = _exactMatch.asStateFlow()
+    private val _sitesEmpty = MutableStateFlow(false)
+    val sitesEmpty = _sitesEmpty.asStateFlow()
 
-    val hotSearch = MutableStateFlow<List<String>>(emptyList())
+    private val _hotSearch = MutableStateFlow<List<String>>(emptyList())
+    val hotSearch = _hotSearch.asStateFlow()
 
-    val suggest = MutableStateFlow<List<String>>(emptyList())
+    private val _suggest = MutableStateFlow<List<String>>(emptyList())
+    val suggest = _suggest.asStateFlow()
+
+    private val _searchHistory = MutableStateFlow<List<String>>(readSearchHistory())
+    val searchHistory: StateFlow<List<String>> = _searchHistory.asStateFlow()
+
+    fun clearSearchHistory() {
+        HistoryHelper.clearSearchHistory()
+        _searchHistory.value = readSearchHistory()
+    }
+
+    fun removeSearchHistory(keyword: String) {
+        HistoryHelper.removeSearchHistory(keyword)
+        _searchHistory.value = readSearchHistory()
+    }
+
+    private fun readSearchHistory(): List<String> = KV.get(HawkConfig.SEARCH_HISTORY, ArrayList())
+
+    suspend fun isVideoCollected(video: Movie.Video): Boolean = withContext(Dispatchers.IO) {
+        AppGraph.collectRepository.isVodCollect(video.sourceKey, video.id)
+    }
+
+    fun toggleVideoCollect(video: Movie.Video, toCollect: Boolean) {
+        scope.launch(Dispatchers.IO) {
+            if (toCollect) {
+                AppGraph.collectRepository.insertVodCollect(video.sourceKey, toVodInfo(video))
+            } else {
+                AppGraph.collectRepository.deleteVodCollect(video.sourceKey, toVodInfo(video))
+            }
+        }
+    }
 
     private var suggestJob: Job? = null
 
@@ -77,58 +117,21 @@ class SearchViewModel(initialTitle: String? = null) : ViewModel() {
         private const val SUGGEST_LIMIT = 20
 
         private const val SUGGEST_TIMEOUT_MS = 2_000L
-
-        @Volatile
-        var checkedSources: HashMap<String, String>? = null
-            private set
-
-        @Volatile
-        private var checkedSourcesApiUrl: String? = null
-
-        @JvmStatic
-        fun clearCheckedSources() {
-            checkedSources = null
-            checkedSourcesApiUrl = null
-        }
-
-        @JvmStatic
-        fun loadCheckedSources() {
-            val selection = SearchSettings.currentSelection()
-            if (selection != null) {
-                checkedSources = HashMap<String, String>().apply { selection.forEach { put(it, "1") } }
-                checkedSourcesApiUrl = KV.get(HawkConfig.API_URL, "")
-                return
-            }
-            val all = SearchHelper.getSources()
-            if (all.isEmpty()) {
-                checkedSources = null
-                checkedSourcesApiUrl = null
-                return
-            }
-            checkedSources = all
-            checkedSourcesApiUrl = KV.get(HawkConfig.API_URL, "")
-        }
-
-        @JvmStatic
-        fun isCheckedSourcesStale(): Boolean {
-            if (checkedSources == null) return true
-            if (checkedSourcesApiUrl != KV.get(HawkConfig.API_URL, "")) return true
-            return SearchHelper.isSelectionStale(checkedSources)
-        }
     }
 
     init {
-        org.greenrobot.eventbus.EventBus.getDefault().register(this)
+        scope.launch {
+            searchCaller.searchResult.flow.collect { onSearchResult(it) }
+        }
         fetchHotSearch()
+        SearchSourcesState.refresh()
         val initial = initialTitle?.trim().orEmpty()
         if (initial.isNotEmpty()) {
-            if (isCheckedSourcesStale()) loadCheckedSources()
             search(initial)
         }
     }
 
     override fun onCleared() {
-        org.greenrobot.eventbus.EventBus.getDefault().unregister(this)
         try {
             searchCaller.cancelSearch()
         } catch (ignored: Throwable) {
@@ -144,7 +147,7 @@ class SearchViewModel(initialTitle: String? = null) : ViewModel() {
             if (KV.get(HawkConfig.HOME_HOT_DAY, "") == today && cached.isNotEmpty()) {
                 val titles = parseHotTitles(cached)
                 if (titles.isNotEmpty()) {
-                    hotSearch.value = titles
+                    _hotSearch.value = titles
                     return@launch
                 }
             }
@@ -159,11 +162,11 @@ class SearchViewModel(initialTitle: String? = null) : ViewModel() {
                     KV.put(HawkConfig.HOME_HOT, body)
                     KV.put(HawkConfig.HOME_HOT_DAY, today)
                 }
-                hotSearch.value = titles
+                _hotSearch.value = titles
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
-                hotSearch.value = parseHotTitles(KV.get(HawkConfig.HOME_HOT, ""))
+                _hotSearch.value = parseHotTitles(KV.get(HawkConfig.HOME_HOT, ""))
             }
         }
     }
@@ -188,13 +191,13 @@ class SearchViewModel(initialTitle: String? = null) : ViewModel() {
                     null
                 }
             } ?: return@launch
-            suggest.value = withContext(Dispatchers.IO) { parseSuggest(body) }
+            _suggest.value = withContext(Dispatchers.IO) { parseSuggest(body) }
         }
     }
 
     fun clearSuggest() {
         suggestJob?.cancel()
-        suggest.value = emptyList()
+        _suggest.value = emptyList()
     }
 
     private fun parseSuggest(json: String): List<String> = try {
@@ -224,9 +227,10 @@ class SearchViewModel(initialTitle: String? = null) : ViewModel() {
         token = SEARCH_SEQ.incrementAndGet()
         val myToken = token
         val tokenStr = myToken.toString()
-        searchedTitle.value = t
-        exactMatch.value = SearchSettings.isExactMatchEnabled()
+        _searchedTitle.value = t
+        _exactMatch.value = SearchSettings.isExactMatchEnabled()
         HistoryHelper.setSearchHistory(t)
+        _searchHistory.value = readSearchHistory()
         clearSuggest()
         try {
             JsLoader.stopAll()
@@ -243,18 +247,18 @@ class SearchViewModel(initialTitle: String? = null) : ViewModel() {
         }
         pendingSources.clear()
         val home = ApiConfig.get().getHomeSourceBean()
-        val checked = checkedSources
+        val picked = SearchSourcesState.state.value.pickedKeys
         val sources = ApiConfig.get().getSourceBeanList()
-            .filter { it.isSearchable() && (checked == null || checked.containsKey(it.key)) }
+            .filter { it.isSearchable() && picked.contains(it.key) }
             .sortedBy { it.key != home.key }
         arriveSeq = 0
-        results.value = sources.map { SourceResult(it.key.orEmpty(), it.name.orEmpty(), ResultState.Pending, emptyList()) }
-        sitesEmpty.value = sources.isEmpty()
+        _results.value = sources.map { SourceResult(it.key.orEmpty(), it.name.orEmpty(), ResultState.Pending, emptyList()) }
+        _sitesEmpty.value = sources.isEmpty()
         if (sources.isEmpty()) {
-            running.value = false
+            _running.value = false
             return
         }
-        running.value = true
+        _running.value = true
         scope.launch {
             coroutineScope {
                 sources.map { bean ->
@@ -275,27 +279,25 @@ class SearchViewModel(initialTitle: String? = null) : ViewModel() {
                     }
                 }.awaitAll()
             }
-            if (myToken == token) running.value = false
+            if (myToken == token) _running.value = false
         }
     }
 
-    @org.greenrobot.eventbus.Subscribe(threadMode = org.greenrobot.eventbus.ThreadMode.MAIN)
-    fun onSearchResultEvent(event: com.github.tvbox.osc.event.RefreshEvent) {
-        if (event.type != com.github.tvbox.osc.event.RefreshEvent.TYPE_SEARCH_RESULT) return
-        val data = event.obj as? AbsXml ?: return
+    private fun onSearchResult(data: AbsXml?) {
+        val data = data ?: return
         val myToken = token
         if (data.searchToken != myToken.toString()) return
         val sourceKey = data.sourceKey ?: return
-        if (results.value.none { it.sourceKey == sourceKey }) return
+        if (_results.value.none { it.sourceKey == sourceKey }) return
         pendingSources.remove(sourceKey)?.complete(Unit)
         val videos = data.movie?.videoList.orEmpty()
-            .filter { !exactMatch.value || SearchSettings.isExactMatch(it.name, searchedTitle.value) }
-            .sortedByDescending { it.name?.trim() == searchedTitle.value }
+            .filter { !_exactMatch.value || SearchSettings.isExactMatch(it.name, _searchedTitle.value) }
+            .sortedByDescending { it.name?.trim() == _searchedTitle.value }
         updateResult(sourceKey, videos)
     }
 
     private fun updateResult(sourceKey: String, videos: List<Movie.Video>) {
-        results.value = results.value.map {
+        _results.value = _results.value.map {
             if (it.sourceKey == sourceKey) {
                 SourceResult(sourceKey, it.sourceName, ResultState.Done, videos, ++arriveSeq)
             } else {

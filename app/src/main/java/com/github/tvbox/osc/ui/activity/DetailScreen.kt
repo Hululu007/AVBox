@@ -82,13 +82,13 @@ fun DetailScreen(activity: DetailActivity, vm: DetailViewModel) {
     val pageState by vm.pageState.collectAsState()
     val full by vm.fullScreen.collectAsState()
     val rotating by vm.rotating.collectAsState()
-    val revision by vm.revision.collectAsState()
     val playSignal by vm.playSignal.collectAsState()
-    val toast by vm.toastEvent.collectAsState()
-    val finish by vm.finishEvent.collectAsState()
     val enteringFullscreen by vm.enteringFullscreen.collectAsState()
     val exitingFullscreen by vm.exitingFullscreen.collectAsState()
-    val vodMenu = rememberVodCardMenuState()
+    val vodMenu = rememberVodCardMenuState(
+        lookupCollected = vm::isVideoCollected,
+        onCollectToggle = vm::toggleVideoCollect,
+    )
 
     val listState = rememberLazyListState()
     val density = LocalDensity.current
@@ -218,16 +218,14 @@ fun DetailScreen(activity: DetailActivity, vm: DetailViewModel) {
         activity.applyFullscreen(full)
     }
 
-    LaunchedEffect(toast) {
-        toast?.let {
-            Toast.makeText(activity, it, Toast.LENGTH_SHORT).show()
-            vm.clearToast()
+    LaunchedEffect(Unit) {
+        vm.toastEvent.collect { message ->
+            Toast.makeText(activity, message, Toast.LENGTH_SHORT).show()
         }
     }
 
-    LaunchedEffect(finish) {
-        if (finish) {
-            vm.consumeFinish()
+    LaunchedEffect(Unit) {
+        vm.finishEvent.collect {
             activity.finish()
         }
     }
@@ -305,7 +303,7 @@ fun DetailScreen(activity: DetailActivity, vm: DetailViewModel) {
                                     retryText = "",
                                     modifier = Modifier.weight(1f),
                                 )
-                                SourceSection(vm, currentSourceName = null, revision = revision)
+                                SourceSection(vm, currentSourceName = null)
                             }
                         }
 
@@ -314,7 +312,6 @@ fun DetailScreen(activity: DetailActivity, vm: DetailViewModel) {
                                 DetailContent(
                                     activity = activity,
                                     vm = vm,
-                                    revision = revision,
                                     listState = listState,
                                     onPosterPic = { backdropPic = it },
                                     onSeed = { argb -> if (argb != null) backdropSeed = argb },
@@ -362,7 +359,7 @@ fun DetailScreen(activity: DetailActivity, vm: DetailViewModel) {
             }
         }
 
-        EpisodeSheet(vm, revision, slideFromEnd = fullBox && isLandscapeNow, showQuality = full)
+        EpisodeSheet(vm, slideFromEnd = fullBox && isLandscapeNow, showQuality = full)
         VodCardMenu(vodMenu) { menuContext.jumpToSearch(it) }
     }
 }
