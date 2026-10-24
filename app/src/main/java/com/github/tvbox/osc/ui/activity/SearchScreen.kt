@@ -41,10 +41,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.bean.Movie
+import com.github.tvbox.osc.bean.TmdbPosterCache
 import com.github.tvbox.osc.net.SearchSettings
 import com.github.tvbox.osc.ui.components.AppTopBarScaffold
 import com.github.tvbox.osc.ui.components.LoadState
 import com.github.tvbox.osc.ui.components.LoadStateBox
+import com.github.tvbox.osc.ui.components.ProvideTmdbPosterLookup
 import com.github.tvbox.osc.ui.components.SearchField
 import com.github.tvbox.osc.ui.components.VodCardMenu
 import com.github.tvbox.osc.ui.components.glassTopBarSurface
@@ -170,6 +172,7 @@ fun SearchScreen(vm: SearchViewModel = rememberSearchViewModel()) {
                 )
             } else {
                 SearchResultsContent(
+                    tmdbCache = vm,
                     results = results,
                     running = running,
                     selectedSource = selectedSource,
@@ -211,6 +214,7 @@ private fun SearchEmptyBox(topPad: Dp, text: String) {
 
 @Composable
 private fun SearchResultsContent(
+    tmdbCache: TmdbPosterCache,
     results: List<SearchViewModel.SourceResult>,
     running: Boolean,
     selectedSource: String?,
@@ -252,28 +256,32 @@ private fun SearchResultsContent(
         label = "searchResultLayout",
     ) { layout ->
         if (layout == SearchSettings.SearchLayout.Vertical) {
-            RailResults(
-                hits = hits,
-                running = running,
-                selectedSource = selectedSource,
-                onSelectSource = onSelectSource,
-                topPad = topPad,
-                railState = railState,
-                listState = railResultState,
-                onCardClick = onCardClick,
-                onCardLongClick = onCardLongClick,
-            )
+            ProvideTmdbPosterLookup(tmdbCache) {
+                RailResults(
+                    hits = hits,
+                    running = running,
+                    selectedSource = selectedSource,
+                    onSelectSource = onSelectSource,
+                    topPad = topPad,
+                    railState = railState,
+                    listState = railResultState,
+                    onCardClick = onCardClick,
+                    onCardLongClick = onCardLongClick,
+                )
+            }
         } else {
-            SearchListResults(
-                done = hits,
-                running = running,
-                selectedSource = selectedSource,
-                onSelectSource = onSelectSource,
-                listState = listState,
-                topPad = topPad,
-                onCardClick = onCardClick,
-                onCardLongClick = onCardLongClick,
-            )
+            ProvideTmdbPosterLookup(tmdbCache) {
+                SearchListResults(
+                    done = hits,
+                    running = running,
+                    selectedSource = selectedSource,
+                    onSelectSource = onSelectSource,
+                    listState = listState,
+                    topPad = topPad,
+                    onCardClick = onCardClick,
+                    onCardLongClick = onCardLongClick,
+                )
+            }
         }
     }
 }

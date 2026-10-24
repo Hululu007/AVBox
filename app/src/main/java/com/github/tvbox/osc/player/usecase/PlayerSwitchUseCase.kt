@@ -2,7 +2,6 @@ package com.github.tvbox.osc.player.usecase
 
 import com.github.tvbox.osc.base.App
 import com.github.tvbox.osc.util.LOG
-import com.github.tvbox.osc.util.thunder.Thunder
 import org.json.JSONArray
 import org.json.JSONException
 
@@ -40,7 +39,6 @@ object PlayerSwitchUseCase {
 
     @JvmStatic
     fun stopOther() {
-        Thunder.stop(false)
         requireNotNull(App.getInstance()) { "app instance not ready" }.setDashData(null)
     }
 }

@@ -21,8 +21,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.api.ApiConfig
-import com.github.tvbox.osc.base.App
-import com.github.tvbox.osc.base.BaseActivity
+import com.github.tvbox.osc.ui.base.BaseActivity
 import com.github.tvbox.osc.bean.Epginfo
 import com.github.tvbox.osc.bean.LiveChannelItem
 import com.github.tvbox.osc.bean.LiveSettingGroup
@@ -33,7 +32,7 @@ import com.github.tvbox.osc.player.MyVideoView
 import com.github.tvbox.osc.player.PlaybackService
 import com.github.tvbox.osc.player.controller.ComposeLiveController
 import com.github.tvbox.osc.player.engine.MediaSources
-import com.github.tvbox.osc.player.state.PlayState
+import com.github.tvbox.osc.player.core.PlayState
 import com.github.tvbox.osc.ui.components.LocalSheetDismiss
 import com.github.tvbox.osc.ui.components.SheetHostScaffold
 import com.github.tvbox.osc.ui.theme.AVBoxTheme

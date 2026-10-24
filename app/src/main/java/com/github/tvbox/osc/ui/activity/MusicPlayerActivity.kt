@@ -13,10 +13,10 @@ import androidx.activity.compose.setContent
 import androidx.compose.ui.platform.ComposeView
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.api.ApiConfig
-import com.github.tvbox.osc.base.BaseActivity
+import com.github.tvbox.osc.ui.base.BaseActivity
 import com.github.tvbox.osc.ui.components.SheetHostScaffold
 import com.github.tvbox.osc.bean.VodInfo
-import com.github.tvbox.osc.dlna.CastVideo
+import com.github.tvbox.osc.bean.CastVideo
 import com.github.tvbox.osc.player.MyVideoView
 import com.github.tvbox.osc.player.PlaybackController
 import com.github.tvbox.osc.player.PlaybackEngine
@@ -28,7 +28,7 @@ import com.github.tvbox.osc.player.PlaybackViewBridge
 import com.github.tvbox.osc.player.engine.MediaSources
 import com.github.tvbox.osc.player.PlayerHelper
 import com.github.tvbox.osc.player.state.CastSheetState
-import com.github.tvbox.osc.player.state.PlayState
+import com.github.tvbox.osc.player.core.PlayState
 import com.github.tvbox.osc.ui.music.MusicLrc
 import com.github.tvbox.osc.ui.music.MusicPlayerScreen
 import com.github.tvbox.osc.ui.music.MusicPlayerState

@@ -3,9 +3,10 @@ package com.github.tvbox.osc.player
 import android.text.TextUtils
 import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.bean.VodInfo
+import com.github.tvbox.osc.player.core.TrackInfo
 import com.github.tvbox.osc.player.state.AudioOnlyRules
 import com.github.tvbox.osc.player.state.AudioOnlyState
-import com.github.tvbox.osc.player.state.PlayState
+import com.github.tvbox.osc.player.core.PlayState
 import com.github.tvbox.osc.util.LOG
 import org.json.JSONArray
 import org.json.JSONObject

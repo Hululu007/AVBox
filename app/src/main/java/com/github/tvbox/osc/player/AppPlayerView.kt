@@ -11,13 +11,17 @@ import android.view.SurfaceView
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import com.github.tvbox.osc.player.core.KernelPlayer
+import com.github.tvbox.osc.player.core.TrackInfoBean
+import com.github.tvbox.osc.player.core.VideoCodecObserver
 import com.github.tvbox.osc.player.host.EngineSurfaceRenderViewFactory
 import com.github.tvbox.osc.player.host.EngineTextureRenderViewFactory
 import com.github.tvbox.osc.player.host.PlayerRenderView
 import com.github.tvbox.osc.player.host.PlayerRenderViewFactory
 import com.github.tvbox.osc.player.host.PlayerAudioFocus
 import com.github.tvbox.osc.player.host.AudioFocusTarget
-import com.github.tvbox.osc.player.state.PlayState
+import com.github.tvbox.osc.player.core.PlayState
+import com.github.tvbox.osc.player.state.ScreenMode
 import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.util.PlayerUtils
 import kotlin.jvm.Volatile
@@ -711,9 +715,9 @@ open class AppPlayerView @JvmOverloads constructor(
         const val SCREEN_SCALE_ORIGINAL = 4
         const val SCREEN_SCALE_CENTER_CROP = 5
 
-        const val PLAYER_NORMAL = 10
-        const val PLAYER_FULL_SCREEN = 11
-        const val PLAYER_TINY_SCREEN = 12
+        const val PLAYER_NORMAL = ScreenMode.PLAYER_NORMAL
+        const val PLAYER_FULL_SCREEN = ScreenMode.PLAYER_FULL_SCREEN
+        const val PLAYER_TINY_SCREEN = ScreenMode.PLAYER_TINY_SCREEN
 
         private const val PLAY_STATE_FLOW_BUFFER = 8
     }

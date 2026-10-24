@@ -499,7 +499,7 @@ pwsh skill/scripts/verify-migration.ps1 -Action tierb
 
 **交付物（新文件 9 + 改动点 7；另 3 个单测文件）**：
 - 桥：`player/ExoPlayer.kt`（重写，删 `ExoPlayer.java`）——AbstractPlayer 全契约映射 + 回调映射 + app 扩展面 27 项 + 静态面（`ERROR_KIND_*` const / `setPreferSoftwareDecode`/`isPreferSoftwareDecode`）+ 嵌套 `OnCuesListener`（`@JvmSuppressWildcards` 保 Java 匿名实现）。
-- 状态机：`player/state/PlayState.kt`（`PlayState` 枚举 + `PlaybackStateMachine`，StateFlow 输出；迁移表与暂停记忆逐条对齐旧 `VideoView.STATE_*`；M7b 期间无读取方）。
+- 状态机：`player/core/PlayState.kt`（2026-10-25 自 `player/state` 迁入，拆包环用；`PlayState` 枚举 + `PlaybackStateMachine`，StateFlow 输出；迁移表与暂停记忆逐条对齐旧 `VideoView.STATE_*`；M7b 期间无读取方）。
 - 渲染宿主：`player/host/`（`RenderMeasure` / `TextureRenderHost` / `EngineSurfaceRenderView`（+Factory）/ `EngineTextureRenderView`（+Factory））。
 - 音频焦点：`player/host/PlayerAudioFocus.kt`（`AudioFocusTarget` + 纯逻辑 `AudioFocusActions` + Android 壳 `PlayerAudioFocus`；**M7b 未接线**，生效实现仍是旧 `VideoView.AudioFocusHelper`）。
 - 引擎侧增补（`engine/PlayerEngine.kt`）：`playbackStateListener` / `retryAsHlsListener` / `prepare()` 返回 `Boolean`。
@@ -585,7 +585,7 @@ pwsh skill/scripts/verify-migration.ps1 -Action tierb
 | 清 KDoc | ✅ | `不重写 Java`/`LiveDataFlow`/`D2 分域` 等 **0 命中** |
 | 契约层 | 事实 | `catvod` 仍 24 Java，全库零 Java 由 M11 判定 |
 
-**i18n（`.codebuddy/tools/i18n_gate.py`）**：`ui 层（硬闸门）= 0 处 / 0 文件` ✅；`非 ui = 35 处 / 3 文件` —— `player/engine/PlayerEngine.kt` 33（`LANG_MAP` 语言归类值 18 + `matchLanguage` 关键字与返回值 14 + `"未知"` 过滤值 1）、`sourcedata/SourceHelper.kt` 1（`"豆瓣"` 探测值）、`sourcedata/SourceResultParser.kt` 1（异常文案）。**逐条甄别：35 处全属"匹配关键字/归类值/探测值/诊断文案"，无一处是待翻译的 UI 文案** ⇒ 属**缺 `i18n: keep` 标记**（规范 §1.3 R1–R11 的数据值/日志类），来源是 **M7a 新建 `PlayerEngine.kt`（`8878235`）时未标注**。门脚本按行认标记（该行或上一行），补 34 处可恢复到历史 `ui 0 / 非 ui 0`；纯注释零风险，但会在引擎文件插入约 30 行注释，**登记为待办、未擅自执行**。
+**i18n（`tools/i18n_gate.py`）**：`ui 层（硬闸门）= 0 处 / 0 文件` ✅；`非 ui = 35 处 / 3 文件` —— `player/engine/PlayerEngine.kt` 33（`LANG_MAP` 语言归类值 18 + `matchLanguage` 关键字与返回值 14 + `"未知"` 过滤值 1）、`sourcedata/SourceHelper.kt` 1（`"豆瓣"` 探测值）、`sourcedata/SourceResultParser.kt` 1（异常文案）。**逐条甄别：35 处全属"匹配关键字/归类值/探测值/诊断文案"，无一处是待翻译的 UI 文案** ⇒ 属**缺 `i18n: keep` 标记**（规范 §1.3 R1–R11 的数据值/日志类），来源是 **M7a 新建 `PlayerEngine.kt`（`8878235`）时未标注**。门脚本按行认标记（该行或上一行），补 34 处可恢复到历史 `ui 0 / 非 ui 0`；纯注释零风险，但会在引擎文件插入约 30 行注释，**登记为待办、未擅自执行**。
 - **承接给后续片的规则**：新建/移植**任何**"语言码 → 中文归类值"或"关键字匹配表"时，**当场打 `// i18n: keep(轨道语言匹配值)`** —— 否则每建一个引擎/解析类都会让 i18n 门回退一格。
 
 **包级环**：提取口径 = 文件所在包与 import 目标包各取"根包（`com.github.tvbox` / `com.github.catvod`）之后头 3 段"，双向即成环。实测 **22 组 / 231 边 / 53 包**（231 边与旧基线数值相同，但包数 39 → 53 说明**分组口径不完全一致**）。**旧基线脚本已丢失 ⇒ 不做"是否新增"的断言**，改为重新基线；其中 5 组是 M7 拆播放栈子包的 `player.*` 家族内环（旧文档已判可接受）。**不建议清环**：22 组的较小方向导入数之和为 63，但 11 组涉及 `util` 枢纽，而旧 spec 已**实测证明挪包无效**（util 拆分实验 23 → 23 不降），只能逐类依赖反转 ⇒ 跨轮架构重构、收益（环不影响运行）与风险（动最被依赖的包）严重不匹配，计划已明确排除。
@@ -706,7 +706,7 @@ fromTopBand=false|UNDECIDED -> 2 次 ← 位移未越起判阈值
 `assembleDebug` + `assembleRelease` + **638 用例 / 0 失败** 全绿。
 
 **② 已落地实现 + 接线层用例（2026-10-06,提交 `2fba430`）**：在验证栈跑通后重建了手势层,并**用测试钉住两轮复核的阻断项**:
-- **实现**:`player/ui/VideoGestureLayer.kt` = 纯状态机 `VideoGestureHandler`(判定,20 例单测)+ `Modifier.videoGestureLayer`(指针接线)。两条硬约束:① `awaitFirstDown(requireUnconsumed = true)` —— 子控件消费的触摸从不认领(阻断项 B1 正解);② 等第二下时**不消费**取到的 DOWN,交给下一轮 `awaitEachGesture` 重新起会话(双击可达)。
+- **实现**:`player/ui/VideoGestureLayer.kt` = 纯状态机 `VideoGestureHandler`(判定,20 例单测)+ `Modifier.videoGestureLayer`(指针接线)。两条硬约束:① `awaitFirstDown(requireUnconsumed = true)` —— 子控件消费的触摸从不认领(阻断项 B1 正解);② 等第二下时**不消费**取到的 DOWN,交给下一轮 `awaitEachGesture` 重新起会话(双击可达)。【2026-10-25 注记:该文件已拆分 —— 纯状态机迁 `player/gesture/VideoGestureHandler.kt`,只有 `Modifier.videoGestureLayer` 留在 `ui/player/VideoGestureLayer.kt`(原 `player/ui` 整包并入 `ui/player`);下文 2026-10-06 的路径均为当时事实,不再逐一改写】
 - **写测试时抓到 3 个真 bug(全部已修)**:① `endSession` 先把 `mode` 复位再读,导致**横滑永远不提交/不取消** seek(状态机用例当场抓到);② **首下抬手几乎总落在长按竞速窗口内**(测试里 down/up 同帧),旧写法之后会再等一个永不到来的 up ⇒ `endSession` 永不执行、**点击全部无反应**;③ 单击确认只在两条收尾路径之一可达 ⇒ 点击静默结束。为此把 `endSession` 返回值从 `Boolean` 改为显式 `EndResult{TAP_PENDING, DOUBLE_TAP, NONE}`。
 - **覆盖**:状态机 20 例(单击恰好一次/双击抑制单击/超窗非双击/长按含暂停与 CANCEL 恢复/横滑提交与取消/右左半屏亮度音量/总开关只拦竖滑/预览态/锁屏/边缘带/未越 slop)+ **接线层 3 例**(子控件消费不被处理、空白区单击仍派发、横滑预览并提交)。全套件 **614 → 638 用例 / 0 失败**。
 - **1 例受限(@Ignore)**:双击的**接线层**用例 —— Robolectric 虚拟时钟无法稳定表达"两次注入之间"的双击窗口时序(不推进时钟则第二下落在窗口外;推进时钟会被 300ms 超时先打断;换 `withTimeout` 则单击路径不可靠)。**双击的判定逻辑本身已由状态机用例覆盖**,缺的是指针层到达时序 ⇒ 属真机走查项。

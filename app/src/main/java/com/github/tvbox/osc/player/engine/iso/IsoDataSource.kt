@@ -5,8 +5,8 @@ import androidx.media3.common.C
 import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
-import com.github.tvbox.osc.player.engine.MediaSources
-import com.github.tvbox.osc.player.engine.OkHttpDataSource
+import com.github.tvbox.osc.player.core.HttpHeaders
+import com.github.tvbox.osc.player.core.OkHttpDataSource
 import com.github.tvbox.osc.util.LOG
 import java.io.IOException
 import java.net.ProtocolException
@@ -222,7 +222,7 @@ class IsoDataSource internal constructor(
             onSelection: ((IsoSelection) -> Unit)? = null,
             seekMs: Long = 0L,
         ): Factory {
-            val requestHeaders = MediaSources.toRequestHeaders(headers)
+            val requestHeaders = HttpHeaders.toRequestHeaders(headers)
             var userAgent: String? = null
             val defaultHeaders = HashMap<String, String>()
             for ((key, value) in requestHeaders) {

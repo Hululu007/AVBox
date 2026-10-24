@@ -45,130 +45,16 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewModelScope
 import com.github.tvbox.osc.R
-import com.github.tvbox.osc.api.AppBootstrap
-import com.github.tvbox.osc.api.ApiConfig
-import com.github.tvbox.osc.event.UiChange
-import com.github.tvbox.osc.event.UiEvents
 import com.github.tvbox.osc.data.AppGraph
-import com.github.tvbox.osc.data.CollectRepository
 import com.github.tvbox.osc.data.VodCollect
 import com.github.tvbox.osc.ui.WindowSize
 import com.github.tvbox.osc.ui.components.LoadState
 import com.github.tvbox.osc.ui.components.LoadStateBox
 import com.github.tvbox.osc.ui.components.VodPoster
-import com.github.tvbox.osc.util.HawkConfig
-import com.github.tvbox.osc.util.KV
 import com.github.tvbox.osc.util.SubscribeList
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
-
-class CollectViewModel(
-    private val collect: CollectRepository = AppGraph.collectRepository,
-) : ViewModel() {
-    val loading = MutableStateFlow(true)
-    val items = MutableStateFlow<List<VodCollect>>(emptyList())
-
-    val columns = MutableStateFlow(KV.get(HawkConfig.COLLECT_COLUMNS, 3))
-
-    val unavailableKeys = MutableStateFlow<Set<String>>(emptySet())
-
-    private val _editMode = MutableStateFlow(false)
-    val editMode: StateFlow<Boolean> = _editMode.asStateFlow()
-    private val _selected = MutableStateFlow<Set<Int>>(emptySet())
-    val selected: StateFlow<Set<Int>> = _selected.asStateFlow()
-
-    init {
-        observeUiEvents()
-        viewModelScope.launch(Dispatchers.IO) {
-            AppBootstrap.subscriptionCid.drop(1).collect { recomputeUnavailableNow() }
-        }
-        viewModelScope.launch(Dispatchers.IO) {
-            collect.observeAll().collect { list ->
-                items.value = list
-                recomputeUnavailableNow()
-                loading.value = false
-            }
-        }
-        viewModelScope.launch {
-            AppBootstrap.state.collect { boot ->
-                if (boot is AppBootstrap.Boot.Ready) {
-                    viewModelScope.launch(Dispatchers.IO) { recomputeUnavailableNow() }
-                }
-            }
-        }
-    }
-
-    val placementAnim = MutableStateFlow(false)
-
-    private fun recomputeUnavailableNow() {
-        if (AppBootstrap.state.value !is AppBootstrap.Boot.Ready) return
-        unavailableKeys.value = computeUnavailable(items.value)
-    }
-
-    private fun computeUnavailable(list: List<VodCollect>): Set<String> {
-        val current = collect.currentCid()
-        val known = SubscribeList.vodUrls()
-        return list.filter { item ->
-            val cid = item.cid.orEmpty()
-            if (cid.isNotEmpty() && !known.contains(cid)) {
-                true
-            } else {
-                (cid.isEmpty() || cid == current) && ApiConfig.get().getSource(item.sourceKey) == null
-            }
-        }.mapNotNull { it.sourceKey }.toSet()
-    }
-
-    private fun observeUiEvents() {
-        viewModelScope.launch {
-            UiEvents.changes.collect { change ->
-                if (change is UiChange.CollectLayoutChanged) {
-                    columns.value = KV.get(HawkConfig.COLLECT_COLUMNS, 3)
-                }
-            }
-        }
-    }
-
-    fun enterEdit() {
-        _editMode.value = true
-    }
-
-    fun exitEdit() {
-        _editMode.value = false
-        _selected.value = emptySet()
-    }
-
-    fun toggleSelected(id: Int) {
-        _selected.value = if (id in _selected.value) _selected.value - id else _selected.value + id
-    }
-
-    fun pruneSelection(ids: Set<Int>) {
-        val pruned = _selected.value.intersect(ids)
-        if (pruned.size != _selected.value.size) _selected.value = pruned
-        if (ids.isEmpty()) _editMode.value = false
-    }
-
-    fun deleteSelected(list: List<VodCollect>) {
-        if (list.isEmpty()) return
-        placementAnim.value = true
-        viewModelScope.launch(Dispatchers.IO) {
-            list.forEach { item -> collect.deleteVodCollect(item.id) }
-        }
-    }
-
-    fun deleteAll() {
-        viewModelScope.launch(Dispatchers.IO) {
-            collect.deleteVodCollectAll()
-        }
-    }
-}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable

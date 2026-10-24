@@ -22,6 +22,7 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import com.github.catvod.crawler.SpiderReaper
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.base.App
@@ -32,10 +33,9 @@ import com.github.tvbox.osc.util.DefaultConfig
 import com.github.tvbox.osc.util.HeaderGuard
 import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.util.LanguageManager
-import com.github.tvbox.osc.util.SpiderReaper
 import com.github.tvbox.osc.util.VideoParseRuler
 import com.github.tvbox.osc.util.net.Http
-import com.github.tvbox.osc.util.parser.SuperParse
+import com.github.tvbox.osc.net.SuperParse
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

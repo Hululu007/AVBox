@@ -11,12 +11,11 @@ import com.github.tvbox.osc.io.FileUtils
 import com.github.tvbox.osc.server.ControlManager
 import com.github.tvbox.osc.server.RemoteServer
 import com.github.tvbox.osc.util.AppContextHolder
-import com.github.tvbox.osc.util.BootGuard
+import com.github.tvbox.osc.boot.BootGuard
 import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.util.MD5
 import com.github.tvbox.osc.util.RegexUtils
 import com.github.tvbox.osc.util.SpiderInitWatch
-import com.github.tvbox.osc.util.SpiderReaper
 import com.github.tvbox.osc.util.net.Http
 
 import org.json.JSONObject

@@ -1,5 +1,6 @@
 package com.github.tvbox.osc.player.state
 
+import com.github.tvbox.osc.player.core.PlayState
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test

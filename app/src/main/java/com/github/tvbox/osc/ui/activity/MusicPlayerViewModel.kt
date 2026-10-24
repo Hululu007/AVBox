@@ -7,7 +7,7 @@ import com.github.tvbox.osc.data.AppGraph
 import com.github.tvbox.osc.data.EpisodeTotals
 import com.github.tvbox.osc.data.HistoryWriter
 import com.github.tvbox.osc.data.WatchProgressStore
-import com.github.tvbox.osc.player.state.PlayState
+import com.github.tvbox.osc.player.core.PlayState
 import com.github.tvbox.osc.ui.music.LyricLine
 import com.github.tvbox.osc.ui.music.MusicPlayMode
 import com.github.tvbox.osc.ui.music.MusicPlayerState

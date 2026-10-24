@@ -6,8 +6,8 @@ import android.media.MediaFormat
 import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
 import androidx.media3.decoder.ffmpeg.FfmpegLibrary
-import com.github.tvbox.osc.player.PlayerDecodeKind
-import com.github.tvbox.osc.player.PlayerHelper
+import com.github.tvbox.osc.player.core.PlayerDecodeKind
+import com.github.tvbox.osc.player.core.DecodeKindRule
 
 internal object AudioDecoderLookup {
 
@@ -34,7 +34,7 @@ internal object AudioDecoderLookup {
 
     fun decodeKind(format: Format?): Pair<String, PlayerDecodeKind>? {
         val choice = choiceFor(format) ?: return null
-        return choice.name to PlayerHelper.decodeKindOf(
+        return choice.name to DecodeKindRule.kindOf(
             choice.name,
             choice.hardwareAccelerated,
             choice.softwareOnly,

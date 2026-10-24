@@ -47,7 +47,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.player.state.PlayerUiState
-import com.github.tvbox.osc.player.ui.CastSheet
+import com.github.tvbox.osc.ui.player.CastSheet
 import com.github.tvbox.osc.ui.components.HomeBackdrop
 import com.github.tvbox.osc.ui.components.ImagePalette
 import com.github.tvbox.osc.ui.components.LoadState
@@ -246,6 +246,7 @@ fun DetailScreen(activity: DetailActivity, vm: DetailViewModel) {
                         val info = vm.vodInfo
                         if (info != null) {
                             DetailHeroPoster(
+                                vm = vm,
                                 title = info.name ?: "TVBox",
                                 altTitle = info.en,
                                 picture = info.pic,

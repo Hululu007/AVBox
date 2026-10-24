@@ -7,9 +7,10 @@ import com.github.tvbox.osc.bean.VodInfo
 import com.github.tvbox.osc.data.AppGraph
 import com.github.tvbox.osc.data.PlaybackProgress
 import com.github.tvbox.osc.data.WatchProgressStore
+import com.github.tvbox.osc.player.core.SlowOpenSignal
 import com.github.tvbox.osc.player.engine.MediaSources
 import com.github.tvbox.osc.player.engine.SourcePolicy
-import com.github.tvbox.osc.player.state.PlayState
+import com.github.tvbox.osc.player.core.PlayState
 import com.github.tvbox.osc.server.ControlManager
 import com.github.tvbox.osc.sourcedata.SourceViewModel
 import com.github.tvbox.osc.util.DefaultConfig
@@ -18,7 +19,7 @@ import com.github.tvbox.osc.util.ImgUtil
 import com.github.tvbox.osc.util.KV
 import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.util.MD5
-import com.github.tvbox.osc.util.thunder.Thunder
+import com.github.tvbox.osc.sourcedata.Thunder
 import org.json.JSONException
 import org.json.JSONObject
 import java.net.URLEncoder

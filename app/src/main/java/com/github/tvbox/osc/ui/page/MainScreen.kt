@@ -83,7 +83,7 @@ import com.github.tvbox.osc.ui.navbar.NavAxis
 import com.github.tvbox.osc.ui.navbar.NavMetrics
 import com.github.tvbox.osc.ui.theme.LiquidGlassState
 import com.github.tvbox.osc.util.AppManager
-import com.github.tvbox.osc.util.BootGuard
+import com.github.tvbox.osc.boot.BootGuard
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.HomeSettings
 import com.kyant.backdrop.backdrops.layerBackdrop

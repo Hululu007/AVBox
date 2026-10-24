@@ -15,7 +15,7 @@
 实施前现状(2026-09-21 盘点):
 
 - 全仓 `R.string.` 引用 **0 处**,`res/values/strings.xml` 只有 `app_name` —— i18n 基础设施为零,但也没有"资源/硬编码并存"的历史包袱;
-- 文案主战场在 Compose(`ui/` + `player/ui/` 共 43 文件 435 处);layout XML 只有 2 个文件且无硬编码文本;`player/` fork 模块几乎无 UI 文案;
+- 文案主战场在 Compose(`ui/` + `ui/player/` 共 43 文件 435 处);layout XML 只有 2 个文件且无硬编码文本;`player/` fork 模块几乎无 UI 文案;
 - 项目已有一套**数据侧**简繁字符映射(`crawler/js/Trans.java`,供爬虫与弹幕搜索用)。语言设置落地后把它的门控从"系统 Locale"改为"应用语言",源返回的片名/站点名即可跟随转繁体 —— 繁体适配的额外收益(§4.5)。
 
 ## 1. 现状盘点(2026-09-21 实测)
@@ -52,10 +52,10 @@
 | `api/ApiConfig.java` | 33 | 源加载提示(Toast,源 msg 透传除外) |
 | `player/PlaybackController.java` | 25 | 播放链路提示(Toast) |
 | `ui/activity/LiveScreens.kt` | 21 | 直播页 UI |
-| `player/ui/DanmuSheets.kt` | 20 | 弹幕设置面板 |
+| `ui/player/DanmuSheets.kt` | 20 | 弹幕设置面板 |
 | `ui/activity/DetailScreens.kt` | 20 | 详情页 UI |
 | `ui/page/PlaySettingsPage.kt` | 20 | 播放设置页 |
-| `player/ui/SubtitleSheets.kt` | 19 | 字幕设置面板 |
+| `ui/player/SubtitleSheets.kt` | 19 | 字幕设置面板 |
 | `player/controller/ComposeVideoController.kt` | 19 | 播放器提示 |
 | `ui/page/ThemeSettingsPage.kt` | 19 | 主题设置页 |
 | `player/PlayerHelper.kt` | 17 | 播放器名/缩放名 + 外链播放器提示 |
@@ -180,9 +180,9 @@ object LanguageManager {
 
 | 落点 | 位置 | 说明 |
 |---|---|---|
-| Application | `base/App.java` 新增 `attachBaseContext` | ① 先 `KV.init(base)`;② `super.attachBaseContext(LanguageManager.wrap(base))` |
-| Activity | `base/BaseActivity.java` 新增 `attachBaseContext` | 包裹后再交给 `AppCompatActivity`(其 delegate 依赖包裹后的 base) |
-| Service | `player/PlaybackService.java` 新增 `attachBaseContext` | 通知文案走 Service 自身 Context,不包裹会是系统语言 |
+| Application | `base/App.kt` 新增 `attachBaseContext` | ① 先 `KV.init(base)`;② `super.attachBaseContext(LanguageManager.wrap(base))` |
+| Activity | `ui/base/BaseActivity.kt` 新增 `attachBaseContext` | 包裹后再交给 `AppCompatActivity`(其 delegate 依赖包裹后的 base) |
+| Service | `player/PlaybackService.kt` 新增 `attachBaseContext` | 通知文案走 Service 自身 Context,不包裹会是系统语言 |
 
 - ⚠️ `attachBaseContext` **早于** `Application.onCreate`,而 `KV.init` 目前在 `onCreate` ⇒ 必须在 `App.attachBaseContext` 里提前 `KV.init(base)`。`KV.init` 幂等(`MMKV.initialize` 幂等 + 同 ID 同模式返回同实例),`onCreate` 里那处保留不动;
 - ⚠️ `KV.init` 内部用 `context.getApplicationContext()`,此时为 null,代码已有 `appContext == null ? context : appContext` 兜底,可直接传 `base`;
@@ -218,7 +218,7 @@ object LanguageManager {
 | Service / 通知 | Service 内 `getString`(已包裹,§4.2) |
 | Toast | `Toast.makeText(context, context.getString(R.string.xxx), ...)` |
 
-- 硬性要求:`ui/` 与 `player/ui/` 层禁止出现中文字符串字面量(§7-A 卡口);
+- 硬性要求:`ui/` 与 `ui/player/` 层禁止出现中文字符串字面量(§7-A 卡口);
 - `util/*` 里透传的源 `msg`(5 处)保持原样,不外置、不翻译。
 
 ### 4.5 `Trans` 门控改造(数据侧简繁,**已实施 2026-09-22**)
@@ -279,8 +279,8 @@ Android 13+ 的「系统设置 → 应用 → 语言」需要 `res/xml/locales_c
 
 **A. 静态检查(脚本可复现)**
 
-- `ui/`、`player/ui/` 下含中文的字符串字面量 = 0(白名单 = §1.3 R1–R5 的 `// i18n: keep` 行);
-- `values-en` / `values-b+zh+Hant` 与 `values` 的 key 集合**逐一对齐**(无多无少),`values-zh-rHK` 为**子集**(允许少、禁止多);校验工具 `.codebuddy/tools/i18n_align.py <lang> [--subset]` = **key 集合 + 占位符(含 `%%`、是否带位置) + 空值/首尾空白 + 简繁残留提示**(CJK 残留检查只对 `en` 开,繁体层改 `S2T-SUSPECT` 提示项) —— 2026-09-22 三目录全 PASS:`en` 424=424、`b+zh+Hant` 424=424(S2T-SUSPECT 仅 1 条 = 语言名 endonym「简体中文」)、`zh-rHK` 66 子集(0 多余/0 冗余/0 占位符失配;`--subset` 模式含 `REDUNDANT-VS-UPPER` 检查 = 差异层里与上级层同值的条目);
+- `ui/`、`ui/player/` 下含中文的字符串字面量 = 0(白名单 = §1.3 R1–R5 的 `// i18n: keep` 行);
+- `values-en` / `values-b+zh+Hant` 与 `values` 的 key 集合**逐一对齐**(无多无少),`values-zh-rHK` 为**子集**(允许少、禁止多);校验工具 `tools/i18n_align.py <lang> [--subset]` = **key 集合 + 占位符(含 `%%`、是否带位置) + 空值/首尾空白 + 简繁残留提示**(CJK 残留检查只对 `en` 开,繁体层改 `S2T-SUSPECT` 提示项) —— 2026-09-22 三目录全 PASS:`en` 424=424、`b+zh+Hant` 424=424(S2T-SUSPECT 仅 1 条 = 语言名 endonym「简体中文」)、`zh-rHK` 66 子集(0 多余/0 冗余/0 占位符失配;`--subset` 模式含 `REDUNDANT-VS-UPPER` 检查 = 差异层里与上级层同值的条目);
 - `values-zh-rHK`(差异层)的 key 必须是 `values` 的**子集**(允许少、禁止多;缺失条目按预期回落基础层);
 - 无"中文片段拼接"(`"共" + n + "集"` 形态);
 - 占位符一致性:各语言条目的 `%1$s` 参数齐全;
@@ -341,16 +341,16 @@ Android 13+ 的「系统设置 → 应用 → 语言」需要 `res/xml/locales_c
 >
 > **完成情况(2026-09-22)**:645 处已全部归零 —— 绝大多数外置为资源,少部分按 §1.3 红线/日志判据改为 `// i18n: keep`;卡口实测 **ui 0 处 + 非 ui 0 处**。
 
-**A.1 UI 层(43 文件 / 435 处)** —— `ui/page/`:`SettingsPage` 37、`ConfigManagePage` 35、`PlaySettingsPage` 20、`ThemeSettingsPage` 19、`PreferenceSettingsPage` 17、`HomePage` 15、`HistoryPage` 14、`MainScreen` 9、`PreloadSettingsPage` 8、`HomeGridLayout` 7、`CollectPage` 7、`HomeViewModel` 2、`VodCardAction` 1;`ui/activity/`:`LiveScreens` 21、`DetailScreens` 20、`SearchActivity` 13、`LivePlayActivity` 11、`DetailViewModel` 8、`SearchScreens` 7、`LiveEpgParser` 4、`PartitionListActivity` 3、`DetailActivity` 3、`MusicPlayerActivity` 2、`LivePlayViewModel` 2、`ConfigManageActivity` 1;`ui/components/`:`SearchSettingsSheet` 10、`VodCardMenu` 7、`ThemeColorPickerSheet` 5、`FilterSheet` 3、`VodCard` 2、`HeroCarousel` 2;`ui/music/`:`MusicPlayerScreen` 11、`MusicPlayerState` 3;`ui/theme/`:`ThemeConfig` 17、`Theme` 2;`ui/player/`:`PlayContainer` 16;`player/ui/`:`DanmuSheets` 20、`SubtitleSheets` 19、`CastSheet` 13、`PlayerBottomBar` 10、`PlayerOverlay` 4、`PlayerLayers` 4、`PlayerTopBar` 1。
+**A.1 UI 层(43 文件 / 435 处)** —— `ui/page/`:`SettingsPage` 37、`ConfigManagePage` 35、`PlaySettingsPage` 20、`ThemeSettingsPage` 19、`PreferenceSettingsPage` 17、`HomePage` 15、`HistoryPage` 14、`MainScreen` 9、`PreloadSettingsPage` 8、`HomeGridLayout` 7、`CollectPage` 7、`HomeViewModel` 2、`VodCardAction` 1;`ui/activity/`:`LiveScreens` 21、`DetailScreens` 20、`SearchActivity` 13、`LivePlayActivity` 11、`DetailViewModel` 8、`SearchScreens` 7、`LiveEpgParser` 4、`PartitionListActivity` 3、`DetailActivity` 3、`MusicPlayerActivity` 2、`LivePlayViewModel` 2、`ConfigManageActivity` 1;`ui/components/`:`SearchSettingsSheet` 10、`VodCardMenu` 7、`ThemeColorPickerSheet` 5、`FilterSheet` 3、`VodCard` 2、`HeroCarousel` 2;`ui/music/`:`MusicPlayerScreen` 11、`MusicPlayerState` 3;`ui/theme/`:`ThemeConfig` 17、`Theme` 2;`ui/player/`:`PlayContainer` 16;`ui/player/`:`DanmuSheets` 20、`SubtitleSheets` 19、`CastSheet` 13、`PlayerBottomBar` 10、`PlayerOverlay` 4、`PlayerLayers` 4、`PlayerTopBar` 1。
 
 **A.2 非 UI 层(32 文件 / 213 处,逐条甄别)** —— `api/`:ApiConfig 33、SpiderLoader 5、DanmakuApi 4、ConfigParser 1;`player/`:PlaybackController 25、PlayUrlResolver 15、ComposeVideoController 19、PlaybackService 6、M3u8PurifyUseCase 2、PlayerUiState 2、IjkMediaPlayer 2、ExoPlayer 1;`util/`:PlayerHelper 17、Thunder 13、LocalConfigHelper 11、DefaultConfig 6、OkGoHelper 4、Proxy 2、FileUtils 2、KV 1、HistoryHelper 1、EpisodeTotals 1、parser/SuperParse 1、live/TxtSubscribe 1;`bean/`:LivePlayerManager 9;`sourcedata/`:SourceViewModel 15;`dlna/`:DLNACastManager 2;`crawler/`:RSAEncrypt 6、Trans 2、JsSpider 1;`python/java/`:PythonSpider 2、PyLog 1。
 
-> **2026-10-01 注记(结构拆分)**：以上是实施当时的逐文件快照。V5 把播放三件套拆出 5 个协作者（`player/PlaybackTimeouts`/`PlaybackPreload`/`PlaybackFetch`、`player/controller/GestureController`、`ui/player/TrackSelectorDelegate`），相关文案随之迁移（例：手势提示与音轨弹窗跟着走）；卡口以实测为准 —— 复跑 `.codebuddy/tools/i18n_gate.py` 为 **ui 0 处 + 非 ui 0 处**。
+> **2026-10-01 注记(结构拆分)**：以上是实施当时的逐文件快照。V5 把播放三件套拆出 5 个协作者（`player/PlaybackTimeouts`/`PlaybackPreload`/`PlaybackFetch`、`player/controller/GestureController`、`ui/player/TrackSelectorDelegate`），相关文案随之迁移（例：手势提示与音轨弹窗跟着走）；卡口以实测为准 —— 复跑 `tools/i18n_gate.py` 为 **ui 0 处 + 非 ui 0 处**。
 
 ## 附录 B:统计口径与复现
 
-- 统计脚本(本地审计工具,未入库):`.codebuddy/tools/i18n_hardcoded_scan.py` —— 状态机剥离注释与字符边界,只统计"含中文的字符串字面量",按所在行是否日志上下文分类;输出同目录 `i18n_scan_out.json`。
-- 第 1 步新增的配套工具(同在 `.codebuddy/tools/`,未入库):`i18n_file.py <file...>`(逐文件列字面量+行号)、**`i18n_gate.py`(§7-A 卡口:ui 层硬闸门 + `// i18n: keep`[本行或上一行] + 日志豁免)**、`i18n_check_keys.py`(声明↔引用一致/重名/未用/**重复文案**/首尾空白)、**`i18n_align.py <lang> [--subset]`(第 2/3/4 步:多语言资源与 `values` 的 key 集合/占位符/空值逐条对齐;`--subset` = 地区差异层只允许少;繁体层以 `S2T-SUSPECT` 提示简繁漏转)**、`i18n_fidelity.py` + `i18n_verify_long.py`(HEAD 版原字面量 vs 资源值,逐字符含 `\n` 转义还原)。
+- 统计脚本(仓库工具,2026-10-25 起入库于 `tools/`):`tools/i18n_hardcoded_scan.py` —— 状态机剥离注释与字符边界,只统计"含中文的字符串字面量",按所在行是否日志上下文分类;输出同目录 `i18n_scan_out.json`。
+- 第 1 步新增的配套工具(同在 `tools/`,2026-10-25 起入库):`i18n_file.py <file...>`(逐文件列字面量+行号)、**`i18n_gate.py`(§7-A 卡口:ui 层硬闸门 + `// i18n: keep`[本行或上一行] + 日志豁免)**、`i18n_check_keys.py`(声明↔引用一致/重名/未用/**重复文案**/首尾空白)、**`i18n_align.py <lang> [--subset]`(第 2/3/4 步:多语言资源与 `values` 的 key 集合/占位符/空值逐条对齐;`--subset` = 地区差异层只允许少;繁体层以 `S2T-SUSPECT` 提示简繁漏转)**、`i18n_fidelity.py` + `i18n_verify_long.py`(HEAD 版原字面量 vs 资源值,逐字符含 `\n` 转义还原)。
 - 复核(Win 下 PowerShell,口径略宽含注释,看趋势够用):
 
 ```powershell
@@ -367,7 +367,7 @@ Get-ChildItem -Recurse app\src\main\java -Include *.kt,*.java |
 
 | 日期 | 修订 | 说明 |
 |---|---|---|
-| 2026-09-21 | 初版 | 可行性评估 + 实施方案;数据来源 = `.codebuddy/tools/i18n_hardcoded_scan.py` 实测(645 处 / 453 条) |
+| 2026-09-21 | 初版 | 可行性评估 + 实施方案;数据来源 = `tools/i18n_hardcoded_scan.py` 实测(645 处 / 453 条) |
 | 2026-09-21 | 实施节奏改为"按语言四步" | §3.1 增"实施步"列并重定义繁体结构(基础层 + 香港差异层)、§4.1 增语言白名单 `available()`、§5-D3/D4 改为港台资源结构与分步交付、§6 由 P0–P4 改为四步 + 进度表 + 每步固定动作、§7 增按步取用说明与入口验收、§8/§9 同步 |
 | 2026-09-22 | 第 1 步实施(进行中) | 框架落地(`LanguageManager` + 三处 `attachBaseContext` + `AppManager.snapshot()` + 语言入口,「跟随系统」不包裹);外置 33 文件 ≈465 处、`values/strings.xml` 344 条;§1.3 新增 R7–R13 红线;§4.4 增"无 Context 取文案"行(长生命周期组件走 `LanguageManager.localized`,直用 `App.getInstance().getString` 会停旧语言);§6 状态改"进行中";附录 B 增 4 个配套工具;双副本已同步核哈希 |
 | 2026-09-22 | 审查修复(gate 盲区) | ① `\uXXXX` 转义显示值补外置:`IjkMediaPlayer` 音轨/字幕、`ExoPlayer` 音轨/视轨/字幕 + 单声道/立体声/`%1$d 声道`(新增 `player_channel_mono/stereo/count`)—— 转义数 118→100,剩余全为语言映射表等数据判据(keep);② `i18n_hardcoded_scan.LOG_HINT` 收紧(去掉过宽 `KL`/`TAG,`,严格对拍 0 假阴性);③ 复核:`assembleDebug` + 230 单测全绿、卡口仍全绿、`res/*.xml`(除 strings)与 `player/` fork 模块无 UI 文案、`localized()` 调用点全传 Application;④ §7-A 增两条"扫描盲区"登记 |

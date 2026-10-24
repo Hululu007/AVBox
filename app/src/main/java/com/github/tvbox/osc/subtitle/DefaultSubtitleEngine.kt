@@ -44,7 +44,7 @@ import java.nio.charset.Charset
 import java.util.ArrayList
 import java.util.TreeMap
 
-import com.github.tvbox.osc.player.KernelPlayer
+import com.github.tvbox.osc.player.core.KernelPlayer
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

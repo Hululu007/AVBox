@@ -42,9 +42,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.github.tvbox.osc.R
+import com.github.tvbox.osc.bean.TmdbCastMember
+import com.github.tvbox.osc.bean.TmdbDetail
+import com.github.tvbox.osc.bean.TmdbPerson
 import com.github.tvbox.osc.ui.components.AVBoxBottomSheet
-import com.github.tvbox.osc.util.TmdbApi
-import com.github.tvbox.osc.util.TmdbPoster
+import com.github.tvbox.osc.util.TmdbImages
 
 private val CastAvatarSize = 80.dp
 
@@ -57,14 +59,14 @@ private val CastSheetLoadingSize = 40.dp
 private const val CastSheetHeightFraction = 0.6f
 
 @Composable
-internal fun TmdbCastSection(name: String?, altName: String?, year: Int) {
-    val detail = rememberTmdbDetail(name, altName, year) ?: return
-    if (detail.cast.isNotEmpty()) TmdbCastBlock(detail.cast)
+internal fun TmdbCastSection(vm: DetailViewModel, name: String?, altName: String?, year: Int) {
+    val detail = rememberTmdbDetail(vm, name, altName, year) ?: return
+    if (detail.cast.isNotEmpty()) TmdbCastBlock(vm, detail.cast)
 }
 
 @Composable
-internal fun TmdbGenreSection(name: String?, altName: String?, year: Int) {
-    val detail = rememberTmdbDetail(name, altName, year) ?: return
+internal fun TmdbGenreSection(vm: DetailViewModel, name: String?, altName: String?, year: Int) {
+    val detail = rememberTmdbDetail(vm, name, altName, year) ?: return
     if (detail.genres.isEmpty()) return
     Column(
         modifier = Modifier
@@ -110,21 +112,19 @@ private fun TmdbGenreChip(label: String) {
 }
 
 @Composable
-internal fun rememberTmdbDetail(name: String?, altName: String?, year: Int): TmdbApi.TmdbDetail? {
+internal fun rememberTmdbDetail(vm: DetailViewModel, name: String?, altName: String?, year: Int): TmdbDetail? {
     if (name.isNullOrBlank()) return null
-    val epoch by TmdbPoster.configEpoch.collectAsState()
-    var detail by remember(name, altName, year, epoch) {
-        mutableStateOf(TmdbPoster.cachedDetail(name, year, altName))
+    val epoch by TmdbImages.configEpoch.collectAsState()
+    LaunchedEffect(vm, name, altName, year, epoch) {
+        vm.ensureTmdbDetail(name, altName, year)
     }
-    LaunchedEffect(name, altName, year, epoch) {
-        if (detail == null) detail = TmdbPoster.resolveDetail(name, year, altName)
-    }
+    val detail by vm.tmdbDetail.collectAsState()
     return detail
 }
 
 @Composable
-private fun TmdbCastBlock(cast: List<TmdbApi.TmdbCastMember>) {
-    var selected by remember { mutableStateOf<TmdbApi.TmdbCastMember?>(null) }
+private fun TmdbCastBlock(vm: DetailViewModel, cast: List<TmdbCastMember>) {
+    var selected by remember { mutableStateOf<TmdbCastMember?>(null) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -154,19 +154,19 @@ private fun TmdbCastBlock(cast: List<TmdbApi.TmdbCastMember>) {
         }
     }
     selected?.let { member ->
-        TmdbCastSheet(member = member, onDismiss = { selected = null })
+        TmdbCastSheet(vm = vm, member = member, onDismiss = { selected = null })
     }
 }
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun TmdbCastItem(member: TmdbApi.TmdbCastMember, onClick: () -> Unit) {
+private fun TmdbCastItem(member: TmdbCastMember, onClick: () -> Unit) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.width(CastItemWidth),
     ) {
         AsyncImage(
-            model = TmdbPoster.profileUrl(member.profilePath),
+            model = TmdbImages.profileUrl(member.profilePath),
             contentDescription = member.name,
             contentScale = ContentScale.Crop,
             modifier = Modifier
@@ -192,34 +192,33 @@ private fun TmdbCastItem(member: TmdbApi.TmdbCastMember, onClick: () -> Unit) {
 private sealed interface CastPersonState {
     object Loading : CastPersonState
 
-    data class Ready(val person: TmdbApi.TmdbPerson?) : CastPersonState
+    data class Ready(val person: TmdbPerson?) : CastPersonState
 }
 
 @Composable
-private fun rememberCastPerson(id: Int): CastPersonState {
+private fun rememberCastPerson(vm: DetailViewModel, id: Int): CastPersonState {
     if (id <= 0) return CastPersonState.Ready(null)
-    val epoch by TmdbPoster.configEpoch.collectAsState()
-    var state by remember(id, epoch) {
-        mutableStateOf(
-            TmdbPoster.cachedPerson(id)?.let { CastPersonState.Ready(it) } ?: CastPersonState.Loading,
-        )
+    val epoch by TmdbImages.configEpoch.collectAsState()
+    LaunchedEffect(vm, id, epoch) {
+        vm.ensureTmdbPerson(id)
     }
-    LaunchedEffect(id, epoch) {
-        if (state is CastPersonState.Loading) {
-            state = CastPersonState.Ready(TmdbPoster.resolvePerson(id))
-        }
+    val state by vm.tmdbPerson.collectAsState()
+    val current = state?.takeIf { it.id == id && it.epoch == epoch }
+    return if (current == null || current.loading) {
+        CastPersonState.Loading
+    } else {
+        CastPersonState.Ready(current.person)
     }
-    return state
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun TmdbCastSheet(member: TmdbApi.TmdbCastMember, onDismiss: () -> Unit) {
+private fun TmdbCastSheet(vm: DetailViewModel, member: TmdbCastMember, onDismiss: () -> Unit) {
     AVBoxBottomSheet(
         onDismissRequest = onDismiss,
         modifier = Modifier.fillMaxHeight(CastSheetHeightFraction),
     ) {
-        val state = rememberCastPerson(member.id)
+        val state = rememberCastPerson(vm, member.id)
         val person = (state as? CastPersonState.Ready)?.person
         Column(
             modifier = Modifier
@@ -228,7 +227,7 @@ private fun TmdbCastSheet(member: TmdbApi.TmdbCastMember, onDismiss: () -> Unit)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 AsyncImage(
-                    model = TmdbPoster.profileUrl(
+                    model = TmdbImages.profileUrl(
                         person?.profilePath?.takeIf { it.isNotEmpty() } ?: member.profilePath,
                     ),
                     contentDescription = member.name,

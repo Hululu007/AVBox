@@ -7,9 +7,8 @@ import android.os.Environment
 import android.text.TextUtils
 import android.util.Base64
 
-import com.github.tvbox.osc.api.ApiConfig
-import com.github.tvbox.osc.base.App
 import com.github.tvbox.osc.bean.VodInfo
+import com.github.tvbox.osc.data.PlaybackPorts
 import com.github.tvbox.osc.io.LocalSourceTree
 import com.github.tvbox.osc.net.OkGoHelper
 import com.github.tvbox.osc.net.Proxy
@@ -44,6 +43,7 @@ import okio.Buffer
 class RemoteServer(port: Int, context: Context) : NanoHTTPD(port) {
     private val mContext: Context = context
 
+    @Volatile
     private var isStarted = false
 
     private val getRequestList = ArrayList<RequestProcess>()
@@ -215,7 +215,7 @@ class RemoteServer(port: Int, context: Context) : NanoHTTPD(port) {
                     }
                     return NanoHTTPD.newFixedLengthResponse(NanoHTTPD.Response.Status.OK, "application/vnd.apple.mpegurl", content)
                 } else if (fileName.startsWith("/dash/")) {
-                    val dashData = App.getInstance()?.getDashData()
+                    val dashData = ServerQueryPorts.ports?.dashData()
                     try {
                         val data = String(Base64.decode(dashData, Base64.DEFAULT or Base64.NO_WRAP), Charsets.UTF_8)
                         return NanoHTTPD.newFixedLengthResponse(
@@ -271,7 +271,7 @@ class RemoteServer(port: Int, context: Context) : NanoHTTPD(port) {
             val isDanmuProxy = "danmu" == params["do"]
             if (isDanmuProxy) normalizeDanmuParams(params)
             if (isDanmuProxy) LOG.i("echo-proxy-danmu params: " + params.toString())
-            val rs = ApiConfig.get().proxyLocal(params)
+            val rs = ServerQueryPorts.ports?.proxyLocal(params)
             return getProxy(rs, params["url"])
         }
         if (params.containsKey("go")) {
@@ -283,7 +283,7 @@ class RemoteServer(port: Int, context: Context) : NanoHTTPD(port) {
 
     private fun normalizeDanmuParams(params: MutableMap<String, String>) {
         try {
-            val vodInfo = com.github.tvbox.osc.player.PlaybackService.peek()?.controller()?.vod() ?: return
+            val vodInfo = PlaybackPorts.ports?.currentVod() ?: return
             val vodName = vodInfo.name
             if (!vodName.isNullOrEmpty()) params["vodName"] = vodName
             if (!isNumeric(params["vodIndex"])) {

@@ -1,5 +1,6 @@
 package com.github.tvbox.osc.player
 
+import com.github.tvbox.osc.player.core.PlayerDecodeKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull

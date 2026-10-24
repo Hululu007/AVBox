@@ -9,9 +9,8 @@ import android.os.SystemClock
 
 import com.github.catvod.crawler.JsLoader
 import com.github.tvbox.osc.BuildConfig
+import com.github.tvbox.osc.boot.BootGuard
 import com.github.tvbox.osc.data.AppDataManager
-import com.github.tvbox.osc.data.PlaybackDataPorts
-import com.github.tvbox.osc.data.PlaybackPorts
 import com.github.tvbox.osc.io.FileUtils
 import com.github.tvbox.osc.net.OkGoHelper
 import com.github.tvbox.osc.server.ControlManager
@@ -23,9 +22,9 @@ import com.github.tvbox.osc.util.KV
 import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.util.LanguageManager
 import com.github.tvbox.osc.util.Probe
+import com.github.tvbox.osc.util.VodImages
 import com.whl.quickjs.android.QuickJSLoader
 
-import com.github.tvbox.osc.player.engine.PlayerCache
 import me.jessyan.autosize.AutoSizeConfig
 import me.jessyan.autosize.unit.Subunits
 
@@ -52,17 +51,7 @@ class App : Application() {
         bootMark("installStrictMode")
         instance = this
         AppContextHolder.install(this)
-        PlaybackPorts.ports = object : PlaybackDataPorts {
-            override fun currentVod() = com.github.tvbox.osc.player.PlaybackService.peek()?.controller()?.vod()
-            override fun isLiveMode() = com.github.tvbox.osc.player.PlaybackService.peek()?.isLiveMode() == true
-            override fun discardStartedContentOf(owners: List<String>) {
-                com.github.tvbox.osc.player.PlaybackService.peek()?.discardStartedContentOf(owners)
-            }
-            override fun onProgressKeysCleared(keys: List<String>) {
-                com.github.tvbox.osc.player.PlaybackService.peek()?.markZeroStartKeys(keys)
-            }
-        }
-        com.github.tvbox.osc.util.BootGuard.install()
+        BootGuard.install()
         bootMark("bootGuard")
         initParams()
         bootMark("initParams")
@@ -81,20 +70,12 @@ class App : Application() {
                 .setSupportSubunits(Subunits.MM)
         }
         bootMark("autoSize")
-        Probe.trace("boot:playerCacheSize") {
-            val exoCacheBytes = Math.max(128, KV.get(HawkConfig.EXO_CACHE_SIZE_MB, HawkConfig.EXO_CACHE_SIZE_MB_DEFAULT)) * 1024L * 1024L
-            bootMark("playerCacheSize:kv")
-            PlayerCache.setSharedCacheSizeBytes(exoCacheBytes)
-        }
-        bootMark("playerCacheSize")
         Probe.trace("boot:quickJSLoader") { loadQuickJs() }
         bootMark("quickJSLoader")
-        Probe.trace("boot:vodImages") { com.github.tvbox.osc.ui.components.VodImages.init() }
+        Probe.trace("boot:vodImages") { VodImages.init() }
         bootMark("vodImages")
         Thread({
             FileUtils.ensureNoMediaMarker()
-            FileUtils.purgeExoCacheIfPending()
-            PlayerCache.warmup(this)
             Probe.trace("boot:cleanPlayerCache") { FileUtils.cleanPlayerCache() }
         }, "exo-cache-boot").start()
         bootMark("onCreateDone")

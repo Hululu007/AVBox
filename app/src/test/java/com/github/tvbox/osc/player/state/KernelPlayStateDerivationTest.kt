@@ -1,5 +1,8 @@
 package com.github.tvbox.osc.player.state
 
+import com.github.tvbox.osc.player.core.KernelPlayback
+import com.github.tvbox.osc.player.core.PlayState
+import com.github.tvbox.osc.player.core.deriveKernelPlayState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test

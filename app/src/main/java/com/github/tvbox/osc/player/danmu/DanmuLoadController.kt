@@ -7,7 +7,7 @@ import android.view.View
 import com.github.tvbox.osc.api.DanmakuApi
 import com.github.tvbox.osc.player.MyVideoView
 import com.github.tvbox.osc.player.controller.PlayerControlApi
-import com.github.tvbox.osc.player.state.PlayState
+import com.github.tvbox.osc.player.core.PlayState
 import com.github.tvbox.osc.util.DanmuHelper
 import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.util.PlayerUtils

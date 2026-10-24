@@ -4,11 +4,11 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.util.Base64
+import com.github.catvod.crawler.SpiderReaper
 import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.bean.LiveChannelGroup
 import com.github.tvbox.osc.util.BoundedCall
 import com.github.tvbox.osc.util.LOG
-import com.github.tvbox.osc.util.SpiderReaper
 import com.github.tvbox.osc.util.live.TxtSubscribe
 import com.github.tvbox.osc.util.net.Http
 import kotlinx.coroutines.CancellationException

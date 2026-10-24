@@ -2,6 +2,7 @@ package com.github.tvbox.osc.sourcedata
 
 import android.text.TextUtils
 import android.util.Base64
+import com.github.catvod.crawler.SpiderReaper
 import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.bean.AbsXml
 import com.github.tvbox.osc.bean.Movie
@@ -9,7 +10,6 @@ import com.github.tvbox.osc.bean.MovieSort
 import com.github.tvbox.osc.bean.SourceBean
 import com.github.tvbox.osc.util.BoundedCall
 import com.github.tvbox.osc.util.LOG
-import com.github.tvbox.osc.util.SpiderReaper
 import com.google.gson.Gson
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers

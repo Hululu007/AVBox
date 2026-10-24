@@ -1,5 +1,6 @@
 package com.github.tvbox.osc.player
 
+import com.github.tvbox.osc.player.core.SlowOpenSignal
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before

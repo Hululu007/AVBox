@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.tvbox.osc.api.AppBootstrap
 import com.github.tvbox.osc.api.ApiConfig
+import com.github.tvbox.osc.api.TmdbPoster
+import com.github.tvbox.osc.bean.TmdbPosterCache
 import com.github.tvbox.osc.bean.VodInfo
 import com.github.tvbox.osc.event.UiChange
 import com.github.tvbox.osc.event.UiEvents
@@ -27,7 +29,11 @@ import kotlinx.coroutines.launch
 
 class HistoryViewModel(
     private val history: HistoryRepository = AppGraph.historyRepository,
-) : ViewModel() {
+) : ViewModel(), TmdbPosterCache {
+
+    override fun tmdbCachedPoster(name: String?, year: Int, altName: String?): String? =
+        TmdbPoster.cachedPoster(name, year, altName)
+
     private val _loading = MutableStateFlow(true)
     val loading = _loading.asStateFlow()
     private val _items = MutableStateFlow<List<VodInfo>>(emptyList())

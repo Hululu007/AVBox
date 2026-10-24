@@ -1,7 +1,7 @@
 package com.github.tvbox.osc.player.effect
 
 import androidx.media3.common.Effect
-import com.github.tvbox.osc.player.ExoPlayer
+import com.github.tvbox.osc.player.core.RedrawPolicy
 import com.github.tvbox.osc.player.effect.anime4k.Anime4kEffect
 import com.github.tvbox.osc.player.effect.anime4k.Anime4kSettings
 import com.github.tvbox.osc.player.effect.anime4k.Anime4kStatus
@@ -42,7 +42,7 @@ object PictureEffects {
     internal fun effectsFor(anime4kEnabled: Boolean): List<Effect> =
         if (anime4kEnabled) listWithAnime4k else listWithoutAnime4k
 
-    private var current: WeakReference<ExoPlayer>? = null
+    private var current: WeakReference<PictureEffectHost>? = null
 
     private var tunneling = false
 
@@ -107,7 +107,7 @@ object PictureEffects {
         push()
     }
 
-    fun onPrepare(player: ExoPlayer, tunnelingBlocked: Boolean) {
+    fun onPrepare(player: PictureEffectHost, tunnelingBlocked: Boolean) {
         comparing = false
         Anime4kStatus.setBypass(false)
         if (KV.get(HawkConfig.PLAYER_IS_LIVE, false)) {
@@ -135,19 +135,9 @@ object PictureEffects {
         if (enabled) player.applyVideoEffects(effectsFor(anime4kWanted))
     }
 
-    fun onPlayerReleased(player: ExoPlayer) {
+    fun onPlayerReleased(player: PictureEffectHost) {
         if (current?.get() === player) current = null
     }
-
-    @Volatile
-    private var outputCanvas: IntArray? = null
-
-    fun setOutputCanvas(width: Int, height: Int) {
-        if (width <= 0 || height <= 0) return
-        outputCanvas = intArrayOf(width, height)
-    }
-
-    fun outputCanvas(): IntArray? = outputCanvas
 
     fun anime4kUnavailable(): Boolean {
         val player = current?.get() ?: return false

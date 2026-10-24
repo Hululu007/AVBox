@@ -34,20 +34,21 @@ import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import androidx.media3.exoplayer.util.EventLogger
 import androidx.media3.exoplayer.video.VideoFrameMetadataListener
-import com.github.tvbox.osc.player.PlayerDecodeKind
-import com.github.tvbox.osc.player.RetryPolicy
-import com.github.tvbox.osc.player.SlowOpenSignal
-import com.github.tvbox.osc.player.TrackInfo
-import com.github.tvbox.osc.player.TrackInfoBean
-import com.github.tvbox.osc.player.VideoCodecObserver
+import com.github.tvbox.osc.player.core.EffectCanvas
+import com.github.tvbox.osc.player.core.PlayerDecodeKind
+import com.github.tvbox.osc.player.core.RedrawPolicy
+import com.github.tvbox.osc.player.core.RetryPolicy
+import com.github.tvbox.osc.player.core.SlowOpenSignal
+import com.github.tvbox.osc.player.core.TrackInfo
+import com.github.tvbox.osc.player.core.TrackInfoBean
+import com.github.tvbox.osc.player.core.VideoCodecObserver
 import com.github.tvbox.osc.player.effect.PictureEffects
-import com.github.tvbox.osc.player.effect.RedrawPolicy
 import com.github.tvbox.osc.player.effect.ReplayableCacheVideoRenderer
 import com.github.tvbox.osc.player.engine.iso.IsoPlaylistState
 import com.github.tvbox.osc.player.engine.iso.IsoSeekAction
 import com.github.tvbox.osc.player.engine.iso.IsoSessionSignal
 import com.github.tvbox.osc.player.engine.iso.isoSeekAction
-import com.github.tvbox.osc.player.state.KernelPlayback
+import com.github.tvbox.osc.player.core.KernelPlayback
 import com.github.tvbox.osc.util.LOG
 import okhttp3.OkHttpClient
 import java.util.ArrayList
@@ -91,6 +92,8 @@ class PlayerEngine(
         override fun trackSelector(): DefaultTrackSelector = this@PlayerEngine.trackSelector
 
         override fun internalPlayer(): ExoPlayer? = this@PlayerEngine.internalPlayer
+
+        override fun appContext(): Context = this@PlayerEngine.appContext
     })
 
     private var internalPlayer: ExoPlayer? = null
@@ -796,7 +799,7 @@ class PlayerEngine(
     fun notifyVideoOutputResolution(width: Int, height: Int) {
         val exo = internalPlayer ?: return
         if (width <= 0 || height <= 0) return
-        PictureEffects.setOutputCanvas(width, height)
+        EffectCanvas.set(width, height)
         val sizeChanged = width != lastOutputWidth || height != lastOutputHeight
         lastOutputWidth = width
         lastOutputHeight = height

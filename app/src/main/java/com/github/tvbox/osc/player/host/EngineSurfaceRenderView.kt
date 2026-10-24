@@ -7,7 +7,7 @@ import android.util.AttributeSet
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
-import com.github.tvbox.osc.player.KernelPlayer
+import com.github.tvbox.osc.player.core.KernelPlayer
 import com.github.tvbox.osc.util.LOG
 
 class EngineSurfaceRenderView @JvmOverloads constructor(

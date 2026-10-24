@@ -94,6 +94,7 @@ import com.github.tvbox.osc.ui.components.HeroSpotlight
 import com.github.tvbox.osc.ui.components.HomeBackdrop
 import com.github.tvbox.osc.ui.components.HomeHeroBackdrop
 import com.github.tvbox.osc.ui.components.LoadState
+import com.github.tvbox.osc.ui.components.ProvideTmdbPosterLookup
 import com.github.tvbox.osc.ui.components.homeHeroBackdropSupported
 import com.github.tvbox.osc.ui.components.LoadStateBox
 import com.github.tvbox.osc.ui.components.LocalSheetDismiss
@@ -321,14 +322,16 @@ fun HomePage(
             }
             else -> {
             if (homeLayout == HomeSettings.HomeLayout.Vertical) {
-                HomeGridLayout(
-                    vm = vm,
-                    topPadding = topPad,
-                    contentPadding = contentPadding,
-                    pullState = pullState,
-                    onCardClick = { video -> handleCardClick(vm, video, context) },
-                    onCardLongClick = { video -> vodMenu.show(video) },
-                )
+                ProvideTmdbPosterLookup(vm) {
+                    HomeGridLayout(
+                        vm = vm,
+                        topPadding = topPad,
+                        contentPadding = contentPadding,
+                        pullState = pullState,
+                        onCardClick = { video -> handleCardClick(vm, video, context) },
+                        onCardLongClick = { video -> vodMenu.show(video) },
+                    )
+                }
             } else LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -347,14 +350,16 @@ fun HomePage(
                 item(key = "hero") {
                     when {
                         rec.state == HomeViewModel.PartitionState.Ready && rec.videos.isNotEmpty() -> {
-                            HeroSpotlight(
-                                videos = rec.videos.take(HomeViewModel.HERO_VIDEO_COUNT),
-                                backdropColor = backdropContainer,
-                                onBackdropSeed = { argb -> backdropSeed = argb },
-                                onPosterPic = { pic -> backdropPic = pic },
-                                onCardClick = { video -> handleCardClick(vm, video, context) },
-                                fadeToBackdrop = heroBackdropEnabled,
-                            )
+                            ProvideTmdbPosterLookup(vm) {
+                                HeroSpotlight(
+                                    videos = rec.videos.take(HomeViewModel.HERO_VIDEO_COUNT),
+                                    backdropColor = backdropContainer,
+                                    onBackdropSeed = { argb -> backdropSeed = argb },
+                                    onPosterPic = { pic -> backdropPic = pic },
+                                    onCardClick = { video -> handleCardClick(vm, video, context) },
+                                    fadeToBackdrop = heroBackdropEnabled,
+                                )
+                            }
                         }
                         rec.state == HomeViewModel.PartitionState.Loading -> {
                             SkeletonBox(
@@ -397,15 +402,17 @@ fun HomePage(
                         rec.videos.size > HomeViewModel.HERO_VIDEO_COUNT)
                 ) {
                     item(key = "rec") {
-                        PartitionSection(
-                            title = stringResource(R.string.home_recommend),
-                            state = rec.state,
-                            videos = rec.videos.drop(HomeViewModel.HERO_VIDEO_COUNT),
-                            onLoadMore = {},
-                            onCardClick = { video -> handleCardClick(vm, video, context) },
-                            onCardLongClick = { video -> vodMenu.show(video) },
-                            modifier = Modifier.padding(start = navStart),
-                        )
+                        ProvideTmdbPosterLookup(vm) {
+                            PartitionSection(
+                                title = stringResource(R.string.home_recommend),
+                                state = rec.state,
+                                videos = rec.videos.drop(HomeViewModel.HERO_VIDEO_COUNT),
+                                onLoadMore = {},
+                                onCardClick = { video -> handleCardClick(vm, video, context) },
+                                onCardLongClick = { video -> vodMenu.show(video) },
+                                modifier = Modifier.padding(start = navStart),
+                            )
+                        }
                     }
                 }
                 if (sortLoadFailed) {
@@ -430,19 +437,21 @@ fun HomePage(
                     }
                 }
                 items(partitions, key = { it.sort.id.orEmpty() }) { p ->
-                    PartitionSection(
-                        title = p.sort.name ?: "",
-                        state = p.state,
-                        videos = p.videos,
-                        onLoadMore = { vm.loadMorePartition(p) },
-                        onCardClick = { video -> handleCardClick(vm, video, context) },
-                        onCardLongClick = { video -> vodMenu.show(video) },
-                        onOpenAll = {
-                            PartitionListActivity.startForPartition(context, p.sort)
-                        },
-                        onRetry = { vm.retryPartition(p) },
-                        modifier = Modifier.padding(start = navStart),
-                    )
+                    ProvideTmdbPosterLookup(vm) {
+                        PartitionSection(
+                            title = p.sort.name ?: "",
+                            state = p.state,
+                            videos = p.videos,
+                            onLoadMore = { vm.loadMorePartition(p) },
+                            onCardClick = { video -> handleCardClick(vm, video, context) },
+                            onCardLongClick = { video -> vodMenu.show(video) },
+                            onOpenAll = {
+                                PartitionListActivity.startForPartition(context, p.sort)
+                            },
+                            onRetry = { vm.retryPartition(p) },
+                            modifier = Modifier.padding(start = navStart),
+                        )
+                    }
                 }
             }
         }

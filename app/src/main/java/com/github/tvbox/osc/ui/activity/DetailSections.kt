@@ -41,9 +41,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.github.tvbox.osc.R
-import com.github.tvbox.osc.bean.Movie
-import com.github.tvbox.osc.ui.components.VodCard
-import com.github.tvbox.osc.ui.page.openVodCardOrDetail
 
 @Composable
 internal fun SectionTitleIcon(painter: Painter) {
@@ -217,46 +214,6 @@ internal fun SourceSection(vm: DetailViewModel, currentSourceName: String?) {
                     name = chip.name,
                     selected = false,
                     onClick = { vm.candidateForKey(chip.key)?.let { vm.switchSource(it) } },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-internal fun RelatedSection(
-    activity: DetailActivity,
-    vm: DetailViewModel,
-    onCardLongClick: (Movie.Video) -> Unit = {},
-) {
-    val relatedVideos by vm.relatedVideos.collectAsState()
-    if (relatedVideos.isEmpty()) return
-    Column(modifier = Modifier.padding(top = 20.dp)) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
-        ) {
-            SectionTitleIcon(painterResource(R.drawable.ic_detail_recommend))
-            Text(
-                text = stringResource(R.string.detail_recommend),
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(start = 8.dp),
-            )
-        }
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            itemsIndexed(
-                relatedVideos,
-                key = { _, v -> (v.sourceKey ?: "") + "|" + (v.id ?: "") },
-            ) { _, video ->
-                VodCard(
-                    video = video,
-                    onClick = { activity.openVodCardOrDetail(video) },
-                    onLongClick = { onCardLongClick(video) },
-                    modifier = Modifier.width(110.dp),
                 )
             }
         }

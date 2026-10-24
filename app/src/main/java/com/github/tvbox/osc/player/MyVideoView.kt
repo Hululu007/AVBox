@@ -16,7 +16,7 @@ import coil3.request.Disposable
 import com.github.tvbox.osc.player.host.EngineSurfaceRenderViewFactory
 import com.github.tvbox.osc.player.host.EngineTextureRenderViewFactory
 import com.github.tvbox.osc.player.host.TextureRenderHost
-import com.github.tvbox.osc.player.state.PlayState
+import com.github.tvbox.osc.player.core.PlayState
 import com.github.tvbox.osc.util.ImgUtil
 import com.github.tvbox.osc.util.LOG
 import master.flame.danmaku.controller.DrawHandler

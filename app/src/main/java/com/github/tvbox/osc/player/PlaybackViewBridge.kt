@@ -3,7 +3,9 @@ package com.github.tvbox.osc.player
 import android.content.Context
 import android.webkit.WebView
 import com.github.tvbox.osc.bean.VodInfo
-import com.github.tvbox.osc.player.state.PlayState
+import com.github.tvbox.osc.player.core.KernelPlayer
+import com.github.tvbox.osc.player.core.VideoCodecInfo
+import com.github.tvbox.osc.player.core.PlayState
 import org.json.JSONObject
 import java.util.HashMap
 

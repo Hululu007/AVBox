@@ -1,6 +1,5 @@
 package com.github.tvbox.osc.util.parser
 import android.util.Base64
-import com.github.catvod.crawler.SpiderDebug
 import com.github.tvbox.osc.util.HeaderGuard
 import com.github.tvbox.osc.util.LOG
 import org.json.JSONObject
@@ -93,21 +92,21 @@ object JsonParallel {
                                 try {
                                     future.cancel(true)
                                 } catch (t: Throwable) {
-                                    SpiderDebug.log(t)
+                                    LOG.d("JsonParallel", "" + t.message)
                                 }
                             }
                             task.futures.clear()
                             break
                         }
                     } catch (th: Throwable) {
-                        SpiderDebug.log(th)
+                        LOG.d("JsonParallel", "" + th.message)
                     }
                 }
                 if (pTaskResult != null)
                     return pTaskResult
             }
         } catch (th: Throwable) {
-            SpiderDebug.log(th)
+            LOG.d("JsonParallel", "" + th.message)
         } finally {
             task.cancel()
             if (currentTask === task) currentTask = null

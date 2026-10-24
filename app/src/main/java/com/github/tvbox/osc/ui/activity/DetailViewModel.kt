@@ -5,7 +5,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.api.ApiConfig
-import com.github.tvbox.osc.base.App
 import com.github.tvbox.osc.event.UiChange
 import com.github.tvbox.osc.event.UiEvents
 import com.github.tvbox.osc.bean.AbsXml
@@ -19,10 +18,18 @@ import com.github.tvbox.osc.net.SearchHelper
 import com.github.tvbox.osc.player.PlaybackService
 import com.github.tvbox.osc.player.PlaybackSession
 import com.github.tvbox.osc.sourcedata.SourceViewModel
+import com.github.tvbox.osc.util.AppContextHolder
+import com.github.tvbox.osc.api.TmdbApi
+import com.github.tvbox.osc.api.TmdbPoster
+import com.github.tvbox.osc.bean.TmdbDetail
+import com.github.tvbox.osc.bean.TmdbEpisode
+import com.github.tvbox.osc.bean.TmdbPerson
+import com.github.tvbox.osc.bean.TmdbPosterCache
+import com.github.tvbox.osc.util.TmdbImages
 import com.github.tvbox.osc.util.HistoryHelper
 import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.util.LanguageManager
-import com.github.tvbox.osc.util.thunder.Thunder
+import com.github.tvbox.osc.sourcedata.Thunder
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CompletableDeferred
@@ -51,11 +58,14 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import com.github.tvbox.osc.ui.components.toVodInfo
 
-class DetailViewModel : ViewModel() {
+class DetailViewModel : ViewModel(), TmdbPosterCache {
+
+    override fun tmdbCachedPoster(name: String?, year: Int, altName: String?): String? =
+        TmdbPoster.cachedPoster(name, year, altName)
 
     private fun str(resId: Int, vararg args: Any): String {
-        val app = App.getInstance() ?: return ""
-        return LanguageManager.localized(app).getString(resId, *args)
+        val context = AppContextHolder.context() ?: return ""
+        return LanguageManager.localized(context).getString(resId, *args)
     }
 
     sealed interface PageState {
@@ -87,6 +97,183 @@ class DetailViewModel : ViewModel() {
     val collected = _collected.asStateFlow()
     private val _follow = MutableStateFlow<VodFollow?>(null)
     val follow = _follow.asStateFlow()
+
+    private val _tmdbDetail = MutableStateFlow<TmdbDetail?>(null)
+    val tmdbDetail = _tmdbDetail.asStateFlow()
+    private val _tmdbLogoPath = MutableStateFlow<String?>(null)
+    val tmdbLogoPath = _tmdbLogoPath.asStateFlow()
+    private val _tmdbEpisodeMeta = MutableStateFlow<List<TmdbEpisode>?>(null)
+    val tmdbEpisodeMeta = _tmdbEpisodeMeta.asStateFlow()
+    private val _tmdbHeroImages = MutableStateFlow<TmdbImagesState?>(null)
+    val tmdbHeroImages = _tmdbHeroImages.asStateFlow()
+    private val _tmdbHeroBackdrops = MutableStateFlow<TmdbImagesState?>(null)
+    val tmdbHeroBackdrops = _tmdbHeroBackdrops.asStateFlow()
+    private val _tmdbPerson = MutableStateFlow<TmdbPersonState?>(null)
+    val tmdbPerson = _tmdbPerson.asStateFlow()
+    private val _tmdbPosterPath = MutableStateFlow<TmdbPosterPathState?>(null)
+    val tmdbPosterPath = _tmdbPosterPath.asStateFlow()
+
+    fun seasonHintFor(name: String?, flag: String?): Int? =
+        TmdbApi.parseSeasonHint(name) ?: TmdbApi.parseSeasonHint(flag)
+
+    fun ensureTmdbDetail(name: String?, altName: String?, year: Int) {
+        if (name.isNullOrBlank()) {
+            _tmdbDetail.value = null
+            tmdbDetailKey = null
+            return
+        }
+        val epoch = TmdbImages.configEpoch.value
+        val key = listOf(name, altName, year, epoch)
+        if (tmdbDetailKey == key) return
+        tmdbDetailKey = key
+        val cached = TmdbPoster.cachedDetail(name, year, altName)
+        _tmdbDetail.value = cached
+        if (cached == null) {
+            viewModelScope.launch {
+                val resolved = TmdbPoster.resolveDetail(name, year, altName)
+                if (tmdbDetailKey == key) _tmdbDetail.value = resolved
+            }
+        }
+    }
+
+    fun ensureTmdbLogo(title: String?, altTitle: String?, year: Int) {
+        if (title.isNullOrBlank()) {
+            _tmdbLogoPath.value = null
+            tmdbLogoKey = null
+            return
+        }
+        val epoch = TmdbImages.configEpoch.value
+        val key = listOf(title, altTitle, year, epoch)
+        if (tmdbLogoKey == key) return
+        tmdbLogoKey = key
+        val cached = TmdbPoster.cachedLogo(title, year, altTitle)
+        _tmdbLogoPath.value = cached
+        if (cached == null) {
+            viewModelScope.launch {
+                val resolved = TmdbPoster.resolveLogo(title, year, altTitle)
+                if (tmdbLogoKey == key) _tmdbLogoPath.value = resolved
+            }
+        }
+    }
+
+    fun ensureTmdbEpisodeMeta(
+        name: String?,
+        altName: String?,
+        year: Int,
+        episodeCount: Int,
+        seasonHint: Int?,
+        sourceOrder: List<Int>,
+    ) {
+        if (name.isNullOrBlank() || episodeCount <= 0) {
+            _tmdbEpisodeMeta.value = null
+            tmdbEpisodeMetaKey = null
+            return
+        }
+        val epoch = TmdbImages.configEpoch.value
+        val key = listOf(name, altName, year, episodeCount, seasonHint, sourceOrder, epoch)
+        if (tmdbEpisodeMetaKey == key) return
+        tmdbEpisodeMetaKey = key
+        val cached = TmdbPoster.cachedEpisodeMeta(name, episodeCount, seasonHint, sourceOrder, altName)
+        _tmdbEpisodeMeta.value = cached
+        if (cached == null) {
+            viewModelScope.launch {
+                val resolved = TmdbPoster.resolveEpisodeMeta(
+                    name, year, episodeCount, seasonHint, sourceOrder, altName,
+                )
+                if (tmdbEpisodeMetaKey == key) _tmdbEpisodeMeta.value = resolved
+            }
+        }
+    }
+
+    fun ensureTmdbHeroImages(title: String?, altTitle: String?, year: Int) {
+        ensureTmdbImages(
+            title, altTitle, year, _tmdbHeroImages,
+            cached = { name, y, alt -> TmdbPoster.cachedImages(name, y, alt) },
+            resolve = { name, y, alt -> TmdbPoster.resolveImages(name, y, alt) },
+        )
+    }
+
+    fun ensureTmdbHeroBackdrops(title: String?, altTitle: String?, year: Int) {
+        ensureTmdbImages(
+            title, altTitle, year, _tmdbHeroBackdrops,
+            cached = { name, y, alt -> TmdbPoster.cachedBackdrops(name, y, alt) },
+            resolve = { name, y, alt -> TmdbPoster.resolveBackdrops(name, y, alt) },
+        )
+    }
+
+    private fun ensureTmdbImages(
+        title: String?,
+        altTitle: String?,
+        year: Int,
+        target: MutableStateFlow<TmdbImagesState?>,
+        cached: (String, Int, String?) -> List<String>?,
+        resolve: suspend (String, Int, String?) -> List<String>,
+    ) {
+        if (title.isNullOrBlank()) {
+            target.value = null
+            return
+        }
+        val key = listOf(title, altTitle, year, TmdbImages.configEpoch.value)
+        if (target.value?.key == key) return
+        val cachedPaths = cached(title, year, altTitle)
+        target.value = TmdbImagesState(key, cachedPaths)
+        if (cachedPaths == null) {
+            viewModelScope.launch {
+                val resolved = resolve(title, year, altTitle)
+                if (target.value?.key == key) target.value = TmdbImagesState(key, resolved)
+            }
+        }
+    }
+
+    fun ensureTmdbPerson(id: Int) {
+        if (id <= 0) {
+            _tmdbPerson.value = null
+            return
+        }
+        val epoch = TmdbImages.configEpoch.value
+        val existing = _tmdbPerson.value
+        if (existing?.id == id && existing.epoch == epoch) return
+        val cached = TmdbPoster.cachedPerson(id)
+        _tmdbPerson.value = TmdbPersonState(id, epoch, cached, cached == null)
+        if (cached == null) {
+            viewModelScope.launch {
+                val resolved = TmdbPoster.resolvePerson(id)
+                val current = _tmdbPerson.value
+                if (current?.id == id && current.epoch == epoch) {
+                    _tmdbPerson.value = TmdbPersonState(id, epoch, resolved, false)
+                }
+            }
+        }
+    }
+
+    data class TmdbImagesState(val key: List<Any?>, val paths: List<String>?)
+
+    data class TmdbPersonState(val id: Int, val epoch: Int, val person: TmdbPerson?, val loading: Boolean)
+
+    data class TmdbPosterPathState(val key: List<Any?>, val path: String?)
+
+    fun ensureTmdbPosterPath(title: String?, altTitle: String?, year: Int) {
+        val key = listOf(title, altTitle, year, TmdbImages.configEpoch.value)
+        if (title.isNullOrBlank() || !TmdbImages.isActive()) {
+            _tmdbPosterPath.value = TmdbPosterPathState(key, "")
+            return
+        }
+        if (_tmdbPosterPath.value?.key == key) return
+        val cached = TmdbPoster.cachedPoster(title, year, altTitle) ?: ""
+        _tmdbPosterPath.value = TmdbPosterPathState(key, cached)
+        if (cached.isEmpty()) {
+            viewModelScope.launch {
+                val resolved = TmdbPoster.resolvePoster(title, year, altTitle) ?: ""
+                if (_tmdbPosterPath.value?.key == key) {
+                    _tmdbPosterPath.value = TmdbPosterPathState(key, resolved)
+                }
+            }
+        }
+    }
+
+    private var tmdbDetailKey: List<Any?>? = null
+    private var tmdbLogoKey: List<Any?>? = null
+    private var tmdbEpisodeMetaKey: List<Any?>? = null
     private val _qualityOptions = MutableStateFlow<List<String>>(emptyList())
     val qualityOptions = _qualityOptions.asStateFlow()
     private val _qualitySelected = MutableStateFlow(0)
@@ -95,8 +282,6 @@ class DetailViewModel : ViewModel() {
     val sourceChips = _sourceChips.asStateFlow()
     private val _sourcesSearching = MutableStateFlow(false)
     val sourcesSearching = _sourcesSearching.asStateFlow()
-    private val _relatedVideos = MutableStateFlow<List<Movie.Video>>(emptyList())
-    val relatedVideos = _relatedVideos.asStateFlow()
     private val _episodeSheet = MutableStateFlow(false)
     val episodeSheet = _episodeSheet.asStateFlow()
     private val _toastEvent = MutableSharedFlow<String>(
@@ -287,7 +472,6 @@ class DetailViewModel : ViewModel() {
         manualLineSwitchPending = false
         _collected.value = false
         _follow.value = null
-        _relatedVideos.value = emptyList()
         _sourcesSearching.value = false
         _qualityOptions.value = emptyList()
         _qualitySelected.value = 0
@@ -613,7 +797,6 @@ class DetailViewModel : ViewModel() {
             .filter { it.isSearchable() && it.isQuickSearch() && (checked == null || checked.containsKey(it.key)) }
             .sortedBy { it.key != home.key }
         _sourcesSearching.value = sources.isNotEmpty()
-        _relatedVideos.value = emptyList()
         if (sources.isEmpty()) return
         searchJob = viewModelScope.launch {
             coroutineScope {
@@ -655,15 +838,6 @@ class DetailViewModel : ViewModel() {
             synchronized(fallbackCandidates) { fallbackCandidates.addAll(fresh) }
             publishSourceChips()
             if (fallbackActive && fallbackAutoSwitch && !fallbackLoadingCandidate) loadNextFallbackCandidate()
-        }
-        val related = videos.filter {
-            !it.id.isNullOrEmpty() && it.name?.trim() != searchTitle
-                    && !(it.sourceKey == sourceKey && it.id == vodId)
-        }
-        if (related.isNotEmpty()) {
-            val seen = _relatedVideos.value.mapTo(HashSet()) { candidateKey(it) }
-            val deduped = related.filter { seen.add(candidateKey(it)) }
-            if (deduped.isNotEmpty()) _relatedVideos.value = _relatedVideos.value + deduped
         }
     }
 
@@ -1165,7 +1339,7 @@ class DetailViewModel : ViewModel() {
             var text = name.replace(Regex("\\[.*?]|\\(.*?\\)"), "")
             text = text.replace(Regex("\\b(19|20)\\d{2}\\b"), "")
             text = text.lowercase(Locale.ROOT).replace(Regex("2160p|1080p|720p|480p|4k|h26[45]|x26[45]|mp4"), "")
-            // i18n: keep —— 从源侧片名/集名里抽集数,关键词是数据规则
+
         val matcher = Regex("(?i)(?:ep|第|e|[\\-\\.\\s])\\s?(\\d{1,4})").find(text)
             if (matcher != null) {
                 matcher.groupValues[1].toInt()
@@ -1191,7 +1365,6 @@ class DetailViewModel : ViewModel() {
         private const val SOURCE_SEARCH_TIMEOUT_MS = 30_000L
         private const val SOURCE_SEARCH_CONCURRENCY = 6
 
-        // i18n: keep —— 源侧"没有数据"的哨兵值;误翻会把空结果判成源报错,详情页提示后自动关闭
         private const val SOURCE_EMPTY_MSG = "数据列表"
 
         internal fun isSourceErrorMsg(msg: String?): Boolean =

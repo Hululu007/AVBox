@@ -5,17 +5,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.github.tvbox.osc.bean.Subtitle
 import com.github.tvbox.osc.bean.VodInfo
-import com.github.tvbox.osc.dlna.CastVideo
+import com.github.tvbox.osc.bean.CastVideo
+import com.github.tvbox.osc.player.core.PlayState
 import com.github.tvbox.osc.player.effect.PictureEffectUnavailableReason
 import com.github.tvbox.osc.player.effect.PicturePreset
 import com.github.tvbox.osc.player.effect.PictureProfile
-import com.github.tvbox.osc.player.AppPlayerView
 
 class PlayerUiState {
 
     var playState: PlayState by mutableStateOf(PlayState.IDLE)
         private set
-    var playerState: Int by mutableStateOf(AppPlayerView.PLAYER_NORMAL)
+    var playerState: Int by mutableStateOf(ScreenMode.PLAYER_NORMAL)
         private set
     var duration: Int by mutableStateOf(0)
         private set

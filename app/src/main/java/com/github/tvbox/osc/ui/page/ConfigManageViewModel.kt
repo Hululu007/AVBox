@@ -11,17 +11,17 @@ import com.github.tvbox.osc.R
 import com.github.tvbox.osc.api.AppBootstrap
 import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.api.ConfigRepository
-import com.github.tvbox.osc.base.App
 import com.github.tvbox.osc.io.removeLocalCopy
 import com.github.tvbox.osc.util.ApiLineSignal
-import com.github.tvbox.osc.util.BootGuard
+import com.github.tvbox.osc.boot.BootGuard
+import com.github.tvbox.osc.util.AppContextHolder
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.HistoryHelper
 import com.github.tvbox.osc.util.KV
 import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.util.LanguageManager
-import com.github.tvbox.osc.util.TmdbApi
-import com.github.tvbox.osc.util.TmdbPoster
+import com.github.tvbox.osc.api.TmdbApi
+import com.github.tvbox.osc.api.TmdbPoster
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -269,8 +269,8 @@ class ConfigManageViewModel(
     }
 
     private fun str(resId: Int, vararg args: Any): String {
-        val app = App.getInstance() ?: return ""
-        return LanguageManager.localized(app).getString(resId, *args)
+        val context = AppContextHolder.context() ?: return ""
+        return LanguageManager.localized(context).getString(resId, *args)
     }
 
     fun clearToast() {

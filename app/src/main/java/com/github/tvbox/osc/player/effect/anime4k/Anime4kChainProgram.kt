@@ -7,7 +7,7 @@ import androidx.media3.common.util.GlProgram
 import androidx.media3.common.util.GlUtil
 import androidx.media3.common.util.Size
 import androidx.media3.effect.BaseGlShaderProgram
-import com.github.tvbox.osc.player.effect.PictureEffects
+import com.github.tvbox.osc.player.core.EffectCanvas
 import com.github.tvbox.osc.util.LOG
 
 internal class Anime4kChainProgram(
@@ -123,7 +123,7 @@ internal class Anime4kChainProgram(
             context.assets.open(ANIME4K_ASSET_DIR + asset).bufferedReader().use { it.readText() },
         )
 
-        val canvas = PictureEffects.outputCanvas()
+        val canvas = EffectCanvas.get()
         val clamp = load(ANIME4K_CLAMP_HIGHLIGHTS)
         val restore = tier.restore?.let { load(it) }.orEmpty()
         val upscale = tier.upscale?.let { load(it) }.orEmpty()

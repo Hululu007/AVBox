@@ -6,7 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.player.state.CastSheetState
-import com.github.tvbox.osc.player.state.PlayState
+import com.github.tvbox.osc.player.core.PlayState
 import com.github.tvbox.osc.ui.player.PlayerTipState
 
 enum class MusicPlayMode(@StringRes val labelRes: Int) {

@@ -16,11 +16,11 @@ import androidx.media3.exoplayer.upstream.DefaultBandwidthMeter
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.player.AppPlayerView
 import com.github.tvbox.osc.player.ExoPlayer
-import com.github.tvbox.osc.player.PlayerDecodeKind
+import com.github.tvbox.osc.player.core.PlayerDecodeKind
 import com.github.tvbox.osc.player.PlayerHelper
 import com.github.tvbox.osc.player.engine.AudioCodecChoice
 import com.github.tvbox.osc.player.engine.AudioDecoderLookup
-import com.github.tvbox.osc.player.state.PlayState
+import com.github.tvbox.osc.player.core.PlayState
 import com.github.tvbox.osc.player.state.PlayerUiState
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.KV

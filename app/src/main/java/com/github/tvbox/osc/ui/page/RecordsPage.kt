@@ -42,6 +42,7 @@ import com.github.tvbox.osc.bean.VodInfo
 import com.github.tvbox.osc.data.VodCollect
 import com.github.tvbox.osc.ui.components.AppTopBarScaffold
 import com.github.tvbox.osc.ui.components.CapsuleSegmentedButton
+import com.github.tvbox.osc.ui.components.ProvideTmdbPosterLookup
 import com.github.tvbox.osc.ui.components.SegmentOption
 import com.github.tvbox.osc.ui.components.SegmentStyle
 import kotlinx.coroutines.flow.drop
@@ -242,27 +243,31 @@ fun RecordsPage(
                 label = "recordsSegment",
             ) { m ->
                 when (m) {
-                    RecordsMode.History -> HistoryTab(
-                        vm = historyVm,
-                        listState = historyListState,
-                        editMode = historyEdit,
-                        selected = historySelected,
-                        onToggleSelected = { historyVm.toggleSelected(it) },
-                        onRequestDelete = { dialog = RecordsDialog.DeleteHistoryItem(it) },
-                        navStart = navStart,
-                        navBottom = navBottom,
-                    )
+                    RecordsMode.History -> ProvideTmdbPosterLookup(historyVm) {
+                        HistoryTab(
+                            vm = historyVm,
+                            listState = historyListState,
+                            editMode = historyEdit,
+                            selected = historySelected,
+                            onToggleSelected = { historyVm.toggleSelected(it) },
+                            onRequestDelete = { dialog = RecordsDialog.DeleteHistoryItem(it) },
+                            navStart = navStart,
+                            navBottom = navBottom,
+                        )
+                    }
 
-                    RecordsMode.Collect -> CollectTab(
-                        vm = collectVm,
-                        listState = collectListState,
-                        editMode = collectEdit,
-                        selected = collectSelected,
-                        onToggleSelected = { collectVm.toggleSelected(it) },
-                        onRequestDelete = { dialog = RecordsDialog.DeleteCollectItem(it) },
-                        navStart = navStart,
-                        navBottom = navBottom,
-                    )
+                    RecordsMode.Collect -> ProvideTmdbPosterLookup(collectVm) {
+                        CollectTab(
+                            vm = collectVm,
+                            listState = collectListState,
+                            editMode = collectEdit,
+                            selected = collectSelected,
+                            onToggleSelected = { collectVm.toggleSelected(it) },
+                            onRequestDelete = { dialog = RecordsDialog.DeleteCollectItem(it) },
+                            navStart = navStart,
+                            navBottom = navBottom,
+                        )
+                    }
                 }
             }
         }

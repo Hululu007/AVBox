@@ -16,8 +16,8 @@ import androidx.media3.ui.CaptionStyleCompat
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.data.AppGraph
 import com.github.tvbox.osc.player.ExoPlayer
-import com.github.tvbox.osc.player.KernelPlayer
-import com.github.tvbox.osc.player.TrackInfo
+import com.github.tvbox.osc.player.core.KernelPlayer
+import com.github.tvbox.osc.player.core.TrackInfo
 import com.github.tvbox.osc.player.state.SelectDialogState
 import com.github.tvbox.osc.player.state.SubtitleSearchSheetState
 import com.github.tvbox.osc.player.state.SubtitleSheetState

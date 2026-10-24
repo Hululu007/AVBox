@@ -133,12 +133,12 @@
 
 ## 空安全与非空断言（2026-10-14 起为治理后基线）
 
-- 现状：`src/main` 与 Chaquopy sourceSet（`app/src/python/java`）的 `!!` 已全部清理，判定域仅剩 `libs/backdrop` 两处（vendored 第三方，属排除范围）；`src/test` 的 147 处按与 i18n 治理一致的"单测不折腾"口径豁免，**不报**。新增 `!!` 由 `.codebuddy/tools/null_assert_gate.py` 拦截（基线只允许下调）。
+- 现状：`src/main` 与 Chaquopy sourceSet（`app/src/python/java`）的 `!!` 已全部清理，判定域**已归零**；`libs/backdrop`、`quickjs` 的两处 vendored 自 2026-10-25 起剔出判定域（只打印，不计 enforced）；`src/test` 的 147 处按与 i18n 治理一致的"单测不折腾"口径豁免，**不报**。新增 `!!` 由 `tools/null_assert_gate.py` 拦截（基线只允许下调）。
 - 判据只有一条：**这行的空是否属于正常业务状态**。是（用户未登录、线路没有该清晰度、生命周期未就绪）⇒ 守卫早退 / 跳过才是正确语义；否（数据本该存在、解析结果本该完整）⇒ 必须显式失败（`requireNotNull(x) { "英文消息" }`）或维持崩溃。
-- **必须报**：① 裸 `!!` 且同行 / 紧邻无可见判据（例外必须带 `// null-assert: keep` 与登记理由）；② `!!` 被换成 `?.` 造成的**静默降级**——原语义是"必须成功"却变成"失败就跳过"，黑屏有声音 / 有声音无画面 / 按钮无响应类问题多由此而来；③ 借消除 `!!` 顺手改了**可空性标注 / 签名 / 可见性 / 字段类型**（击穿调用点、Gson/XStream 序列化与契约层 `javap` 符号守恒）；④ `ui/` 层（含 `player/ui/`）新增中文 `requireNotNull` 消息（`i18n_gate.py` 对 ui 层 0 容忍，消息必须英文）。
+- **必须报**：① 裸 `!!` 且同行 / 紧邻无可见判据（例外必须带 `// null-assert: keep` 与登记理由）；② `!!` 被换成 `?.` 造成的**静默降级**——原语义是"必须成功"却变成"失败就跳过"，黑屏有声音 / 有声音无画面 / 按钮无响应类问题多由此而来；③ 借消除 `!!` 顺手改了**可空性标注 / 签名 / 可见性 / 字段类型**（击穿调用点、Gson/XStream 序列化与契约层 `javap` 符号守恒）；④ `ui/` 层（含 `ui/player/`）新增中文 `requireNotNull` 消息（`i18n_gate.py` 对 ui 层 0 容忍，消息必须英文）。
 - **不报**（报了即误报）：`!!` 的数量本身；`src/test` 与第三方源码（`libs/`、`quickjs/`、`pyramid/`）里的 `!!`；`requireNotNull(x)` 取代 `!!` 带来的异常类型变化（`NullPointerException` → `IllegalArgumentException`，两者同属 RuntimeException，调用点落在既有 `catch (Exception)` / `catch (Throwable)` 内时可观测行为不变）。
 - 允许保留 `!!` 的唯一形态：局部量已在上文显式判空、编译器可证明非空但跨模块契约无法表达、`require` / `check` 之后紧跟的一次性解包——且**同行或紧邻必须有可见判据**，并加 `// null-assert: keep`。
-- 门禁用法：`python .codebuddy/tools/null_assert_gate.py`（默认校验 / `--detail` 逐条打印 / `--update` 只允许下调基线 / `--raw` 输出 literal 与剥离后两口径）。
+- 门禁用法：`python tools/null_assert_gate.py`（默认校验 / `--detail` 逐条打印 / `--update` 只允许下调基线 / `--raw` 输出 literal 与剥离后两口径）。
 
 ## Compose 专项（本批为 Compose 目录时）
 

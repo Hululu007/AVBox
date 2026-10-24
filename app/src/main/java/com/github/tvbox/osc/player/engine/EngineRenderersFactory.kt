@@ -14,7 +14,8 @@ import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.text.TextOutput
 import androidx.media3.exoplayer.video.MediaCodecVideoRenderer
 import androidx.media3.exoplayer.video.VideoRendererEventListener
-import com.github.tvbox.osc.player.VideoCodecObserver
+import com.github.tvbox.osc.player.core.CodecPreferences
+import com.github.tvbox.osc.player.core.VideoCodecObserver
 import com.github.tvbox.osc.player.effect.ReplayableCacheVideoRenderer
 import com.github.tvbox.osc.util.LOG
 import java.lang.reflect.InvocationHandler

@@ -94,6 +94,7 @@ internal fun DetailContent(
                 onCast = { activity.openCast() },
                 onCollect = { vm.toggleCollect() },
                 onFollow = { followScheduleOpen = true },
+                vm = vm,
                 rollPaused = heroRollPaused,
             )
         }
@@ -158,11 +159,11 @@ internal fun DetailContent(
         }
 
         item(key = "tmdb_info") {
-            TmdbCastSection(info.name, info.en, info.year)
+            TmdbCastSection(vm, info.name, info.en, info.year)
         }
 
         item(key = "tmdb_genres") {
-            TmdbGenreSection(info.name, info.en, info.year)
+            TmdbGenreSection(vm, info.name, info.en, info.year)
         }
     }
 

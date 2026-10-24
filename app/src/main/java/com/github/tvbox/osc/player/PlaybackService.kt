@@ -29,6 +29,8 @@ import com.github.tvbox.osc.R
 import com.github.tvbox.osc.bean.VodInfo
 import com.github.tvbox.osc.data.PlaybackDataPorts
 import com.github.tvbox.osc.data.PlaybackPorts
+import com.github.tvbox.osc.io.FileUtils
+import com.github.tvbox.osc.player.engine.PlayerCache
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.KV
 import com.github.tvbox.osc.util.LOG
@@ -71,6 +73,14 @@ class PlaybackService : Service() {
         LOG.i(TAG + " host onCreate (engine=" + (if (engine == null) "none" else "alive") + ")")
         createNotificationChannel()
         createMediaSession()
+        initPlayerCache()
+    }
+
+    private fun initPlayerCache() {
+        Thread({
+            FileUtils.purgeExoCacheIfPending()
+            PlayerCache.warmup(this)
+        }, "playback-cache-boot").start()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -145,8 +155,11 @@ class PlaybackService : Service() {
 
             override fun onStop() {
                 val host = getOwner()
-                if (host != null) host.stopFromMediaSession()
-                stopPlaybackSession()
+                if (host != null) {
+                    host.stopFromMediaSession()
+                } else {
+                    stopPlaybackSession()
+                }
             }
 
             override fun onSeekTo(pos: Long) {
@@ -498,6 +511,7 @@ class PlaybackService : Service() {
                 PlaybackPorts.ports = object : PlaybackDataPorts {
                     override fun currentVod(): VodInfo? = peek()?.controller()?.vod()
                     override fun isLiveMode(): Boolean = peek()?.isLiveMode() == true
+                    override fun hasAttachedPage(): Boolean = peek()?.attachedPage() != null
                     override fun discardStartedContentOf(owners: List<String>) {
                         peek()?.discardStartedContentOf(owners)
                     }

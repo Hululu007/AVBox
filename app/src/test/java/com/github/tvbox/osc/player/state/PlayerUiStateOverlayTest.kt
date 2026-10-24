@@ -1,6 +1,6 @@
 package com.github.tvbox.osc.player.state
 
-import com.github.tvbox.osc.dlna.CastVideo
+import com.github.tvbox.osc.bean.CastVideo
 import com.github.tvbox.osc.player.effect.PictureEffectUnavailableReason
 import com.github.tvbox.osc.player.effect.PicturePreset
 import com.github.tvbox.osc.player.effect.PictureProfile

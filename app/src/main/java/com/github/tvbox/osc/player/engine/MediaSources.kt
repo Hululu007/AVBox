@@ -3,7 +3,6 @@ package com.github.tvbox.osc.player.engine
 import android.content.Context
 import android.net.Uri
 import android.os.Bundle
-import android.text.TextUtils
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
@@ -19,13 +18,14 @@ import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.exoplayer.source.ConcatenatingMediaSource
 import androidx.media3.exoplayer.source.ShuffleOrder
 import com.github.tvbox.osc.net.OkGoHelper
+import com.github.tvbox.osc.player.core.HttpHeaders
+import com.github.tvbox.osc.player.core.OkHttpDataSource
 import com.github.tvbox.osc.player.engine.iso.BdavDataSource
 import com.github.tvbox.osc.player.engine.iso.BdavLoadErrorPolicy
 import com.github.tvbox.osc.player.engine.iso.IsoDataSource
 import com.github.tvbox.osc.player.engine.iso.IsoExtractorsFactory
 import com.github.tvbox.osc.player.engine.iso.IsoPlaylistState
 import com.github.tvbox.osc.player.engine.iso.withPlaylistTargets
-import com.github.tvbox.osc.player.engine.iso.IsoSelection
 import com.github.tvbox.osc.player.engine.iso.IsoThroughput
 import com.github.tvbox.osc.player.engine.iso.M2tsDataSource
 import com.github.tvbox.osc.util.LOG
@@ -190,9 +190,9 @@ class MediaSources(
 
     companion object {
 
-        const val HEADER_FORMAT = "TVBox-Format"
+        const val HEADER_FORMAT = HttpHeaders.HEADER_FORMAT
 
-        const val HEADER_ISO = "TVBox-Iso"
+        const val HEADER_ISO = HttpHeaders.HEADER_ISO
 
         const val TYPE_ISO = 100
 
@@ -271,27 +271,8 @@ class MediaSources(
         }
 
         @JvmStatic
-        fun toRequestHeaders(headers: Map<String, String>?): HashMap<String, String> {
-            val requestHeaders = HashMap<String, String>()
-            if (headers == null) {
-                return requestHeaders
-            }
-            for (entry in headers.entries) {
-                val key = entry.key
-                val value = entry.value
-                if (TextUtils.isEmpty(key) || TextUtils.isEmpty(value)) {
-                    continue
-                }
-                if (HEADER_FORMAT.equals(key, ignoreCase = true)) {
-                    continue
-                }
-                if (HEADER_ISO.equals(key, ignoreCase = true)) {
-                    continue
-                }
-                requestHeaders[key] = value.trim { it <= ' ' }
-            }
-            return requestHeaders
-        }
+        fun toRequestHeaders(headers: Map<String, String>?): HashMap<String, String> =
+            HttpHeaders.toRequestHeaders(headers)
 
         @JvmStatic
         fun inferContentType(fileName: String, headers: Map<String, String>?): Int {

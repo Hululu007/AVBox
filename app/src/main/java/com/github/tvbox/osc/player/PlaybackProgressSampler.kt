@@ -5,7 +5,7 @@ import android.os.Looper
 import com.github.tvbox.osc.data.HistoryWriter
 import com.github.tvbox.osc.data.PlaybackProgress
 import com.github.tvbox.osc.data.WatchProgressStore
-import com.github.tvbox.osc.player.state.PlayState
+import com.github.tvbox.osc.player.core.PlayState
 import com.github.tvbox.osc.util.LOG
 
 class PlaybackProgressSampler(private val host: Host) {

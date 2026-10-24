@@ -7,7 +7,7 @@ import com.github.tvbox.osc.bean.Epginfo
 import com.github.tvbox.osc.player.MyVideoView
 import com.github.tvbox.osc.player.PlaybackTimes
 import com.github.tvbox.osc.player.PlayerHelper
-import com.github.tvbox.osc.player.state.PlayState
+import com.github.tvbox.osc.player.core.PlayState
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.KV
 import com.github.tvbox.osc.util.LOG

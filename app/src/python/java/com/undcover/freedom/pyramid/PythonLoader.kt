@@ -9,11 +9,11 @@ import com.chaquo.python.android.AndroidPlatform
 import com.github.catvod.Proxy
 import com.github.catvod.crawler.Spider
 import com.github.catvod.crawler.SpiderNull
+import com.github.catvod.crawler.SpiderReaper
 import com.github.catvod.net.OkHttp
 import com.github.tvbox.osc.BuildConfig
 import com.github.tvbox.osc.net.OkGoHelper
 import com.github.tvbox.osc.util.LOG
-import com.github.tvbox.osc.util.SpiderReaper
 
 import org.json.JSONException
 import org.json.JSONObject
@@ -31,7 +31,6 @@ import java.util.concurrent.TimeoutException
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
-import okhttp3.Response
 
 class PythonLoader {
     private val spiders = ConcurrentHashMap<String, Spider>()

@@ -8,7 +8,7 @@ import com.github.tvbox.osc.server.ControlManager
 import com.github.tvbox.osc.server.RemoteServer
 import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.util.LanguageManager
-import com.github.tvbox.osc.util.M3u8
+import com.github.tvbox.osc.player.usecase.M3u8
 import com.github.tvbox.osc.util.RegexUtils
 import com.github.tvbox.osc.util.net.Http
 import kotlinx.coroutines.CancellationException

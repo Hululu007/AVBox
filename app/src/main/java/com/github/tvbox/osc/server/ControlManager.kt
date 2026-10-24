@@ -7,6 +7,7 @@ import com.github.tvbox.osc.util.LocalAddress
 import java.io.IOException
 
 class ControlManager private constructor() {
+    @Volatile
     private var mServer: RemoteServer? = null
 
     fun getAddress(local: Boolean): String {
@@ -28,13 +29,17 @@ class ControlManager private constructor() {
             mServer = server
             try {
                 server.start()
-                com.github.catvod.Proxy.set(RemoteServer.serverPort)
+                onProxyPortReady?.invoke(RemoteServer.serverPort)
                 break
             } catch (ex: IOException) {
                 RemoteServer.serverPort++
                 server.stop()
             }
         } while (RemoteServer.serverPort < 9999)
+    }
+
+    fun startedPort(): Int {
+        return if (mServer?.isStarting() == true) RemoteServer.serverPort else 0
     }
 
     fun stopServer() {
@@ -50,6 +55,9 @@ class ControlManager private constructor() {
 
         @JvmField
         var mContext: Context? = null
+
+        @Volatile
+        var onProxyPortReady: ((Int) -> Unit)? = null
 
         @JvmStatic
         fun get(): ControlManager {

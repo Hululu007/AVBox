@@ -46,7 +46,7 @@ import com.github.tvbox.osc.subtitle.SubtitleEngine
 import com.github.tvbox.osc.subtitle.model.Subtitle
 import com.github.tvbox.osc.util.MD5
 
-import com.github.tvbox.osc.player.KernelPlayer
+import com.github.tvbox.osc.player.core.KernelPlayer
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

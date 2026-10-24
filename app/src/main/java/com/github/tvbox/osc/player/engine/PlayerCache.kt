@@ -8,6 +8,8 @@ import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import com.github.tvbox.osc.BuildConfig
+import com.github.tvbox.osc.util.HawkConfig
+import com.github.tvbox.osc.util.KV
 import com.github.tvbox.osc.util.LOG
 import java.io.File
 
@@ -23,12 +25,16 @@ object PlayerCache {
     @Volatile
     private var sharedCacheSizeBytes: Long = DEFAULT_SIZE_BYTES
 
+    @Volatile
+    private var sizeExplicit = false
+
     @JvmStatic
     fun getSharedCache(context: Context): Cache {
         val existing = sharedCache
         if (existing != null) return existing
         synchronized(PlayerCache::class.java) {
             sharedCache?.let { return it }
+            ensureSizeFromConfig()
             val appContext = context.applicationContext
             Trace.beginSection("playerCache:buildSimpleCache")
             val created = try {
@@ -62,7 +68,14 @@ object PlayerCache {
     fun setSharedCacheSizeBytes(bytes: Long) {
         if (bytes > 0) {
             sharedCacheSizeBytes = bytes
+            sizeExplicit = true
         }
+    }
+
+    private fun ensureSizeFromConfig() {
+        if (sizeExplicit) return
+        val mb = Math.max(128, KV.get(HawkConfig.EXO_CACHE_SIZE_MB, HawkConfig.EXO_CACHE_SIZE_MB_DEFAULT))
+        sharedCacheSizeBytes = mb * 1024L * 1024L
     }
 
     private fun externalCacheDir(context: Context): File =

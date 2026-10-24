@@ -49,13 +49,14 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import com.github.tvbox.osc.R
-import com.github.tvbox.osc.base.BaseActivity
+import com.github.tvbox.osc.ui.base.BaseActivity
 import com.github.tvbox.osc.ui.components.SheetHostScaffold
 import com.github.tvbox.osc.bean.Movie
 import com.github.tvbox.osc.bean.MovieSort
 import com.github.tvbox.osc.ui.components.FilterSheet
 import com.github.tvbox.osc.ui.components.LoadState
 import com.github.tvbox.osc.ui.components.LoadStateBox
+import com.github.tvbox.osc.ui.components.ProvideTmdbPosterLookup
 import com.github.tvbox.osc.ui.components.AppTopBarScaffold
 import com.github.tvbox.osc.ui.components.VodCard
 import com.github.tvbox.osc.ui.components.VodCardMenu
@@ -244,13 +245,15 @@ private fun PartitionListScreen(mode: String, videosJson: String?, onBack: () ->
         },
     ) { topPad, _ ->
         when {
-            mode == PartitionListActivity.MODE_SEARCH -> VideoGrid(
-                videos = searchVideos,
-                onCardClick = { video -> context.openVodCardOrDetail(video) },
-                onCardLongClick = { video -> vodMenu.show(video) },
-                onLoadMore = {},
-                topPadding = topPad - 20.dp,
-            )
+            mode == PartitionListActivity.MODE_SEARCH -> ProvideTmdbPosterLookup(vm) {
+                VideoGrid(
+                    videos = searchVideos,
+                    onCardClick = { video -> context.openVodCardOrDetail(video) },
+                    onCardLongClick = { video -> vodMenu.show(video) },
+                    onLoadMore = {},
+                    topPadding = topPad - 20.dp,
+                )
+            }
 
             ui.state == PartitionListVM.State.Loading -> LoadStateBox(
                 state = LoadState.Loading,
@@ -273,15 +276,17 @@ private fun PartitionListScreen(mode: String, videosJson: String?, onBack: () ->
                     .padding(top = topPad),
             )
 
-            else -> VideoGrid(
-                videos = ui.videos,
-                onCardClick = { video -> context.dispatchVodCardClick(video, onAction = { vm.runAction(it) }) },
-                onCardLongClick = { video -> vodMenu.show(video) },
-                onLoadMore = { vm.loadMore() },
-                enableLoadMore = true,
-                topPadding = topPad - 20.dp,
-                resetKey = level,
-            )
+            else -> ProvideTmdbPosterLookup(vm) {
+                VideoGrid(
+                    videos = ui.videos,
+                    onCardClick = { video -> context.dispatchVodCardClick(video, onAction = { vm.runAction(it) }) },
+                    onCardLongClick = { video -> vodMenu.show(video) },
+                    onLoadMore = { vm.loadMore() },
+                    enableLoadMore = true,
+                    topPadding = topPad - 20.dp,
+                    resetKey = level,
+                )
+            }
         }
     }
 

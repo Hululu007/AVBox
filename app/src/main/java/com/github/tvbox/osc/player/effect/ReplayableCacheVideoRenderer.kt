@@ -7,9 +7,9 @@ import androidx.media3.exoplayer.mediacodec.MediaCodecAdapter
 import androidx.media3.exoplayer.video.MediaCodecVideoRenderer
 import androidx.media3.exoplayer.video.PlaybackVideoGraphWrapper
 import androidx.media3.exoplayer.video.VideoFrameReleaseControl
-import com.github.tvbox.osc.player.PlayerHelper
-import com.github.tvbox.osc.player.VideoCodecObserver
-import com.github.tvbox.osc.player.engine.CodecPreferences
+import com.github.tvbox.osc.player.core.DecodeKindRule
+import com.github.tvbox.osc.player.core.VideoCodecObserver
+import com.github.tvbox.osc.player.core.CodecPreferences
 import com.github.tvbox.osc.util.LOG
 
 class ReplayableCacheVideoRenderer(
@@ -43,7 +43,7 @@ class ReplayableCacheVideoRenderer(
     ) {
         super.onCodecInitialized(name, configuration, initializedTimestampMs, initializationDurationMs)
         val info = configuration.codecInfo
-        val kind = PlayerHelper.videoDecodeKindOf(name, info.softwareOnly)
+        val kind = DecodeKindRule.videoKindOf(name, info.softwareOnly)
         videoCodecObserver?.onCodecInitialized(name, kind)
         LOG.i(
             "echo-exo-codec-init: name=$name kind=$kind hw=${info.hardwareAccelerated}" +

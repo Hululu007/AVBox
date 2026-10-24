@@ -7,14 +7,14 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.player.AppPlayerView
-import com.github.tvbox.osc.player.state.PlayState
-import com.github.tvbox.osc.player.ui.VideoGestureActions
-import com.github.tvbox.osc.player.ui.VideoGestureSession
-import com.github.tvbox.osc.player.ui.isInBottomGestureBand
+import com.github.tvbox.osc.player.gesture.VERBOSE_GESTURE_LOG
+import com.github.tvbox.osc.player.gesture.VideoGestureActions
+import com.github.tvbox.osc.player.gesture.VideoGestureSession
+import com.github.tvbox.osc.player.gesture.isInBottomGestureBand
+import com.github.tvbox.osc.player.core.PlayState
 import com.github.tvbox.osc.util.GestureHelper
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.KV
-import com.github.tvbox.osc.player.ui.VERBOSE_GESTURE_LOG
 import com.github.tvbox.osc.util.LOG
 
 internal class VideoGestureActionsImpl(private val host: VideoPlayerController) : VideoGestureActions {

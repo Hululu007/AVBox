@@ -8,6 +8,8 @@ interface PlaybackDataPorts {
 
     fun isLiveMode(): Boolean
 
+    fun hasAttachedPage(): Boolean
+
     fun discardStartedContentOf(owners: List<String>)
 
     fun onProgressKeysCleared(keys: List<String>)

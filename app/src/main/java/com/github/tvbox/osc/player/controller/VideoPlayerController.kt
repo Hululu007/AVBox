@@ -11,6 +11,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.ComposeView
 import androidx.media3.ui.SubtitleView
@@ -19,17 +20,17 @@ import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.bean.SourceBean
 import com.github.tvbox.osc.player.AppPlayerView
 import com.github.tvbox.osc.player.MyVideoView
-import com.github.tvbox.osc.player.VideoCodecInfo
+import com.github.tvbox.osc.player.core.VideoCodecInfo
+import com.github.tvbox.osc.player.gesture.VideoGestureHandler
 import com.github.tvbox.osc.player.state.LockVisibility
 import com.github.tvbox.osc.player.state.PlayerUiState
-import com.github.tvbox.osc.player.state.PlayState
+import com.github.tvbox.osc.player.core.PlayState
 import com.github.tvbox.osc.player.state.VideoRect
 import com.github.tvbox.osc.player.state.VideoSizeGate
-import com.github.tvbox.osc.player.ui.PlayerSurfaceHost
-import com.github.tvbox.osc.player.ui.VideoGestureHandler
 import com.github.tvbox.osc.player.usecase.M3u8PurifyUseCase
 import com.github.tvbox.osc.player.usecase.PlayerSwitchUseCase
 import com.github.tvbox.osc.player.usecase.WebParseUseCase
+import com.github.tvbox.osc.sourcedata.Thunder
 import com.github.tvbox.osc.subtitle.widget.SimpleSubtitleView
 import com.github.tvbox.osc.util.DanmuHelper
 import com.github.tvbox.osc.util.LOG
@@ -168,6 +169,12 @@ class VideoPlayerController(
     internal lateinit var composeHost: ComposeView
         private set
 
+    private val playerContentState = mutableStateOf<(@Composable () -> Unit)?>(null)
+
+    internal fun setPlayerContent(content: @Composable () -> Unit) {
+        playerContentState.value = content
+    }
+
     internal val videoSizeGate = VideoSizeGate()
 
     private val playerConfigState = mutableStateOf<JSONObject?>(null)
@@ -303,7 +310,7 @@ class VideoPlayerController(
                 override fun onViewDetachedFromWindow(v: View) = onHostDetached()
             })
             setContent {
-                PlayerSurfaceHost(this@VideoPlayerController)
+                playerContentState.value?.invoke()
             }
         }
     }
@@ -580,6 +587,7 @@ class VideoPlayerController(
     override fun switchPlayer(): Boolean = PlayerSwitchUseCase.switchPlayer()
 
     override fun stopOther() {
+        Thunder.stop(false)
         PlayerSwitchUseCase.stopOther()
     }
 

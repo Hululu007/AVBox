@@ -5,14 +5,14 @@ import androidx.lifecycle.ViewModel
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.api.ConfigRepository
-import com.github.tvbox.osc.base.App
 import com.github.tvbox.osc.bean.Epginfo
 import com.github.tvbox.osc.bean.LiveChannelGroup
 import com.github.tvbox.osc.bean.LiveChannelItem
 import com.github.tvbox.osc.bean.LiveSettingGroup
 import com.github.tvbox.osc.bean.LiveSettingItem
-import com.github.tvbox.osc.player.state.PlayState
-import com.github.tvbox.osc.util.BootGuard
+import com.github.tvbox.osc.player.core.PlayState
+import com.github.tvbox.osc.boot.BootGuard
+import com.github.tvbox.osc.util.AppContextHolder
 import com.github.tvbox.osc.util.HawkConfig
 
 import com.github.tvbox.osc.util.KV
@@ -361,8 +361,8 @@ internal class LivePlayViewModel : ViewModel() {
     }
 
     private fun str(resId: Int, vararg args: Any): String {
-        val app = App.getInstance() ?: return ""
-        return LanguageManager.localized(app).getString(resId, *args)
+        val context = AppContextHolder.context() ?: return ""
+        return LanguageManager.localized(context).getString(resId, *args)
     }
 
     internal interface Host {

@@ -55,13 +55,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.github.tvbox.osc.R
+import com.github.tvbox.osc.bean.TmdbEpisode
 import com.github.tvbox.osc.bean.VodInfo
 import com.github.tvbox.osc.data.EpisodeMatcher
 import com.github.tvbox.osc.ui.components.AVBoxBottomSheet
 import com.github.tvbox.osc.ui.components.LocalSheetDismiss
 import com.github.tvbox.osc.ui.theme.filterChipColors
-import com.github.tvbox.osc.util.TmdbApi
-import com.github.tvbox.osc.util.TmdbPoster
+import com.github.tvbox.osc.util.TmdbImages
 import kotlinx.coroutines.launch
 
 private val EpisodeThumbWidth = 210.dp
@@ -115,12 +115,13 @@ internal fun EpisodeRow(
         val listState = rememberLazyListState()
         var prevReverseSort by remember { mutableStateOf(info.reverseSort) }
         val seasonHint = remember(info.name, currentFlag) {
-            TmdbApi.parseSeasonHint(info.name) ?: TmdbApi.parseSeasonHint(currentFlag)
+            vm.seasonHintFor(info.name, currentFlag)
         }
         val episodeNumbers = remember(episodes, info.reverseSort) {
             episodes.map { EpisodeMatcher.extractEpisodeNumber(it.name) }
         }
         val episodeMeta = rememberEpisodeMeta(
+            vm,
             info.name,
             info.en,
             info.year,
@@ -169,6 +170,7 @@ internal fun EpisodeRow(
 
 @Composable
 private fun rememberEpisodeMeta(
+    vm: DetailViewModel,
     name: String?,
     altName: String?,
     year: Int,
@@ -176,26 +178,16 @@ private fun rememberEpisodeMeta(
     seasonHint: Int?,
     episodeNumbers: List<Int>,
     reversed: Boolean,
-): List<TmdbApi.TmdbEpisode>? {
+): List<TmdbEpisode>? {
     val enabled = !name.isNullOrBlank() && episodeCount > 0
     val sourceOrder = remember(episodeNumbers, reversed) {
         if (reversed) episodeNumbers.reversed() else episodeNumbers
     }
-    val epoch by TmdbPoster.configEpoch.collectAsState()
-    var meta by remember(name, altName, episodeCount, seasonHint, sourceOrder, epoch) {
-        mutableStateOf(
-            if (enabled) {
-                TmdbPoster.cachedEpisodeMeta(name, episodeCount, seasonHint, sourceOrder, altName)
-            } else {
-                null
-            },
-        )
+    val epoch by TmdbImages.configEpoch.collectAsState()
+    LaunchedEffect(vm, name, altName, year, episodeCount, seasonHint, sourceOrder, epoch) {
+        vm.ensureTmdbEpisodeMeta(name, altName, year, episodeCount, seasonHint, sourceOrder)
     }
-    LaunchedEffect(name, altName, episodeCount, seasonHint, sourceOrder, epoch) {
-        if (enabled && meta == null) {
-            meta = TmdbPoster.resolveEpisodeMeta(name, year, episodeCount, seasonHint, sourceOrder, altName)
-        }
-    }
+    val meta by vm.tmdbEpisodeMeta.collectAsState()
     if (!enabled) return null
     return if (reversed) meta?.asReversed() else meta
 }
@@ -204,7 +196,7 @@ private fun rememberEpisodeMeta(
 private fun EpisodeCard(
     name: String,
     episodeNumber: Int,
-    episode: TmdbApi.TmdbEpisode?,
+    episode: TmdbEpisode?,
     selected: Boolean,
     onClick: () -> Unit,
 ) {
@@ -232,7 +224,7 @@ private fun EpisodeCard(
         ) {
             if (stillPath.isNotEmpty()) {
                 AsyncImage(
-                    model = TmdbPoster.stillUrl(stillPath),
+                    model = TmdbImages.stillUrl(stillPath),
                     contentDescription = title,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),

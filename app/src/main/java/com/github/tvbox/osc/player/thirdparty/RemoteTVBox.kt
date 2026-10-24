@@ -4,11 +4,11 @@ import android.app.Activity
 import android.text.TextUtils
 
 import com.github.tvbox.osc.net.OkGoHelper
-import com.github.tvbox.osc.server.RemoteServer
 import com.github.tvbox.osc.util.AppContextHolder
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.KV
 import com.github.tvbox.osc.util.LOG
+import com.github.tvbox.osc.util.LocalIPAddress
 
 import java.io.IOException
 import java.net.URLEncoder
@@ -67,7 +67,7 @@ object RemoteTVBox {
 
     @JvmStatic
     fun searchAvalible(callback: Callback) {
-        val localIp = RemoteServer.getLocalIPAddress(AppContextHolder.context())
+        val localIp = AppContextHolder.context()?.let { LocalIPAddress.getLocalIPAddress(it) }.orEmpty()
         val divisionIp = if (TextUtils.isEmpty(localIp)) -1 else localIp.lastIndexOf(".")
         if (divisionIp <= 0) {
             callback.fail(true, true)

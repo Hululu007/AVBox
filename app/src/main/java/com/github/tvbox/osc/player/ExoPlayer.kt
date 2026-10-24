@@ -9,20 +9,26 @@ import androidx.media3.common.Effect
 import androidx.media3.common.Format
 import androidx.media3.common.Player
 import androidx.media3.common.text.Cue
+import com.github.tvbox.osc.player.core.CodecPreferences
+import com.github.tvbox.osc.player.core.KernelPlayer
+import com.github.tvbox.osc.player.core.PlayState
+import com.github.tvbox.osc.player.core.PlaybackStateMachine
+import com.github.tvbox.osc.player.core.PlayerDecodeKind
+import com.github.tvbox.osc.player.core.TrackInfo
+import com.github.tvbox.osc.player.core.TrackInfoBean
+import com.github.tvbox.osc.player.core.VideoCodecObserver
+import com.github.tvbox.osc.player.core.deriveKernelPlayState
 import com.github.tvbox.osc.player.engine.AudioCodecChoice
-import com.github.tvbox.osc.player.engine.CodecPreferences
 import com.github.tvbox.osc.player.engine.PlayerEngine
 import com.github.tvbox.osc.player.engine.PlayerEngineConfig
+import com.github.tvbox.osc.player.effect.PictureEffectHost
 import com.github.tvbox.osc.player.effect.PictureEffects
-import com.github.tvbox.osc.player.state.PlayState
-import com.github.tvbox.osc.player.state.PlaybackStateMachine
-import com.github.tvbox.osc.player.state.deriveKernelPlayState
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.KV
 import com.github.tvbox.osc.util.LOG
 import kotlinx.coroutines.flow.StateFlow
 
-class ExoPlayer(context: Context) : KernelPlayer() {
+class ExoPlayer(context: Context) : KernelPlayer(), PictureEffectHost {
 
     private val appContext: Context = context.applicationContext
 
@@ -281,17 +287,17 @@ class ExoPlayer(context: Context) : KernelPlayer() {
         engine?.notifyVideoOutputResolution(width, height)
     }
 
-    fun redrawVideoFrame() {
+    override fun redrawVideoFrame() {
         engine?.redrawVideoFrame()
     }
 
-    fun applyVideoEffects(effects: List<Effect>) {
+    override fun applyVideoEffects(effects: List<Effect>) {
         engine?.applyVideoEffects(effects)
     }
 
-    fun isPictureEffectsActive(): Boolean = engine?.isPictureEffectsActive ?: false
+    override fun isPictureEffectsActive(): Boolean = engine?.isPictureEffectsActive ?: false
 
-    fun isPictureHdrSource(): Boolean = engine?.isPictureHdrSource ?: false
+    override fun isPictureHdrSource(): Boolean = engine?.isPictureHdrSource ?: false
 
     val isTunnelingEnabled: Boolean
         get() = engine?.isTunnelingEnabled ?: false

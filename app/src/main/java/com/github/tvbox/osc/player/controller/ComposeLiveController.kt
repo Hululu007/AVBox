@@ -10,7 +10,7 @@ import android.view.Window
 import android.widget.FrameLayout
 import com.github.tvbox.osc.player.AppPlayerView
 import com.github.tvbox.osc.player.MyVideoView
-import com.github.tvbox.osc.player.state.PlayState
+import com.github.tvbox.osc.player.core.PlayState
 import com.github.tvbox.osc.util.GestureHelper
 import com.github.tvbox.osc.util.PlayerUtils
 import kotlin.math.abs

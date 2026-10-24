@@ -71,7 +71,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.bean.LiveChannelGroup
-import com.github.tvbox.osc.player.state.PlayState
+import com.github.tvbox.osc.player.core.PlayState
 import com.github.tvbox.osc.ui.components.AVBoxAlertDialog
 import com.github.tvbox.osc.ui.components.AVBoxBottomSheet
 import com.github.tvbox.osc.ui.components.LoadStateBox

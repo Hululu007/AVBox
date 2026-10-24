@@ -3,7 +3,7 @@ package com.github.tvbox.osc.player.host
 import android.content.Context
 import android.graphics.Bitmap
 import android.view.View
-import com.github.tvbox.osc.player.KernelPlayer
+import com.github.tvbox.osc.player.core.KernelPlayer
 
 interface PlayerRenderView {
 

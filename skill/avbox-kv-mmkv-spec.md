@@ -153,7 +153,7 @@ public final class KV {
   工程开了 `testOptions.unitTests.returnDefaultValues = true`,Android 桩方法**静默返回默认值** ——
   `TextUtils.isEmpty("")` 返 `false`、`TextUtils.isEmpty(null)` 也返 `false`。于是同一处判空
   "真机生效、单测失效",而**单测正是用来钉这类边界的**。踩过三次的落点:`ConfigParser`(最初)、
-  `bean/Depot`(空地址过滤在单测里不生效)、`util/BootGuard`(`shouldDisable` 的"空 jar 不停用"守卫
+  `bean/Depot`(空地址过滤在单测里不生效)、`boot/BootGuard`(`shouldDisable` 的"空 jar 不停用"守卫
   被新写的单测当场抓到)。**约定:纯逻辑类里判空一律写本地 `text == null || text.length() == 0`
   的小工具方法**,并在注释里指明原因(三处现有实现互相引用,便于后来者一次看懂)。
 

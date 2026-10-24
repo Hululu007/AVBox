@@ -1,9 +1,8 @@
 package com.github.tvbox.osc.net
 
-import com.github.catvod.crawler.SpiderDebug
+import com.github.tvbox.osc.net.SuperParse
 import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.util.LocalAddress
-import com.github.tvbox.osc.util.parser.SuperParse
 
 import java.io.ByteArrayInputStream
 import java.io.FilterInputStream
@@ -91,7 +90,6 @@ object Proxy {
             return result
         } catch (e: Exception) {
             LOG.e("echo-proxy error: itv request failed | type=" + params["type"] + " | " + e.message)
-            SpiderDebug.log(e)
             return null
         }
     }
@@ -124,7 +122,7 @@ object Proxy {
             }
             return result
         } catch (e: Exception) {
-            SpiderDebug.log(e)
+            LOG.d("Proxy", "" + e.message)
             return null
         }
     }
@@ -251,7 +249,7 @@ object Proxy {
         try {
             return LocalAddress.get() + "proxy?go=live&type=" + type + headerQuery(params) + "&url=" + URLEncoder.encode(url, "UTF-8")
         } catch (e: Exception) {
-            SpiderDebug.log(e)
+            LOG.d("Proxy", "" + e.message)
             return url
         }
     }
@@ -347,7 +345,7 @@ object Proxy {
             val resolved = requestUrl.resolve(location)
             return resolved?.toString()
         } catch (e: Exception) {
-            SpiderDebug.log(e)
+            LOG.d("Proxy", "" + e.message)
             return null
         }
     }

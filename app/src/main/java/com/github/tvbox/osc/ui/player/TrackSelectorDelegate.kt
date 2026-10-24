@@ -4,7 +4,7 @@ import android.content.Context
 import android.widget.Toast
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.player.MyVideoView
-import com.github.tvbox.osc.player.TrackInfoBean
+import com.github.tvbox.osc.player.core.TrackInfoBean
 import com.github.tvbox.osc.player.state.PlayerUiState
 import com.github.tvbox.osc.player.state.SelectDialogState
 import com.github.tvbox.osc.util.LOG

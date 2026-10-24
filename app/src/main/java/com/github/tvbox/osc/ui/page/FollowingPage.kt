@@ -55,6 +55,7 @@ import com.github.tvbox.osc.ui.WindowSize
 import com.github.tvbox.osc.ui.components.AppTopBarScaffold
 import com.github.tvbox.osc.ui.components.LoadState
 import com.github.tvbox.osc.ui.components.LoadStateBox
+import com.github.tvbox.osc.ui.components.ProvideTmdbPosterLookup
 import com.github.tvbox.osc.ui.components.WeekdayChip
 import com.github.tvbox.osc.ui.components.WeekdayRes
 import com.github.tvbox.osc.util.SubscribeList
@@ -195,68 +196,70 @@ fun FollowingPage(
 
                 else -> BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                     val columns = WindowSize.rowColumns((maxWidth - 32.dp - navStart).value.toInt(), 3)
-                    LazyVerticalGrid(
-                        state = listState,
-                        columns = GridCells.Fixed(columns),
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(
-                            start = 16.dp + navStart,
-                            end = 16.dp,
-                            top = 8.dp,
-                            bottom = 8.dp + navBottom,
-                        ),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        items(visible, key = { it.follow.id }) { entry ->
-                            val follow = entry.follow
-                            FollowRow(
-                                follow = follow,
-                                history = entry.history,
-                                totalEpisodes = episodeTotals[EpisodeTotals.key(follow.sourceKey, follow.vodId)],
-                                playedPercent = playedPercents[PlaybackProgress.key(follow.sourceKey, follow.vodId)],
-                                watched = FollowListRules.isWatched(entry, selectedDay),
-                                editMode = editMode,
-                                selected = follow.id in selected,
-                                selectedDay = selectedDay,
-                                today = today,
-                                modifier = Modifier.animateItem(
-                                    fadeInSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                                    placementSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                                    fadeOutSpec = spring(stiffness = Spring.StiffnessMediumLow),
-                                ),
-                                onClick = {
-                                    if (editMode) {
-                                        vm.toggleSelected(follow.id)
-                                    } else {
-                                        val cid = follow.cid.orEmpty()
-                                        when {
-                                            cid.isEmpty() || cid == AppGraph.followRepository.currentCid() ->
-                                                context.jumpToDetail(
-                                                    follow.vodId, follow.sourceKey, follow.name, follow.pic,
-                                                )
-
-                                            SubscribeList.vodUrls().contains(cid) ->
-                                                scope.launch {
-                                                    reopenViaSubscription(
-                                                        context = context,
-                                                        cid = cid,
-                                                        sourceKey = follow.sourceKey,
-                                                        vodId = follow.vodId,
-                                                        name = follow.name,
-                                                        pic = follow.pic,
+                    ProvideTmdbPosterLookup(vm) {
+                        LazyVerticalGrid(
+                            state = listState,
+                            columns = GridCells.Fixed(columns),
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(
+                                start = 16.dp + navStart,
+                                end = 16.dp,
+                                top = 8.dp,
+                                bottom = 8.dp + navBottom,
+                            ),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            items(visible, key = { it.follow.id }) { entry ->
+                                val follow = entry.follow
+                                FollowRow(
+                                    follow = follow,
+                                    history = entry.history,
+                                    totalEpisodes = episodeTotals[EpisodeTotals.key(follow.sourceKey, follow.vodId)],
+                                    playedPercent = playedPercents[PlaybackProgress.key(follow.sourceKey, follow.vodId)],
+                                    watched = FollowListRules.isWatched(entry, selectedDay),
+                                    editMode = editMode,
+                                    selected = follow.id in selected,
+                                    selectedDay = selectedDay,
+                                    today = today,
+                                    modifier = Modifier.animateItem(
+                                        fadeInSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                                        placementSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                                        fadeOutSpec = spring(stiffness = Spring.StiffnessMediumLow),
+                                    ),
+                                    onClick = {
+                                        if (editMode) {
+                                            vm.toggleSelected(follow.id)
+                                        } else {
+                                            val cid = follow.cid.orEmpty()
+                                            when {
+                                                cid.isEmpty() || cid == AppGraph.followRepository.currentCid() ->
+                                                    context.jumpToDetail(
+                                                        follow.vodId, follow.sourceKey, follow.name, follow.pic,
                                                     )
-                                                }
 
-                                            else -> context.jumpToSearch(follow.name.orEmpty())
+                                                SubscribeList.vodUrls().contains(cid) ->
+                                                    scope.launch {
+                                                        reopenViaSubscription(
+                                                            context = context,
+                                                            cid = cid,
+                                                            sourceKey = follow.sourceKey,
+                                                            vodId = follow.vodId,
+                                                            name = follow.name,
+                                                            pic = follow.pic,
+                                                        )
+                                                    }
+
+                                                else -> context.jumpToSearch(follow.name.orEmpty())
+                                            }
                                         }
-                                    }
-                                },
-                                onLongClick = {
-                                    if (editMode) vm.toggleSelected(follow.id) else vm.enterEdit(follow.id)
-                                },
-                                onWatchedChange = { vm.setWatched(follow.id, it) },
-                            )
+                                    },
+                                    onLongClick = {
+                                        if (editMode) vm.toggleSelected(follow.id) else vm.enterEdit(follow.id)
+                                    },
+                                    onWatchedChange = { vm.setWatched(follow.id, it) },
+                                )
+                            }
                         }
                     }
                 }

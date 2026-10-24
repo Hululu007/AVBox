@@ -1,8 +1,10 @@
 package com.github.tvbox.osc.ui.page
 
 import com.github.tvbox.osc.api.AppBootstrap
+import com.github.tvbox.osc.api.TmdbPoster
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.github.tvbox.osc.bean.TmdbPosterCache
 import com.github.tvbox.osc.bean.VodInfo
 import com.github.tvbox.osc.data.AppGraph
 import com.github.tvbox.osc.data.EpisodeTotals
@@ -29,7 +31,10 @@ internal data class FollowEntry(
 internal class FollowingViewModel(
     private val follows: FollowRepository = AppGraph.followRepository,
     private val history: HistoryRepository = AppGraph.historyRepository,
-) : ViewModel() {
+) : ViewModel(), TmdbPosterCache {
+
+    override fun tmdbCachedPoster(name: String?, year: Int, altName: String?): String? =
+        TmdbPoster.cachedPoster(name, year, altName)
 
     private val _loading = MutableStateFlow(true)
     val loading = _loading.asStateFlow()

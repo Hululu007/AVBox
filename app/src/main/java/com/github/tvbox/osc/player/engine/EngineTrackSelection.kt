@@ -1,5 +1,6 @@
 package com.github.tvbox.osc.player.engine
 
+import android.content.Context
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
@@ -9,9 +10,8 @@ import androidx.media3.exoplayer.source.TrackGroupArray
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.exoplayer.trackselection.MappingTrackSelector
 import com.github.tvbox.osc.R
-import com.github.tvbox.osc.base.App
-import com.github.tvbox.osc.player.TrackInfo
-import com.github.tvbox.osc.player.TrackInfoBean
+import com.github.tvbox.osc.player.core.TrackInfo
+import com.github.tvbox.osc.player.core.TrackInfoBean
 import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.util.LanguageManager
 import com.github.tvbox.osc.util.TrackMemory
@@ -24,6 +24,8 @@ internal class EngineTrackSelection(private val host: Host) {
         fun trackSelector(): DefaultTrackSelector
 
         fun internalPlayer(): ExoPlayer?
+
+        fun appContext(): Context
     }
 
     private var contentKey = ""
@@ -471,10 +473,8 @@ internal class EngineTrackSelection(private val host: Host) {
         builder.append(part)
     }
 
-    private fun str(resId: Int, vararg args: Any?): String {
-        val app = App.getInstance() ?: return ""
-        return LanguageManager.localized(app).getString(resId, *args)
-    }
+    private fun str(resId: Int, vararg args: Any?): String =
+        LanguageManager.localized(host.appContext()).getString(resId, *args)
 
     companion object {
 

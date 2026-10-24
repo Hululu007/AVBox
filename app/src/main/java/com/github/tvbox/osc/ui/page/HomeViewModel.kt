@@ -6,15 +6,17 @@ import com.github.tvbox.osc.R
 import com.github.tvbox.osc.api.AppBootstrap
 import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.api.SortAdjuster
-import com.github.tvbox.osc.base.App
+import com.github.tvbox.osc.api.TmdbPoster
 import com.github.tvbox.osc.bean.AbsSortXml
 import com.github.tvbox.osc.bean.AbsXml
 import com.github.tvbox.osc.bean.Movie
 import com.github.tvbox.osc.bean.MovieSort
 import com.github.tvbox.osc.bean.SourceBean
+import com.github.tvbox.osc.bean.TmdbPosterCache
 import com.github.tvbox.osc.sourcedata.SourceRuntimeState
 import com.github.tvbox.osc.sourcedata.SourceViewModel
-import com.github.tvbox.osc.util.BootGuard
+import com.github.tvbox.osc.boot.BootGuard
+import com.github.tvbox.osc.util.AppContextHolder
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.HistoryHelper
 import com.github.tvbox.osc.util.HomeSettings
@@ -45,10 +47,14 @@ import com.github.tvbox.osc.data.AppGraph
 import com.github.tvbox.osc.ui.components.toVodInfo
 import kotlinx.coroutines.withContext
 
-class HomeViewModel : ViewModel() {
+class HomeViewModel : ViewModel(), TmdbPosterCache {
+
+    override fun tmdbCachedPoster(name: String?, year: Int, altName: String?): String? =
+        TmdbPoster.cachedPoster(name, year, altName)
+
     private fun str(resId: Int, vararg args: Any): String {
-        val app = App.getInstance() ?: return ""
-        return LanguageManager.localized(app).getString(resId, *args)
+        val context = AppContextHolder.context() ?: return ""
+        return LanguageManager.localized(context).getString(resId, *args)
     }
 
     sealed interface PartitionState {

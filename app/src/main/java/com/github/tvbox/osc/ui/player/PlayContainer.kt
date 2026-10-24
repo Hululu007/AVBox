@@ -14,7 +14,7 @@ import android.webkit.WebView
 import android.widget.FrameLayout
 import android.widget.Toast
 import com.github.tvbox.osc.R
-import com.github.tvbox.osc.dlna.CastVideo
+import com.github.tvbox.osc.bean.CastVideo
 import com.github.tvbox.osc.player.ExoPlayer
 import com.github.tvbox.osc.player.MyVideoView
 import com.github.tvbox.osc.player.PageHost
@@ -34,7 +34,7 @@ import com.github.tvbox.osc.player.controller.PlayerControlApi
 import com.github.tvbox.osc.player.danmu.DanmuLoadController
 import com.github.tvbox.osc.player.state.CastSheetState
 import com.github.tvbox.osc.player.state.PlayerUiState
-import com.github.tvbox.osc.player.state.PlayState
+import com.github.tvbox.osc.player.core.PlayState
 import com.github.tvbox.osc.util.HistoryHelper
 import com.github.tvbox.osc.util.LOG
 import me.jessyan.autosize.AutoSize
@@ -306,8 +306,10 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
         }
         surfaceSlot = findViewById(R.id.surfaceSlot)
         val activity = mActivity ?: return
-        mController = VideoPlayerController(activity)
-        (mController as? VideoPlayerController)?.onVideoSizeReady = { width, height ->
+        val controller = VideoPlayerController(activity)
+        controller.setPlayerContent { PlayerSurfaceHost(controller) }
+        mController = controller
+        controller.onVideoSizeReady = { width, height ->
             if (VideoOrientation.isUsableSize(width, height)) {
                 notifyVideoSizeReady(VideoOrientation.isPortrait(width, height))
             }
@@ -531,9 +533,7 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
         val view = mVideoView
         if (scheduler == null || view == null || view.mediaPlayer == null) return false
         val started = scheduler.startedPlaybackKey() ?: return false
-        val key = session.playbackKey()
-        val cut = key.lastIndexOf('|')
-        return cut > 0 && started.startsWith(key.substring(0, cut + 1))
+        return started.startsWith(session.vodKey())
     }
 
     fun playViaScheduler(reset: Boolean) {

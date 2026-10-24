@@ -4,6 +4,8 @@ import android.app.Activity
 import android.content.Context
 
 import com.github.tvbox.osc.R
+import com.github.tvbox.osc.player.core.DecodeKindRule
+import com.github.tvbox.osc.player.core.PlayerDecodeKind
 import com.github.tvbox.osc.player.engine.SourcePolicy
 import com.github.tvbox.osc.player.host.EngineSurfaceRenderViewFactory
 import com.github.tvbox.osc.player.host.EngineTextureRenderViewFactory
@@ -15,7 +17,6 @@ import com.github.tvbox.osc.util.KV
 import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.util.LanguageManager
 
-import org.json.JSONException
 import org.json.JSONObject
 
 import java.text.DecimalFormat
@@ -31,12 +32,8 @@ object PlayerHelper {
         var renderType = KV.get(HawkConfig.PLAY_RENDER, 1)
         var exoDecode = KV.get(HawkConfig.EXO_DECODE, "硬解码") // i18n: keep
         var scale = KV.get(HawkConfig.PLAY_SCALE, 0)
-        try {
-            renderType = playerCfg.getInt("pr")
-            scale = playerCfg.getInt("sc")
-        } catch (e: JSONException) {
-            LOG.e("PlayerHelper", e)
-        }
+        renderType = playerCfg.optInt("pr", renderType)
+        scale = playerCfg.optInt("sc", scale)
         exoDecode = playerCfg.optString("exo", exoDecode)
         val exoDecodeChanged = applyExoDecode(exoDecode)
         val renderViewFactory: PlayerRenderViewFactory = when (renderType) {
@@ -79,33 +76,11 @@ object PlayerHelper {
         codecName: String?,
         hardwareAccelerated: Boolean,
         softwareOnly: Boolean,
-    ): PlayerDecodeKind {
-        val name = codecName.orEmpty()
-        if (name.isEmpty()) return PlayerDecodeKind.UNKNOWN
-        if (softwareOnly) return PlayerDecodeKind.SOFTWARE
-        if (isSoftwareCodecName(name)) return PlayerDecodeKind.SOFTWARE
-        if (hardwareAccelerated) return PlayerDecodeKind.HARDWARE
-        return PlayerDecodeKind.UNKNOWN
-    }
+    ): PlayerDecodeKind = DecodeKindRule.kindOf(codecName, hardwareAccelerated, softwareOnly)
 
-    private fun isSoftwareCodecName(name: String): Boolean =
-        name.startsWith("c2.android.") ||
-            name.startsWith("OMX.google.") ||
-            name.startsWith("OMX.ffmpeg.") ||
-            name.contains(".sw.") ||
-            name.endsWith(".sw")
-
-    /**
-     * 视频解码器实际类型：MediaCodec 的视频解码器非软即硬，不依赖 API 29 的
-     * isHardwareAccelerated 标志（低版本会拿不到）。ffmpeg 兜底渲染器不走 MediaCodec，不在此列。
-     */
     @JvmStatic
-    fun videoDecodeKindOf(codecName: String?, softwareOnly: Boolean): PlayerDecodeKind {
-        val name = codecName.orEmpty()
-        if (name.isEmpty()) return PlayerDecodeKind.UNKNOWN
-        if (softwareOnly || isSoftwareCodecName(name)) return PlayerDecodeKind.SOFTWARE
-        return PlayerDecodeKind.HARDWARE
-    }
+    fun videoDecodeKindOf(codecName: String?, softwareOnly: Boolean): PlayerDecodeKind =
+        DecodeKindRule.videoKindOf(codecName, softwareOnly)
 
     /** 参数面板「解码方式」的选中项：实际生效优先，未初始化时回落到本片档位。0=硬解码 1=软解码。 */
     @JvmStatic

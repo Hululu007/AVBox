@@ -65,7 +65,7 @@ import com.github.tvbox.osc.util.HistoryMerge
 import com.github.tvbox.osc.util.KV
 import com.github.tvbox.osc.util.MusicSettings
 import com.github.tvbox.osc.util.SpiderStorageNotice
-import com.github.tvbox.osc.util.TmdbPoster
+import com.github.tvbox.osc.api.TmdbPoster
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext

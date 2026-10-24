@@ -3,9 +3,11 @@ package com.github.tvbox.osc.ui.page
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.tvbox.osc.api.ApiConfig
+import com.github.tvbox.osc.api.TmdbPoster
 import com.github.tvbox.osc.bean.AbsXml
 import com.github.tvbox.osc.bean.Movie
 import com.github.tvbox.osc.bean.MovieSort
+import com.github.tvbox.osc.bean.TmdbPosterCache
 import com.github.tvbox.osc.data.AppGraph
 import com.github.tvbox.osc.sourcedata.SourceViewModel
 import com.github.tvbox.osc.ui.components.toVodInfo
@@ -25,7 +27,11 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 
-class PartitionListVM : ViewModel() {
+class PartitionListVM : ViewModel(), TmdbPosterCache {
+
+    override fun tmdbCachedPoster(name: String?, year: Int, altName: String?): String? =
+        TmdbPoster.cachedPoster(name, year, altName)
+
     sealed interface State {
         data object Loading : State
         data object Empty : State

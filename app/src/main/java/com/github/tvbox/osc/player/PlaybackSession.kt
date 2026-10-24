@@ -20,5 +20,11 @@ class PlaybackSession(vod: VodInfo, sourceKey: String?, userPickedLine: Boolean)
 
     fun userPickedLine(): Boolean = userPickedLine
 
-    fun playbackKey(): String = sourceKey + "|" + vod.id + "|" + vod.playFlag + "|" + vod.playIndex
+    fun vodKey(): String = sourceKey + "|" + vod.id + "|" + vod.playFlag + "|"
+
+    fun playbackKey(): String =
+        vodKey() + vod.playIndex + "|" + vod.reverseSort + "|" + episodeName()
+
+    private fun episodeName(): String =
+        vod.seriesMap?.get(vod.playFlag)?.getOrNull(vod.playIndex)?.name.orEmpty()
 }

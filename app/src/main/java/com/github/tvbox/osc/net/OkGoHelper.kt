@@ -10,6 +10,7 @@ import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.util.Probe
 import com.github.tvbox.osc.util.RegexUtils
 import com.github.tvbox.osc.util.SSL.SSLSocketFactoryCompat
+import com.github.tvbox.osc.util.VodImages
 import com.google.gson.JsonArray
 import com.google.gson.JsonParser
 
@@ -439,5 +440,6 @@ object OkGoHelper {
         OkHttp.proxySelectorProvider = { proxySelector() }
         OkHttp.proxyAuthenticatorProvider = { proxyAuthenticator() }
         OkDns.dnsOverHttpsProvider = { dnsOverHttps }
+        VodImages.dnsProvider = { getDefaultClient()?.dns }
     }
 }

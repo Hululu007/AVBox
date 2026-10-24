@@ -1,14 +1,17 @@
 package com.github.tvbox.osc.api
 
 import android.widget.Toast
+import com.github.catvod.Proxy
 import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.api.ConfigRepository
 import com.github.tvbox.osc.base.App
 import com.github.tvbox.osc.data.CurrentSubscription
+import com.github.tvbox.osc.data.PlaybackPorts
 import com.github.tvbox.osc.io.FileUtils
-import com.github.tvbox.osc.player.PlaybackService
 import com.github.tvbox.osc.server.ControlManager
-import com.github.tvbox.osc.util.BootGuard
+import com.github.tvbox.osc.server.ServerQueryPort
+import com.github.tvbox.osc.server.ServerQueryPorts
+import com.github.tvbox.osc.boot.BootGuard
 import com.github.tvbox.osc.util.HawkConfig
 
 import com.github.tvbox.osc.util.KV
@@ -50,9 +53,22 @@ object AppBootstrap {
     private val initMutex = Mutex()
     private var started = false
 
+    private fun installServerPorts() {
+        ServerQueryPorts.ports = object : ServerQueryPort {
+            override fun dashData(): String? = App.getInstance()?.getDashData()
+
+            override fun proxyLocal(params: MutableMap<String, String>): Array<Any?>? =
+                ApiConfig.get().proxyLocal(params)
+        }
+        ControlManager.onProxyPortReady = { Proxy.set(it) }
+        val startedPort = ControlManager.get().startedPort()
+        if (startedPort > 0) Proxy.set(startedPort)
+    }
+
     fun start() {
         if (started) return
         started = true
+        installServerPorts()
         val generation = bootGeneration.next()
         scope.launch {
             Probe.trace("boot:bootstrapRepair") { FileUtils.repairBogusNativeLibs() }
@@ -157,7 +173,7 @@ object AppBootstrap {
         scope.launch {
             initMutex.withLock {
                 if (!bootGeneration.isLatest(generation)) return@withLock
-                if (PlaybackService.peek()?.attachedPage() != null) {
+                if (PlaybackPorts.ports?.hasAttachedPage() == true) {
                     LOG.debugI("echo-config-refresh: deferred")
                     return@withLock
                 }

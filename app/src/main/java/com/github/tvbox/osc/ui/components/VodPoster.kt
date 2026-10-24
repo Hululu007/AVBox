@@ -7,12 +7,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -24,8 +24,6 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.github.tvbox.osc.util.TmdbApi
-import com.github.tvbox.osc.util.TmdbPoster
 import coil3.Image
 import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
@@ -34,8 +32,24 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import coil3.request.transitionFactory
 import coil3.transition.Transition
+import com.github.tvbox.osc.bean.TMDB_SOURCE_KEY
+import com.github.tvbox.osc.bean.TmdbPosterCache
+import com.github.tvbox.osc.util.VodImages
+import com.github.tvbox.osc.util.TmdbImages
 
 private const val UnnamedPosterKey = "！"
+
+internal val LocalTmdbPosterLookup = staticCompositionLocalOf<(String?, Int, String?) -> String?> {
+    { _, _, _ -> null }
+}
+
+@Composable
+internal fun ProvideTmdbPosterLookup(cache: TmdbPosterCache, content: @Composable () -> Unit) {
+    val lookup = remember(cache) {
+        { name: String?, year: Int, altName: String? -> cache.tmdbCachedPoster(name, year, altName) }
+    }
+    CompositionLocalProvider(LocalTmdbPosterLookup provides lookup, content = content)
+}
 
 internal enum class PosterSize { THUMB, LARGE, WIDE, FULL }
 
@@ -110,10 +124,16 @@ internal fun VodPoster(
     resolveTmdb: Boolean = true,
     tmdbCacheOnly: Boolean = false,
     altName: String? = null,
+    tmdbPath: String? = null,
     onImage: ((Image) -> Unit)? = null,
 ) {
     val preferLarge = size != PosterSize.THUMB
-    val tmdbUrl = if (resolveTmdb) tmdbPosterUrl(name, year, sourceKey, size, tmdbCacheOnly, altName) else null
+    val tmdbUrl = if (resolveTmdb && !name.isNullOrBlank() && sourceKey != TMDB_SOURCE_KEY) {
+        val path = tmdbPath ?: if (tmdbCacheOnly) LocalTmdbPosterLookup.current(name, year, altName) else null
+        path?.takeIf { it.isNotEmpty() }?.let { tmdbUrlOf(it, size) }
+    } else {
+        null
+    }
     val siteUrl = if (preferLarge) VodImages.largePosterUrl(pic) else pic
     var showFallback by remember(pic) { mutableStateOf(false) }
     var posterUrl by remember(pic, siteUrl, tmdbUrl) {
@@ -168,45 +188,11 @@ internal fun VodPoster(
     }
 }
 
-@Composable
-internal fun tmdbPosterPath(
-    name: String?,
-    year: Int,
-    sourceKey: String?,
-    cacheOnly: Boolean = false,
-    altName: String? = null,
-): String? {
-    if (name.isNullOrBlank() || sourceKey == TmdbApi.SOURCE_KEY || !TmdbPoster.isActive()) return ""
-    val epoch by TmdbPoster.configEpoch.collectAsState()
-    // 列表场景只读缓存不解析（进过详情页的片才有 TMDB 图），滚动期零网络请求
-    if (cacheOnly) return TmdbPoster.cachedPoster(name, year, altName)
-    var posterPath by remember(name, altName, year, epoch) {
-        mutableStateOf(TmdbPoster.cachedPoster(name, year, altName))
-    }
-    LaunchedEffect(name, altName, year, epoch) {
-        if (posterPath == null) posterPath = TmdbPoster.resolvePoster(name, year, altName) ?: ""
-    }
-    return posterPath
-}
-
-@Composable
-internal fun tmdbPosterUrl(
-    name: String?,
-    year: Int,
-    sourceKey: String?,
-    size: PosterSize,
-    cacheOnly: Boolean = false,
-    altName: String? = null,
-): String? =
-    tmdbPosterPath(name, year, sourceKey, cacheOnly, altName)
-        ?.takeIf { it.isNotEmpty() }
-        ?.let { tmdbUrlOf(it, size) }
-
 internal fun tmdbUrlOf(posterPath: String, size: PosterSize): String = when (size) {
-    PosterSize.THUMB -> TmdbPoster.imageUrl(posterPath, false)
-    PosterSize.LARGE -> TmdbPoster.imageUrl(posterPath, true)
-    PosterSize.WIDE -> TmdbPoster.backdropUrl(posterPath)
-    PosterSize.FULL -> TmdbPoster.fullPosterUrl(posterPath)
+    PosterSize.THUMB -> TmdbImages.imageUrl(posterPath, false)
+    PosterSize.LARGE -> TmdbImages.imageUrl(posterPath, true)
+    PosterSize.WIDE -> TmdbImages.backdropUrl(posterPath)
+    PosterSize.FULL -> TmdbImages.fullPosterUrl(posterPath)
 }
 
 @Composable

@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.bean.Movie
+import com.github.tvbox.osc.bean.TMDB_SOURCE_KEY
 import com.github.tvbox.osc.util.LOG
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -98,14 +99,15 @@ fun HeroSpotlight(
     val settledVideo = videos[settledPage % count]
     val settledPic = settledVideo.pic
     val heroSize = rememberHeroImageSizes().poster
-    val settledUrl = tmdbPosterUrl(
-        settledVideo.name,
-        settledVideo.year,
-        settledVideo.sourceKey,
-        size = heroSize,
-        cacheOnly = true,
-        altName = settledVideo.en,
-    ) ?: settledPic
+    val settledTmdbPath = if (settledVideo.sourceKey == TMDB_SOURCE_KEY) {
+        null
+    } else {
+        LocalTmdbPosterLookup.current(settledVideo.name, settledVideo.year, settledVideo.en)
+    }
+    val settledUrl = settledTmdbPath
+        ?.takeIf { it.isNotEmpty() }
+        ?.let { tmdbUrlOf(it, heroSize) }
+        ?: settledPic
 
     LaunchedEffect(settledPage, settledUrl) {
         val hit = HomeBackdrop.has(settledPic)

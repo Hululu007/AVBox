@@ -19,14 +19,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModelProvider
 import com.github.tvbox.osc.R
-import com.github.tvbox.osc.base.BaseActivity
+import com.github.tvbox.osc.ui.base.BaseActivity
 import com.github.tvbox.osc.bean.VodInfo
 import com.github.tvbox.osc.ui.components.SheetHostScaffold
 import com.github.tvbox.osc.player.PageHost
 import com.github.tvbox.osc.player.PlaybackController
 import com.github.tvbox.osc.player.PlaybackService
 import com.github.tvbox.osc.player.engine.MediaSources
-import com.github.tvbox.osc.player.state.PlayState
+import com.github.tvbox.osc.player.core.PlayState
 import com.github.tvbox.osc.ui.player.PlayContainer
 import com.github.tvbox.osc.ui.theme.AVBoxTheme
 import com.github.tvbox.osc.ui.theme.AppThemeState

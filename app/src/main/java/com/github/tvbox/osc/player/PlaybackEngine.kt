@@ -8,9 +8,13 @@ import android.webkit.WebView
 import com.github.tvbox.osc.bean.VodInfo
 import androidx.appcompat.view.ContextThemeWrapper
 import com.github.tvbox.osc.R
+import com.github.tvbox.osc.player.core.KernelPlayer
+import com.github.tvbox.osc.player.core.PlayerDecodeKind
+import com.github.tvbox.osc.player.core.VideoCodecInfo
+import com.github.tvbox.osc.player.core.VideoCodecObserver
 import com.github.tvbox.osc.player.host.EngineSurfaceRenderViewFactory
 import com.github.tvbox.osc.player.host.EngineTextureRenderViewFactory
-import com.github.tvbox.osc.player.state.PlayState
+import com.github.tvbox.osc.player.core.PlayState
 import com.github.tvbox.osc.player.usecase.PlayerSwitchUseCase
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.KV

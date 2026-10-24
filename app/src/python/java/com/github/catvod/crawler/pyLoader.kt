@@ -6,7 +6,6 @@ import android.util.Log
 import com.github.catvod.crawler.python.IPyLoader
 import com.github.tvbox.osc.base.App
 import com.github.tvbox.osc.util.LOG
-import com.github.tvbox.osc.util.SpiderReaper
 import com.undcover.freedom.pyramid.PythonLoader
 import com.undcover.freedom.pyramid.PythonSpider
 

@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.catvod.crawler.JsLoader
 import com.github.tvbox.osc.api.ApiConfig
+import com.github.tvbox.osc.api.TmdbPoster
 import com.github.tvbox.osc.bean.AbsXml
 import com.github.tvbox.osc.bean.Movie
+import com.github.tvbox.osc.bean.TmdbPosterCache
 import com.github.tvbox.osc.net.SearchSettings
 import com.github.tvbox.osc.sourcedata.SourceViewModel
 import com.github.tvbox.osc.util.HawkConfig
@@ -32,7 +34,10 @@ import kotlinx.coroutines.withTimeoutOrNull
 import com.github.tvbox.osc.data.AppGraph
 import com.github.tvbox.osc.ui.components.toVodInfo
 
-class SearchViewModel(initialTitle: String? = null) : ViewModel() {
+class SearchViewModel(initialTitle: String? = null) : ViewModel(), TmdbPosterCache {
+
+    override fun tmdbCachedPoster(name: String?, year: Int, altName: String?): String? =
+        TmdbPoster.cachedPoster(name, year, altName)
 
     enum class ResultState { Pending, Done }
 

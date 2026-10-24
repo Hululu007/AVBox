@@ -11,7 +11,7 @@ import com.github.tvbox.osc.io.FileUtils
 import com.github.tvbox.osc.io.LocalSourceTree
 import com.github.tvbox.osc.net.OkGoHelper
 import com.github.tvbox.osc.util.ApiLineSignal
-import com.github.tvbox.osc.util.BootGuard
+import com.github.tvbox.osc.boot.BootGuard
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.HistoryHelper
 import com.github.tvbox.osc.util.KV
