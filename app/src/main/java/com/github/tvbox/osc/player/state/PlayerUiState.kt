@@ -217,6 +217,17 @@ class PlayerUiState {
         episodeSheetOpen = open
     }
 
+    fun clearOverlays() {
+        selectDialog = null
+        paramsSheet = null
+        danmuSettingSheet = null
+        danmuSearchSheet = null
+        subtitleSheet = null
+        subtitleSearchSheet = null
+        castSheet = null
+        episodeSheetOpen = false
+    }
+
     val overlayPanelOpen: Boolean
         get() = selectDialog != null || paramsSheet != null || danmuSettingSheet != null ||
                 danmuSearchSheet != null || subtitleSheet != null || subtitleSearchSheet != null ||

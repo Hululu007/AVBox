@@ -16,8 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -42,10 +41,18 @@ import com.github.tvbox.osc.dlna.DLNACastManager
 import com.github.tvbox.osc.player.PlayerHelper
 import com.github.tvbox.osc.player.state.CastSheetState
 import com.github.tvbox.osc.player.thirdparty.RemoteTVBox
+import com.github.tvbox.osc.ui.theme.AVBoxTheme
 import com.github.tvbox.osc.util.PermissionHelper
 
 @Composable
 fun CastSheet(sheet: CastSheetState, onDismiss: () -> Unit) {
+    AVBoxTheme(manageStatusBarIcons = false) {
+        CastSheetContent(sheet, onDismiss)
+    }
+}
+
+@Composable
+private fun CastSheetContent(sheet: CastSheetState, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val activity = remember(context) { context.findActivityOrNull() }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
@@ -191,7 +198,7 @@ fun CastSheet(sheet: CastSheetState, onDismiss: () -> Unit) {
                         .height(playerDim(R.dimen.vs_200)),
                 ) {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(playerDim(R.dimen.vs_10))) {
-                        itemsIndexed(deviceList) { _, device ->
+                        items(deviceList, key = { it.type.toString() + ":" + it.id }) { device ->
                             SheetButton(
                                 text = "${device.name}  ${if (device.type == CastDevice.TYPE_DLNA) "DLNA  " else "TVBox  "}${device.id}",
                                 onClick = { castToDevice(device, dismiss) },

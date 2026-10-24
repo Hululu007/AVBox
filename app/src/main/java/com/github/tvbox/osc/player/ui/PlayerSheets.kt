@@ -3,12 +3,7 @@ package com.github.tvbox.osc.player.ui
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
-import android.graphics.Color
-import android.graphics.drawable.ColorDrawable
-import android.view.View
-import android.view.ViewParent
-import android.view.Window
-import android.view.WindowManager
+import androidx.activity.compose.BackHandler
 import androidx.annotation.DimenRes
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.Animatable
@@ -28,6 +23,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -58,7 +54,6 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -67,12 +62,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.window.DialogWindowProvider
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.ui.theme.ContinuousPlayerPanel
 import kotlinx.coroutines.delay
@@ -84,15 +73,6 @@ private val ItemShape = RoundedCornerShape(12.dp)
 private const val PANEL_ENTER_DURATION_MS = 220
 private const val PANEL_ENTER_SCALE = 0.90f
 private const val PANEL_SCRIM_ALPHA = 0.6f
-
-private fun dialogWindowOf(view: View): Window? {
-    var parent: ViewParent? = view.parent
-    while (parent != null) {
-        if (parent is DialogWindowProvider) return parent.window
-        parent = parent.parent
-    }
-    return null
-}
 
 internal val LocalPlayerSheetDismiss = staticCompositionLocalOf<() -> Unit> { {} }
 
@@ -139,69 +119,53 @@ internal fun PlayerDialog(
         }
     }
 
-    Dialog(
-        onDismissRequest = dismissAnimated,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+    BackHandler { if (!closing) dismissAnimated() }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .imePadding(),
+        contentAlignment = Alignment.Center,
     ) {
-        val view = LocalView.current
-        DisposableEffect(view) {
-            dialogWindowOf(view)?.let { window ->
-                WindowCompat.setDecorFitsSystemWindows(window, false)
-                WindowInsetsControllerCompat(window, window.decorView).apply {
-                    hide(WindowInsetsCompat.Type.systemBars())
-                    systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-                }
-                window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-                window.attributes = window.attributes.apply {
-                    dimAmount = 0f
-                    width = WindowManager.LayoutParams.MATCH_PARENT
-                    height = WindowManager.LayoutParams.MATCH_PARENT
-                }
-            }
-            onDispose {}
-        }
         Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center,
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer { alpha = progress.value }
-                    .background(BottomSheetDefaults.ScrimColor.copy(alpha = PANEL_SCRIM_ALPHA))
-                    .clickable(
-                        enabled = !closing,
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = { dismissAnimated() },
-                    ),
-            )
-            Box(
-                modifier = Modifier.graphicsLayer {
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = progress.value }
+                .background(BottomSheetDefaults.ScrimColor.copy(alpha = PANEL_SCRIM_ALPHA))
+                .clickable(
+                    enabled = !closing,
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = { dismissAnimated() },
+                ),
+        )
+        Box(
+            modifier = Modifier
+                .graphicsLayer {
                     val p = progress.value
                     val scale = PANEL_ENTER_SCALE + (1f - PANEL_ENTER_SCALE) * p
                     scaleX = scale
                     scaleY = scale
                     alpha = p
-                },
-            ) {
-                CompositionLocalProvider(
-                    LocalPlayerSheetDismiss provides dismissAnimated,
-                    LocalPlayerSheetDismissThen provides dismissThen,
-                    content = content,
-                )
-            }
-            if (closing) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = {},
-                        ),
-                )
-            }
+                }
+                .pointerInput(Unit) { detectTapGestures { } },
+        ) {
+            CompositionLocalProvider(
+                LocalPlayerSheetDismiss provides dismissAnimated,
+                LocalPlayerSheetDismissThen provides dismissThen,
+                content = content,
+            )
+        }
+        if (closing) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = {},
+                    ),
+            )
         }
     }
 }

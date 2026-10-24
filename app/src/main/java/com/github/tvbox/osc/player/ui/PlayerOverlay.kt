@@ -58,7 +58,7 @@ fun PlayerOverlay(
                 sessionProvider = { size, downY ->
                     val sizeW = size.width
                     val sizeH = size.height
-                    if (sizeW <= 0 || sizeH <= 0) {
+                    if (state.overlayPanelOpen || sizeW <= 0 || sizeH <= 0) {
                         null
                     } else {
                         gestureSession(sizeW, sizeH, screenWidthPx, downY)
@@ -133,9 +133,6 @@ fun PlayerOverlay(
         }
         state.subtitleSearchSheet?.let { sheet ->
             SubtitleSearchSheet(sheet) { state.dismissSubtitleSearchSheet() }
-        }
-        state.castSheet?.let { sheet ->
-            CastSheet(sheet) { state.dismissCastSheet() }
         }
     }
 

@@ -157,6 +157,10 @@ class DetailActivity : BaseActivity(), PageHost {
         setIntent(intent)
         pendingEpisodeSync = false
         vm.onFullScreenToggleRequested(false, playbackFacts())
+        vm.dismissEpisodeSheet()
+        cancelCastWait()
+        playContainer?.endCastPrepare()
+        playContainer?.uiState()?.clearOverlays()
         playContainer?.hideTipOnUiThread()
         vm.pushTargetFromIntent(intent)
     }

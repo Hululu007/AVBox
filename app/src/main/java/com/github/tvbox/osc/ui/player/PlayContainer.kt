@@ -128,6 +128,8 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
         if (mController != null) mController.getUiState().setEpisodeSheetVisible(open)
     }
 
+    internal fun uiState(): PlayerUiState = mController.getUiState()
+
     fun interface OnQualitySelectedListener {
         fun onQualitySelected(position: Int)
     }
@@ -260,7 +262,10 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
         danmuLoadController?.destroy()
         danmuLoadController = null
         mVideoView = null
-        if (mController != null) mController.stopOther()
+        if (mController != null) {
+            mController.getUiState().clearOverlays()
+            mController.stopOther()
+        }
         mActivity = null
         LOG.i("echo-music destroy: hostDestroy done")
     }

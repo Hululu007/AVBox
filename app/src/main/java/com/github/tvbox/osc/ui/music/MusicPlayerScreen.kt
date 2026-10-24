@@ -274,9 +274,14 @@ fun MusicPlayerScreen(
             }
         }
 
-        state.castSheet?.let { sheet ->
-            CastSheet(sheet) { state.dismissCastSheet() }
-        }
+        MusicCastOverlay(state)
+    }
+}
+
+@Composable
+private fun MusicCastOverlay(state: MusicPlayerState) {
+    state.castSheet?.let { sheet ->
+        CastSheet(sheet) { state.dismissCastSheet() }
     }
 }
 
