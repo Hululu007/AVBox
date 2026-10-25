@@ -20,6 +20,7 @@ import org.json.JSONObject
 
 class PreloadCoordinator(
     private val sourceViewModel: SourceViewModel?,
+    private val onReplayReady: () -> Unit,
 ) {
 
     class Snapshot(
@@ -111,8 +112,9 @@ class PreloadCoordinator(
         }
         if (replayReadyPending) {
             replayReadyPending = false
-            if (snapshot.nextKey == preloadedKey) {
-                PreloadManagerHolder.replayReadyIfCompleted()
+            if (snapshot.nextKey == preloadedKey && PreloadManagerHolder.completedUrl.value != null) {
+                LOG.i("echo-preload-ready-replay")
+                onReplayReady()
             }
         }
         val cooldownRemain = bufferingCooldownUntil - System.currentTimeMillis()

@@ -80,7 +80,7 @@ Select-String -Path skill\history\features.md -Pattern '配置管理页' -Contex
 
 - **单一事实来源**：仍生效的规范写在 `avbox-mobile-ui-spec.md`；`history/` 只增不改，是过程与决策的存档。
 - **新内容往哪写**：规范/约束 → 活规范对应小节；实施过程、补丁、排查记录 → `history/`（改造步骤进 `steps.md`，功能迭代进 `features.md`）。不要把过程叙述堆进活规范。
-- **新增文档**：必须登记到上面「文档地图」，否则等于不存在。
+- **新增文档**：必须登记到上面「文档地图」，否则等于不存在（被 git 排除的是例外）。
 
 # 已知高危约束（动手前扫一眼，详见 spec）
 

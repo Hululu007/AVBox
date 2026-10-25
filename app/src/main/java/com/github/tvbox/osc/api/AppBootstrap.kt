@@ -19,7 +19,6 @@ import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.util.MD5
 import com.github.tvbox.osc.util.Probe
 import java.io.File
-import kotlin.coroutines.resume
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -27,7 +26,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -240,36 +238,12 @@ object AppBootstrap {
             System.currentTimeMillis() - cache.lastModified() < CONFIG_CACHE_TTL_MS
     }
 
-    private suspend fun awaitLoadConfig(forceFresh: Boolean): String? = suspendCancellableCoroutine { cont ->
-        ApiConfig.get().loadConfig(!forceFresh && useCachedConfig(), object : ApiConfig.LoadConfigCallback {
-            override fun success() {
-                if (cont.isActive) cont.resume(null)
-            }
-
-            override fun error(msg: String?) {
-                if (cont.isActive) cont.resume(msg ?: "-1")
-            }
-
-            override fun notice(msg: String?) {
-                toast(msg)
-            }
-        }, null)
+    private suspend fun awaitLoadConfig(forceFresh: Boolean): String? {
+        return ApiConfig.get().loadConfig(!forceFresh && useCachedConfig())
     }
 
-    private suspend fun awaitLoadJar(): String? = suspendCancellableCoroutine { cont ->
-        ApiConfig.get().loadJar(false, ApiConfig.get().getSpider(), object : ApiConfig.LoadConfigCallback {
-            override fun success() {
-                if (cont.isActive) cont.resume(null)
-            }
-
-            override fun error(msg: String?) {
-                if (cont.isActive) cont.resume(msg ?: "")
-            }
-
-            override fun notice(msg: String?) {
-                toast(msg)
-            }
-        })
+    private suspend fun awaitLoadJar(): String? {
+        return ApiConfig.get().loadJar(false, ApiConfig.get().getSpider())
     }
 
     private fun toast(msg: String?) {

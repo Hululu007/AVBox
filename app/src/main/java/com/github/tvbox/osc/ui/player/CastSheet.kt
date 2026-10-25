@@ -23,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -43,6 +44,8 @@ import com.github.tvbox.osc.player.state.CastSheetState
 import com.github.tvbox.osc.player.thirdparty.RemoteTVBox
 import com.github.tvbox.osc.ui.theme.AVBoxTheme
 import com.github.tvbox.osc.util.PermissionHelper
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun CastSheet(sheet: CastSheetState, onDismiss: () -> Unit) {
@@ -56,16 +59,12 @@ private fun CastSheetContent(sheet: CastSheetState, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val activity = remember(context) { context.findActivityOrNull() }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
-    val devices = remember { LinkedHashMap<String, CastDevice>() }
-    var deviceList by remember { mutableStateOf(emptyList<CastDevice>()) }
     var searchFinished by remember { mutableStateOf(false) }
     var scanToken by remember { mutableIntStateOf(1) }
     var canScan by remember { mutableStateOf(PermissionHelper.isLocalNetworkGranted(context)) }
-
-    val addDevice: (CastDevice) -> Unit = { device ->
-        devices[device.type.toString() + ":" + device.id] = device
-        deviceList = devices.values.toList()
-    }
+    val dlnaDevices by DLNACastManager.get().devices.collectAsState()
+    var tvboxDevices by remember { mutableStateOf(emptyList<CastDevice>()) }
+    val deviceList = remember(dlnaDevices, tvboxDevices) { (dlnaDevices + tvboxDevices).distinct() }
 
     val applyGranted: (Boolean) -> Unit = { granted ->
         canScan = granted
@@ -85,37 +84,30 @@ private fun CastSheetContent(sheet: CastSheetState, onDismiss: () -> Unit) {
         searchFinished = false
         val scanning = canScan
         if (!scanning) return@DisposableEffect onDispose { }
-        Thread {
-            RemoteTVBox.searchAvalible(object : RemoteTVBox.Callback() {
-                override fun found(viewHost: String?, end: Boolean) {
-                    mainHandler.post {
-                        if (!viewHost.isNullOrEmpty() && RemoteTVBox.getAvalible() == null) {
-                            RemoteTVBox.setAvalible(viewHost)
-                            PlayerHelper.invalidatePlayersExistInfo()
-                        }
-                        addDevice(CastDevice.tvbox(viewHost))
-                    }
-                }
-
-                override fun fail(all: Boolean, end: Boolean) {
-                }
-            })
-        }.start()
-        DLNACastManager.get().setDeviceListener(object : DLNACastManager.DeviceListener {
-            override fun onDeviceChanged() {
-                mainHandler.post {
-                    for (device in DLNACastManager.get().getDevices()) addDevice(device)
-                }
-            }
-        })
         DLNACastManager.get().init(context)
-        mainHandler.postDelayed({ DLNACastManager.get().search() }, 1000)
-        mainHandler.postDelayed({ searchFinished = true }, 15000)
         onDispose {
             mainHandler.removeCallbacksAndMessages(null)
-            DLNACastManager.get().setDeviceListener(null)
             DLNACastManager.get().release(context)
         }
+    }
+
+    LaunchedEffect(scanToken, canScan) {
+        if (!canScan) return@LaunchedEffect
+        launch {
+            delay(1000)
+            DLNACastManager.get().search()
+        }
+        launch {
+            RemoteTVBox.searchAvailable().collect { host ->
+                if (RemoteTVBox.getAvalible() == null) {
+                    RemoteTVBox.setAvalible(host)
+                    PlayerHelper.invalidatePlayersExistInfo()
+                }
+                tvboxDevices = tvboxDevices + CastDevice.tvbox(host)
+            }
+        }
+        delay(15000)
+        searchFinished = true
     }
 
     val castToDevice: (CastDevice, () -> Unit) -> Unit = { device, dismiss ->
@@ -248,8 +240,7 @@ private fun CastSheetContent(sheet: CastSheetState, onDismiss: () -> Unit) {
                     horizontalArrangement = Arrangement.spacedBy(playerDim(R.dimen.vs_20)),
                 ) {
                     SheetButton(text = stringResource(R.string.common_refresh), onClick = {
-                        devices.clear()
-                        deviceList = emptyList()
+                        tvboxDevices = emptyList()
                         if (PermissionHelper.isLocalNetworkGranted(context)) {
                             applyGranted(true)
                         } else {

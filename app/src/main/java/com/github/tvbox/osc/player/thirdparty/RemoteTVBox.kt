@@ -16,6 +16,12 @@ import java.util.HashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
+
 import okhttp3.Call
 import okhttp3.FormBody
 import okhttp3.OkHttpClient
@@ -66,55 +72,47 @@ object RemoteTVBox {
     }
 
     @JvmStatic
-    fun searchAvalible(callback: Callback) {
-        val localIp = AppContextHolder.context()?.let { LocalIPAddress.getLocalIPAddress(it) }.orEmpty()
-        val divisionIp = if (TextUtils.isEmpty(localIp)) -1 else localIp.lastIndexOf(".")
-        if (divisionIp <= 0) {
-            callback.fail(true, true)
-            return
-        }
-        val prefix = localIp.substring(0, divisionIp + 1)
-        val port = 9978
-        val finishedNum = AtomicInteger(0)
-        val foundNum = AtomicInteger(0)
-        val total = 254
-        for (i in 1..255) {
-            val ip = prefix + i
-            if (ip == localIp) {
-                continue
+    fun searchAvailable(): Flow<String> = callbackFlow {
+        launch(Dispatchers.IO) {
+            val localIp = AppContextHolder.context()?.let { LocalIPAddress.getLocalIPAddress(it) }.orEmpty()
+            val divisionIp = if (TextUtils.isEmpty(localIp)) -1 else localIp.lastIndexOf(".")
+            if (divisionIp <= 0) {
+                close()
+                return@launch
             }
-            val actionUrl = "http://" + ip + ":" + port + "/action"
-            val viewHost = ip + ":" + port
-            try {
-                post(actionUrl, null, object : okhttp3.Callback {
-                    override fun onFailure(call: Call, e: IOException) {
-                        notifySearchFail(callback, foundNum, finishedNum, total)
-                    }
-
-                    override fun onResponse(call: Call, response: Response) {
-                        try {
-                            val result = if (response.body == null) "" else response.body.string()
-                            val end = finishedNum.incrementAndGet() == total
-                            if ("ok".equals(result, ignoreCase = true)) {
-                                foundNum.incrementAndGet()
-                                callback.found(viewHost, end)
-                            } else {
-                                callback.fail(foundNum.get() == 0 && end, end)
-                            }
-                        } finally {
-                            response.close()
+            val prefix = localIp.substring(0, divisionIp + 1)
+            val port = 9978
+            val finishedNum = AtomicInteger(0)
+            val total = 254
+            for (i in 1..255) {
+                val ip = prefix + i
+                if (ip == localIp) {
+                    continue
+                }
+                val actionUrl = "http://" + ip + ":" + port + "/action"
+                val viewHost = ip + ":" + port
+                try {
+                    post(actionUrl, null, object : okhttp3.Callback {
+                        override fun onFailure(call: Call, e: IOException) {
+                            if (finishedNum.incrementAndGet() == total) close()
                         }
-                    }
-                })
-            } catch (e: Exception) {
-                notifySearchFail(callback, foundNum, finishedNum, total)
+
+                        override fun onResponse(call: Call, response: Response) {
+                            try {
+                                val result = if (response.body == null) "" else response.body.string()
+                                if ("ok".equals(result, ignoreCase = true)) trySend(viewHost)
+                            } finally {
+                                response.close()
+                            }
+                            if (finishedNum.incrementAndGet() == total) close()
+                        }
+                    })
+                } catch (e: Exception) {
+                    if (finishedNum.incrementAndGet() == total) close()
+                }
             }
         }
-    }
-
-    private fun notifySearchFail(callback: Callback, foundNum: AtomicInteger, finishedNum: AtomicInteger, total: Int) {
-        val end = finishedNum.incrementAndGet() == total
-        callback.fail(foundNum.get() == 0 && end, end)
+        awaitClose { }
     }
 
     @JvmStatic
@@ -172,11 +170,6 @@ object RemoteTVBox {
         return "content-type".equals(name, ignoreCase = true)
                 || "content-length".equals(name, ignoreCase = true)
                 || "host".equals(name, ignoreCase = true)
-    }
-
-    abstract class Callback {
-        abstract fun found(viewHost: String?, end: Boolean)
-        abstract fun fail(all: Boolean, end: Boolean)
     }
 
 }

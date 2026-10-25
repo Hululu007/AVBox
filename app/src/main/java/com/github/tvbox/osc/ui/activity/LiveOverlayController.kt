@@ -17,11 +17,21 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
 internal class LiveOverlayController(
     private val vm: LivePlayViewModel,
     private val host: Host,
     private val handler: Handler,
+    private val scope: CoroutineScope,
 ) {
+
+    private var timeJob: Job? = null
+    private var netSpeedJob: Job? = null
+    private var timeshiftJob: Job? = null
 
     internal interface Host {
         fun text(resId: Int, vararg args: Any): String
@@ -130,50 +140,45 @@ internal class LiveOverlayController(
     fun showTime() {
         val showTimeOn = KV.get(HawkConfig.LIVE_SHOW_TIME, false)
         vm.updateOverlay { it.copy(showTimeOn = showTimeOn) }
-        handler.removeCallbacks(updateTimeRun)
-        if (showTimeOn) handler.post(updateTimeRun)
-    }
-
-    private val updateTimeRun = object : Runnable {
-        override fun run() {
-            vm.updateOverlay { it.copy(timeText = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())) }
-            handler.postDelayed(this, 1000)
-        }
+        timeJob?.cancel()
+        timeJob = if (showTimeOn) scope.launch {
+            while (true) {
+                vm.updateOverlay { it.copy(timeText = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())) }
+                delay(1000)
+            }
+        } else null
     }
 
     fun showNetSpeed() {
         val showNetSpeedOn = KV.get(HawkConfig.LIVE_SHOW_NET_SPEED, false)
         vm.updateOverlay { it.copy(showNetSpeedOn = showNetSpeedOn) }
-        handler.removeCallbacks(updateNetSpeedRun)
-        if (showNetSpeedOn) handler.post(updateNetSpeedRun)
-    }
-
-    private val updateNetSpeedRun = object : Runnable {
-        override fun run() {
-            val videoView = host.videoView() ?: return
-            val speedText = PlayerHelper.getDisplaySpeed(videoView.tcpSpeed, true)
-            vm.updateOverlay { it.copy(netSpeedText = speedText) }
-            handler.postDelayed(this, 1000)
-        }
-    }
-
-    private val updateTimeshiftRun = object : Runnable {
-        override fun run() {
-            val videoView = host.videoView() ?: return
-            if (!vm.state.value.timeshift.isShiyi) return
-            val position = PlaybackTimes.safeTimeMs(videoView.currentPosition)
-            vm.updateTimeshift { it.copy(position = position) }
-            handler.postDelayed(this, 1000)
-        }
+        netSpeedJob?.cancel()
+        netSpeedJob = if (showNetSpeedOn) scope.launch {
+            while (true) {
+                val videoView = host.videoView() ?: return@launch
+                val speedText = PlayerHelper.getDisplaySpeed(videoView.tcpSpeed, true)
+                vm.updateOverlay { it.copy(netSpeedText = speedText) }
+                delay(1000)
+            }
+        } else null
     }
 
     fun startTimeshiftTicker() {
-        handler.removeCallbacks(updateTimeshiftRun)
-        handler.postDelayed(updateTimeshiftRun, 1000)
+        timeshiftJob?.cancel()
+        timeshiftJob = scope.launch {
+            while (true) {
+                delay(1000)
+                val videoView = host.videoView() ?: return@launch
+                if (!vm.state.value.timeshift.isShiyi) return@launch
+                val position = PlaybackTimes.safeTimeMs(videoView.currentPosition)
+                vm.updateTimeshift { it.copy(position = position) }
+            }
+        }
     }
 
     fun stopTimeshiftTicker() {
-        handler.removeCallbacks(updateTimeshiftRun)
+        timeshiftJob?.cancel()
+        timeshiftJob = null
     }
 
     fun onTimeshiftSeek(progress: Float) {

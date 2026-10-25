@@ -42,12 +42,19 @@ import me.jessyan.autosize.internal.CustomAdapt
 import java.util.HashMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+
+private const val CAST_URL_WAIT_MS = 5_000L
 
 class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, PlaybackHostApi, PlaybackPage {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    private var castWaitJob: Job? = null
 
     private val trackSelector: TrackSelectorDelegate = TrackSelectorDelegate(object : TrackSelectorDelegate.Host {
         override fun player(): MyVideoView? = mVideoView
@@ -363,6 +370,22 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
         scheduler.beginCastPrepare()
     }
 
+    fun beginCastWait() {
+        cancelCastWait()
+        castWaitJob = scope.launch {
+            withTimeoutOrNull(CAST_URL_WAIT_MS) {
+                scheduler.webPlayUrlFlow.first { !it.isNullOrEmpty() }
+            }
+            endCastPrepare()
+            showCast()
+        }
+    }
+
+    fun cancelCastWait() {
+        castWaitJob?.cancel()
+        castWaitJob = null
+    }
+
     fun clearCastAbort() {
         scheduler.clearCastAbort()
     }
@@ -610,8 +633,6 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
         val size = mVideoView?.videoSize ?: return false
         return size.size >= 2 && size[0] > 0 && size[1] > 0
     }
-
-    fun hasCastUrl(): Boolean = !TextUtils.isEmpty(scheduler.webPlayUrl())
 
     override fun setExitingPreview(exitingPreview: Boolean) {
         mExitingPreview = exitingPreview

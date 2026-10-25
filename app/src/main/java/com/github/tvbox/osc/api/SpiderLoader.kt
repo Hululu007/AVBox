@@ -33,6 +33,9 @@ import java.util.HashSet
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
+import kotlin.coroutines.resume
+import kotlinx.coroutines.suspendCancellableCoroutine
+
 class SpiderLoader {
 
     private fun str(resId: Int, vararg args: Any?): String {
@@ -71,8 +74,16 @@ class SpiderLoader {
         this.jarCache = jarCache
     }
 
-    fun loadJar(useCache: Boolean, spider: String, callback: ApiConfig.LoadConfigCallback) {
-        loadJar(useCache, spider, callback, 0, jarLoadEpoch.current())
+    suspend fun loadJar(useCache: Boolean, spider: String): String? = suspendCancellableCoroutine { cont ->
+        loadJar(useCache, spider, object : ApiConfig.LoadConfigCallback {
+            override fun success() {
+                cont.resume(null)
+            }
+
+            override fun error(msg: String?) {
+                cont.resume(msg)
+            }
+        }, 0, jarLoadEpoch.current())
     }
 
     fun invalidateJarLoads() {

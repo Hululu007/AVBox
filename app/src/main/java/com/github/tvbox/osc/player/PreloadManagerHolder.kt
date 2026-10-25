@@ -18,6 +18,9 @@ import com.github.tvbox.osc.player.engine.PlayerCache
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.KV
 import com.github.tvbox.osc.util.LOG
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.util.TreeMap
 
 object PreloadManagerHolder {
@@ -49,15 +52,9 @@ object PreloadManagerHolder {
                 size > 8
         }
 
-    @Volatile
-    private var sReadyListener: ReadyListener? = null
+    private val _completedUrl = MutableStateFlow<String?>(null)
 
-    @Volatile
-    private var sCompletedUrl: String? = null
-
-    fun interface ReadyListener {
-        fun onPreloadReady(url: String)
-    }
+    val completedUrl: StateFlow<String?> = _completedUrl.asStateFlow()
 
     @JvmStatic
     fun enabled(): Boolean = KV.get(HawkConfig.PRELOAD_NEXT_EPISODE, false)
@@ -81,7 +78,7 @@ object PreloadManagerHolder {
             }
             sStartPosMs = maxOf(0L, startPosMs)
             sRangeMs = preloadRangeMs()
-            sCompletedUrl = null
+            _completedUrl.value = null
             sPreloadHeaders = if (headers == null) emptyMap() else HashMap(headers)
             sPreloadTargets[url] = headersSignature(headers)
             val item = MediaSources.buildPreloadMediaItem(url, headers)
@@ -108,35 +105,6 @@ object PreloadManagerHolder {
         return preloadSignature == headersSignature(headers)
     }
 
-    @JvmStatic
-    fun setReadyListener(listener: ReadyListener?) {
-        sReadyListener = listener
-    }
-
-    @JvmStatic
-    fun replayReadyIfCompleted(): Boolean {
-        val url = sCompletedUrl
-        val listener = sReadyListener
-        if (url == null || listener == null) {
-            return false
-        }
-        LOG.i("echo-preload-ready-replay: " + url)
-        try {
-            listener.onPreloadReady(url)
-        } catch (th: Throwable) {
-            LOG.e("PreloadManagerHolder", "preload ready replay failed", th)
-        }
-        return true
-    }
-
-    @JvmStatic
-    @Synchronized
-    fun clearReadyListener(listener: ReadyListener?) {
-        if (listener != null && sReadyListener === listener) {
-            sReadyListener = null
-        }
-    }
-
     private fun preloadRangeMs(): Long {
         var seconds = PRELOAD_SECONDS_DEFAULT
         try {
@@ -151,7 +119,7 @@ object PreloadManagerHolder {
     @JvmStatic
     @Synchronized
     fun clearAll() {
-        sCompletedUrl = null
+        _completedUrl.value = null
         val manager = sManager ?: return
         if (sRegistry.isNotEmpty()) {
             LOG.i("echo-preload-clear: " + sRegistry.size)
@@ -179,7 +147,7 @@ object PreloadManagerHolder {
         sRegistry.clear()
         sPreloadTargets.clear()
         sPreloadHeaders = emptyMap()
-        sCompletedUrl = null
+        _completedUrl.value = null
     }
 
     private fun get(appContext: Context): DefaultPreloadManager {
@@ -198,16 +166,8 @@ object PreloadManagerHolder {
                 override fun onCompleted(mediaItem: MediaItem) {
                     val configuration = mediaItem.localConfiguration
                     val url = if (configuration == null) null else configuration.uri.toString()
-                    sCompletedUrl = url
-                    val listener = sReadyListener
-                    LOG.i("echo-preload-complete: " + url + ", listener=" + (listener != null))
-                    if (listener != null && url != null) {
-                        try {
-                            listener.onPreloadReady(url)
-                        } catch (th: Throwable) {
-                            LOG.e("PreloadManagerHolder", "preload ready callback failed", th)
-                        }
-                    }
+                    _completedUrl.value = url
+                    LOG.i("echo-preload-complete: " + url)
                 }
 
                 override fun onError(exception: PreloadException) {

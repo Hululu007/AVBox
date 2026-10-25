@@ -61,8 +61,6 @@ class LivePlayViewModelSettingsTest {
         override fun toast(msg: String) = Unit
 
         override fun isFinishing(): Boolean = false
-
-        override fun postToMain(action: Runnable) = Unit
     }
 
     private fun switchGroup(): LiveSettingGroup {

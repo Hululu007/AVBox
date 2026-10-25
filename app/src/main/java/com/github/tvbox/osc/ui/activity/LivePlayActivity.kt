@@ -19,6 +19,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.ui.base.BaseActivity
@@ -44,7 +45,10 @@ import java.text.SimpleDateFormat
 import java.util.ArrayList
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 
 class LivePlayActivity : BaseActivity() {
 
@@ -67,6 +71,8 @@ class LivePlayActivity : BaseActivity() {
     private var mVideoView: MyVideoView? = null
     private var liveController: ComposeLiveController? = null
     private val mHandler = Handler(Looper.getMainLooper())
+    @Volatile
+    private var sourceSwitchJob: Job? = null
     private val livePlayerManager = LivePlayerManager()
     private var exitingLivePlay = false
     private var nowday = Date()
@@ -122,7 +128,7 @@ class LivePlayActivity : BaseActivity() {
             epgController.cancelPending()
         }
 
-        override fun changeSourceTimeout(): Runnable = mConnectTimeoutChangeSourceRun
+        override fun cancelSourceSwitch() = cancelSourceSwitchCountdown()
 
         override fun isNeedInputPassword(groupIndex: Int): Boolean = this@LivePlayActivity.isNeedInputPassword(groupIndex)
 
@@ -161,9 +167,9 @@ class LivePlayActivity : BaseActivity() {
         enableTransparentEdgeToEdge()
         applyStatusBarAppearance()
         vm.attachSettingsSource(settingSource)
-        overlay = LiveOverlayController(vm, liveHost, mHandler)
+        overlay = LiveOverlayController(vm, liveHost, mHandler, lifecycleScope)
         catchupController = LiveCatchupController(vm, liveHost, overlay)
-        channelSourceLoader = LiveChannelSourceLoader(vm, liveHost, overlay, mHandler)
+        channelSourceLoader = LiveChannelSourceLoader(vm, liveHost, overlay)
         syncLandscapeNow()
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
@@ -297,7 +303,7 @@ class LivePlayActivity : BaseActivity() {
     }
 
     private fun handleAutoSourceSwitch(state: PlayState) {
-        mHandler.removeCallbacks(mConnectTimeoutChangeSourceRun)
+        cancelSourceSwitchCountdown()
         when (state) {
             PlayState.IDLE, PlayState.PAUSED -> {}
             PlayState.PREPARED, PlayState.BUFFERED, PlayState.PLAYING -> {
@@ -306,13 +312,10 @@ class LivePlayActivity : BaseActivity() {
             }
             PlayState.ERROR, PlayState.COMPLETED -> {
                 overlay.hideSwitchChannelSnapshot()
-                mHandler.postDelayed(mConnectTimeoutChangeSourceRun, CONNECT_TIMEOUT_SWITCH_DELAY)
+                startSourceSwitchCountdown(CONNECT_TIMEOUT_SWITCH_DELAY)
             }
             PlayState.PREPARING, PlayState.BUFFERING -> {
-                mHandler.postDelayed(
-                    mConnectTimeoutChangeSourceRun,
-                    (KV.get(HawkConfig.LIVE_CONNECT_TIMEOUT, 1) + 1) * 5000L,
-                )
+                startSourceSwitchCountdown((KV.get(HawkConfig.LIVE_CONNECT_TIMEOUT, 1) + 1) * 5000L)
             }
             else -> LOG.i("echo-Unexpected live_play state: $state")
         }
@@ -450,15 +453,24 @@ class LivePlayActivity : BaseActivity() {
         playChannel(currentChannelGroupIndex, currentLiveChannelIndex, true)
     }
 
-    internal val mConnectTimeoutChangeSourceRun = Runnable {
-        val attempts = vm.bumpSourceSwitchAttempts()
-        if (currentLiveChannelItem?.sourceNum == attempts) {
-            vm.resetSourceSwitchAttempts()
-            val next = getNextChannel(if (KV.get(HawkConfig.LIVE_CHANNEL_REVERSE, false)) -1 else 1)
-            playChannel(next[0], next[1], false)
-        } else {
-            playNextSource()
+    private fun startSourceSwitchCountdown(delayMs: Long) {
+        sourceSwitchJob?.cancel()
+        sourceSwitchJob = lifecycleScope.launch {
+            delay(delayMs)
+            val attempts = vm.bumpSourceSwitchAttempts()
+            if (currentLiveChannelItem?.sourceNum == attempts) {
+                vm.resetSourceSwitchAttempts()
+                val next = getNextChannel(if (KV.get(HawkConfig.LIVE_CHANNEL_REVERSE, false)) -1 else 1)
+                playChannel(next[0], next[1], false)
+            } else {
+                playNextSource()
+            }
         }
+    }
+
+    private fun cancelSourceSwitchCountdown() {
+        sourceSwitchJob?.cancel()
+        sourceSwitchJob = null
     }
 
     private fun getNextChannel(direction: Int): IntArray {
@@ -708,10 +720,6 @@ class LivePlayActivity : BaseActivity() {
         }
 
         override fun isFinishing(): Boolean = this@LivePlayActivity.isFinishing
-
-        override fun postToMain(action: Runnable) {
-            mHandler.post(action)
-        }
     }
 
     private fun liveWebHeader(): HashMap<String, String>? {

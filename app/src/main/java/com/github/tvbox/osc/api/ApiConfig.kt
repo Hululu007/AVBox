@@ -1,6 +1,5 @@
 package com.github.tvbox.osc.api
 
-import android.app.Activity
 import android.net.Uri
 import android.text.TextUtils
 import android.util.Base64
@@ -106,12 +105,12 @@ class ApiConfig private constructor() {
         SearchHelper.liveSourcesProvider = { getSourceBeanList() }
     }
 
-    fun loadConfig(useCache: Boolean, callback: LoadConfigCallback, activity: Activity?) {
-        configLoader.loadConfig(useCache, callback, activity)
+    suspend fun loadConfig(useCache: Boolean): String? {
+        return configLoader.loadConfig(useCache)
     }
 
-    fun loadLiveConfig(useCache: Boolean, callback: LoadConfigCallback) {
-        configLoader.loadLiveConfig(useCache, callback)
+    suspend fun loadLiveConfig(useCache: Boolean): String? {
+        return configLoader.loadLiveConfig(useCache)
     }
 
     fun refreshConfigIfChanged(onChanged: (String, String) -> Unit) {
@@ -139,8 +138,8 @@ class ApiConfig private constructor() {
         loadedLiveConfigUrl = ""
     }
 
-    fun loadJar(useCache: Boolean, spider: String?, callback: LoadConfigCallback) {
-        spiderLoader.loadJar(useCache, requireNotNull(spider) { "spider url missing" }, callback)
+    suspend fun loadJar(useCache: Boolean, spider: String?): String? {
+        return spiderLoader.loadJar(useCache, requireNotNull(spider) { "spider url missing" })
     }
 
     fun clearLiveConfigResult() {
@@ -789,7 +788,6 @@ class ApiConfig private constructor() {
         fun success()
 
         fun error(msg: String?)
-        fun notice(msg: String?)
     }
 
     interface FastParseCallback {

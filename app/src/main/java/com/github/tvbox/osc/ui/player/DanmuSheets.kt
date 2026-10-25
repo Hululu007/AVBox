@@ -1,7 +1,5 @@
 package com.github.tvbox.osc.ui.player
 
-import android.os.Handler
-import android.os.Looper
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,6 +33,7 @@ import com.github.tvbox.osc.bean.DanmuSearchResult
 import com.github.tvbox.osc.player.state.DanmuSearchSheetState
 import com.github.tvbox.osc.player.state.DanmuSettingSheetState
 import com.github.tvbox.osc.util.DanmuHelper
+import kotlinx.coroutines.launch
 
 private val DANMU_SPEEDS = listOf(2.4f, 1.8f, 1.5f, 1.0f)
 
@@ -172,7 +172,7 @@ fun DanmuSettingSheet(sheet: DanmuSettingSheetState, onDismiss: () -> Unit) {
 @Composable
 fun DanmuSearchSheet(sheet: DanmuSearchSheetState, onDismiss: () -> Unit) {
     val context = LocalContext.current
-    val mainHandler = remember { Handler(Looper.getMainLooper()) }
+    val scope = rememberCoroutineScope()
     var word by remember { mutableStateOf(sheet.searchWord) }
     var results by remember { mutableStateOf(emptyList<DanmuSearchResult>()) }
     var loading by remember { mutableStateOf(false) }
@@ -184,25 +184,21 @@ fun DanmuSearchSheet(sheet: DanmuSearchSheetState, onDismiss: () -> Unit) {
         } else {
             loading = true
             results = emptyList()
-            DanmakuApi.searchList(w, sheet.episode, object : DanmakuApi.SearchListCallback {
-                override fun onSuccess(list: List<DanmuSearchResult>?) {
-                    mainHandler.post {
-                        loading = false
-                        results = list ?: emptyList()
-                        if (list.isNullOrEmpty()) {
-                            Toast.makeText(context, context.getString(R.string.toast_danmu_not_found), Toast.LENGTH_SHORT).show()
-                        }
-                    }
+            scope.launch {
+                val list = try {
+                    DanmakuApi.searchList(w, sheet.episode)
+                } catch (e: DanmakuApi.DanmakuException) {
+                    loading = false
+                    results = emptyList()
+                    Toast.makeText(context, e.message ?: "", Toast.LENGTH_SHORT).show()
+                    return@launch
                 }
-
-                override fun onError(message: String?) {
-                    mainHandler.post {
-                        loading = false
-                        results = emptyList()
-                        Toast.makeText(context, message ?: "", Toast.LENGTH_SHORT).show()
-                    }
+                loading = false
+                results = list
+                if (list.isEmpty()) {
+                    Toast.makeText(context, context.getString(R.string.toast_danmu_not_found), Toast.LENGTH_SHORT).show()
                 }
-            })
+            }
         }
     }
 
@@ -249,21 +245,17 @@ fun DanmuSearchSheet(sheet: DanmuSearchSheetState, onDismiss: () -> Unit) {
                             itemsIndexed(results) { _, item ->
                                 SheetButton(text = item.name, onClick = {
                                     loading = true
-                                    DanmakuApi.loadSearchResult(item, object : DanmakuApi.SearchResultCallback {
-                                        override fun onSuccess(danmu: String?) {
-                                            mainHandler.post {
-                                                dismiss()
-                                                if (danmu != null) sheet.onLoad(danmu)
-                                            }
+                                    scope.launch {
+                                        val danmu = try {
+                                            DanmakuApi.loadSearchResult(item)
+                                        } catch (e: DanmakuApi.DanmakuException) {
+                                            loading = false
+                                            Toast.makeText(context, e.message ?: "", Toast.LENGTH_SHORT).show()
+                                            return@launch
                                         }
-
-                                        override fun onError(message: String?) {
-                                            mainHandler.post {
-                                                loading = false
-                                                Toast.makeText(context, message ?: "", Toast.LENGTH_SHORT).show()
-                                            }
-                                        }
-                                    })
+                                        dismiss()
+                                        sheet.onLoad(danmu)
+                                    }
                                 })
                             }
                         }

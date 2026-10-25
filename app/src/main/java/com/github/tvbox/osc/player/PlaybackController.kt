@@ -406,7 +406,7 @@ class PlaybackController {
         override fun videoCodecInfo(): VideoCodecInfo =
             this@PlaybackController.view?.videoCodecInfo() ?: VideoCodecInfo()
 
-        override fun webPlayUrl(): String? = this@PlaybackController.webPlayUrl
+        override fun webPlayUrl(): String? = this@PlaybackController.webPlayUrl()
 
         override fun webHeaderMap(): HashMap<String, String>? = this@PlaybackController.webHeaderMap
 
@@ -811,7 +811,10 @@ class PlaybackController {
         scope.launch { retry.handleSwitchLinePlayTimeout() }
     }
 
-    private var webPlayUrl: String? = null
+    private val _webPlayUrl = MutableStateFlow<String?>(null)
+
+    val webPlayUrlFlow: StateFlow<String?> = _webPlayUrl.asStateFlow()
+
     private var webHeaderMap: HashMap<String, String>? = null
     private var webUserAgent: String? = null
 
@@ -921,10 +924,10 @@ class PlaybackController {
         music.setCurrentArtwork(artwork)
     }
 
-    fun webPlayUrl(): String? = webPlayUrl
+    fun webPlayUrl(): String? = _webPlayUrl.value
 
     fun setWebPlayUrl(webPlayUrl: String?) {
-        this.webPlayUrl = webPlayUrl
+        _webPlayUrl.value = webPlayUrl
     }
 
     fun webHeaderMap(): HashMap<String, String>? = webHeaderMap

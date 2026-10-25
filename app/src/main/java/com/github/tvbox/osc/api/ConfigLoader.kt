@@ -1,6 +1,5 @@
 package com.github.tvbox.osc.api
 
-import android.app.Activity
 import android.net.Uri
 import android.os.Environment
 import android.text.TextUtils
@@ -31,12 +30,25 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.function.Supplier
 
+import kotlin.coroutines.resume
+import kotlinx.coroutines.suspendCancellableCoroutine
+
 class ConfigLoader(private val owner: ApiConfig) {
     private val configLoadExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private val activeFetches = ConcurrentHashMap<String, okhttp3.Call>()
 
-    fun loadConfig(useCache: Boolean, callback: ApiConfig.LoadConfigCallback, activity: Activity?) {
-        configLoadExecutor.execute(Runnable { runLoadConfig(useCache, callback, activity) })
+    suspend fun loadConfig(useCache: Boolean): String? = suspendCancellableCoroutine { cont ->
+        configLoadExecutor.execute(Runnable {
+            runLoadConfig(useCache, object : ApiConfig.LoadConfigCallback {
+                override fun success() {
+                    cont.resume(null)
+                }
+
+                override fun error(msg: String?) {
+                    cont.resume(msg)
+                }
+            })
+        })
     }
 
     fun cancelVodFetches() {
@@ -52,18 +64,30 @@ class ConfigLoader(private val owner: ApiConfig) {
 
     private fun isStaleFetch(apiUrl: String): Boolean = apiUrl != KV.get(HawkConfig.API_URL, "")
 
-    private fun runLoadConfig(useCache: Boolean, callback: ApiConfig.LoadConfigCallback, activity: Activity?) {
-        val apiUrl = KV.get(HawkConfig.API_URL, "")
+    private inline fun <T> guarded(callback: ApiConfig.LoadConfigCallback, messageRes: Int, block: () -> T): T? {
+        return try {
+            block()
+        } catch (th: Throwable) {
+            LOG.e("ApiConfig", th)
+            callback.error(ApiConfig.str(messageRes).ifEmpty { th.toString() })
+            null
+        }
+    }
+
+    private fun runLoadConfig(useCache: Boolean, callback: ApiConfig.LoadConfigCallback) {
+        val apiUrl = guarded(callback, R.string.toast_config_parse_failed) { KV.get(HawkConfig.API_URL, "") } ?: return
         if (apiUrl.isEmpty()) {
             callback.error("-1")
             return
         }
-        val cache = File(requireNotNull(App.getInstance()) { "app instance not ready" }.getFilesDir().getAbsolutePath() + "/" + MD5.encode(apiUrl))
+        val cache = guarded(callback, R.string.toast_config_parse_failed) {
+            File(requireNotNull(App.getInstance()) { "app instance not ready" }.getFilesDir().getAbsolutePath() + "/" + MD5.encode(apiUrl))
+        } ?: return
         if (useCache && cache.exists() && isRemoteSource(apiUrl)) {
             try {
                 val json = readConfigFile(cache)
                 if (switchApiCollectionIfNeeded(apiUrl, json)) {
-                    runLoadConfig(false, callback, activity)
+                    runLoadConfig(false, callback)
                     return
                 }
                 clearApiLinesIfUnmatched(apiUrl)
@@ -74,7 +98,9 @@ class ConfigLoader(private val owner: ApiConfig) {
                 LOG.e("ApiConfig", th)
             }
         }
-        val resolved = ConfigParser.configUrl(apiUrl, Supplier { ApiConfig.localFileBase() })
+        val resolved = guarded(callback, R.string.toast_config_parse_failed) {
+            ConfigParser.configUrl(apiUrl, Supplier { ApiConfig.localFileBase() })
+        } ?: return
         val configUrl = resolved.url
         val configKey = resolved.key
 
@@ -88,7 +114,7 @@ class ConfigLoader(private val owner: ApiConfig) {
                 try {
                     if (switchApiCollectionIfNeeded(apiUrl, body)) {
                         FileUtils.saveCache(cache, body)
-                        runLoadConfig(false, callback, activity)
+                        runLoadConfig(false, callback)
                         return
                     }
                     clearApiLinesIfUnmatched(apiUrl)
@@ -119,7 +145,7 @@ class ConfigLoader(private val owner: ApiConfig) {
                     try {
                         val json = readConfigFile(cache)
                         if (switchApiCollectionIfNeeded(apiUrl, json)) {
-                            runLoadConfig(false, callback, activity)
+                            runLoadConfig(false, callback)
                             return
                         }
                         clearApiLinesIfUnmatched(apiUrl)
@@ -245,22 +271,36 @@ class ConfigLoader(private val owner: ApiConfig) {
         FileUtils.saveCache(File(app.getFilesDir().getAbsolutePath() + "/" + MD5.encode(apiUrl)), body)
     }
 
-    fun loadLiveConfig(useCache: Boolean, callback: ApiConfig.LoadConfigCallback) {
-        configLoadExecutor.execute(Runnable { runLoadLiveConfig(useCache, callback) })
+    suspend fun loadLiveConfig(useCache: Boolean): String? = suspendCancellableCoroutine { cont ->
+        configLoadExecutor.execute(Runnable {
+            runLoadLiveConfig(useCache, object : ApiConfig.LoadConfigCallback {
+                override fun success() {
+                    cont.resume(null)
+                }
+
+                override fun error(msg: String?) {
+                    cont.resume(msg)
+                }
+            })
+        })
     }
 
     private fun runLoadLiveConfig(useCache: Boolean, callback: ApiConfig.LoadConfigCallback) {
-        val apiUrl = ApiConfig.getEffectiveLiveUrl()
+        val apiUrl = guarded(callback, R.string.toast_live_config_parse_failed) { ApiConfig.getEffectiveLiveUrl() } ?: return
         if (apiUrl.isEmpty()) {
             LOG.e("echo-live-config-fail url=empty")
             callback.error("-1")
             return
         }
         val liveApiUrl = apiUrl
-        val resolvedLive = ConfigParser.configUrl(liveApiUrl, Supplier { ApiConfig.localFileBase() })
+        val resolvedLive = guarded(callback, R.string.toast_live_config_parse_failed) {
+            ConfigParser.configUrl(liveApiUrl, Supplier { ApiConfig.localFileBase() })
+        } ?: return
         val liveApiConfigUrl = resolvedLive.url
         val liveConfigKey = resolvedLive.key
-        val live_cache = File(requireNotNull(App.getInstance()) { "app instance not ready" }.getFilesDir().getAbsolutePath() + "/" + MD5.encode(liveApiUrl))
+        val live_cache = guarded(callback, R.string.toast_live_config_parse_failed) {
+            File(requireNotNull(App.getInstance()) { "app instance not ready" }.getFilesDir().getAbsolutePath() + "/" + MD5.encode(liveApiUrl))
+        } ?: return
         LOG.i("echo-load live config " + liveApiUrl)
         if (useCache && live_cache.exists() && isRemoteSource(liveApiUrl)) {
             try {

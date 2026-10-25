@@ -22,28 +22,31 @@ class PlaybackPreload(private val host: Host) {
     }
 
     private var preloadCoordinator: PreloadCoordinator? = null
-    private var preloadReadyListener: PreloadManagerHolder.ReadyListener? = null
     private var collectJob: Job? = null
+    private var readyJob: Job? = null
 
     fun init() {
         if (host.sourceViewModel() == null) host.ensureFetch()
         val vm = host.sourceViewModel()
-        preloadCoordinator = PreloadCoordinator(vm)
+        preloadCoordinator = PreloadCoordinator(vm) { showReadyTip() }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         if (vm != null) {
-            collectJob = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate).launch {
+            collectJob = scope.launch {
                 vm.preloadResult.flow.collect { info -> preloadCoordinator?.handlePreloadResult(info) }
             }
         }
-        val listener = PreloadManagerHolder.ReadyListener { _ ->
-            val view = host.view()
-            if (view == null || !view.isPageAlive()) return@ReadyListener
-            view.runOnUi {
-                val current = host.view()
-                current?.showPreloadReadyTip()
-            }
+        readyJob = scope.launch {
+            PreloadManagerHolder.completedUrl.collect { url -> if (url != null) showReadyTip() }
         }
-        preloadReadyListener = listener
-        PreloadManagerHolder.setReadyListener(listener)
+    }
+
+    private fun showReadyTip() {
+        val view = host.view()
+        if (view == null || !view.isPageAlive()) return
+        view.runOnUi {
+            val current = host.view()
+            current?.showPreloadReadyTip()
+        }
     }
 
     fun onPlayerState(playState: PlayState) {
@@ -73,10 +76,10 @@ class PlaybackPreload(private val host: Host) {
     }
 
     fun destroy() {
-        PreloadManagerHolder.clearReadyListener(preloadReadyListener)
-        preloadReadyListener = null
         collectJob?.cancel()
         collectJob = null
+        readyJob?.cancel()
+        readyJob = null
         preloadCoordinator?.destroy()
         preloadCoordinator = null
     }

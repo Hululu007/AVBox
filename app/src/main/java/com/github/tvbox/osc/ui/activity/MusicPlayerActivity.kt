@@ -42,6 +42,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.github.tvbox.osc.player.host.EngineTextureRenderViewFactory
 
@@ -70,8 +71,8 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
     private val dataViewModel: MusicPlayerViewModel by viewModels()
 
     private val ui: MusicPlayerState get() = dataViewModel.ui
-    private val main = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private var positionJob: Job? = null
 
     private lateinit var vod: VodInfo
     private var sourceKey = ""
@@ -140,7 +141,7 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
         syncLyric()
         controller.setMusicAudioOnly(true)
         ready = true
-        main.post(positionTick)
+        startPositionTick()
     }
 
     override fun renderSlot(): ViewGroup = renderSlot
@@ -150,7 +151,7 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
     override fun isAudioOnlyPage(): Boolean = true
 
     override fun onServiceStopped() {
-        main.removeCallbacksAndMessages(null)
+        stopPositionTick()
         dataViewModel.clearTip()
     }
 
@@ -160,21 +161,20 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
         LOG.i("echo-music page onResume lifecyclePaused=$lifecyclePaused playing=${player.isPlaying} audioOnly=${controller.isConfirmedAudioOnly()}")
         controller.setMusicAudioOnly(true)
         host.hostResume()
-        main.removeCallbacks(positionTick)
-        main.post(positionTick)
+        startPositionTick()
     }
 
     override fun onPause() {
         if (ready) {
             LOG.i("echo-music page onPause lifecyclePaused=$lifecyclePaused playing=${player.isPlaying} audioOnly=${controller.isConfirmedAudioOnly()}")
             host.hostPause()
-            main.removeCallbacks(positionTick)
+            stopPositionTick()
         }
         super.onPause()
     }
 
     override fun onDestroy() {
-        main.removeCallbacksAndMessages(null)
+        stopPositionTick()
         scope.cancel()
         lyricJob = null
         if (ready || engine.attachedPage() === this) {
@@ -190,17 +190,25 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
         super.onDestroy()
     }
 
-    private val positionTick = object : Runnable {
-        override fun run() {
-            val state = player.playState
-            dataViewModel.applyTick(
-                positionMs = player.currentPosition.coerceAtLeast(0L),
-                durationMs = player.duration.coerceAtLeast(0L),
-                buffering = state == PlayState.PREPARING || state == PlayState.BUFFERING,
-                playing = player.isPlaying,
-            )
-            main.postDelayed(this, POSITION_TICK_MS)
+    private fun startPositionTick() {
+        positionJob?.cancel()
+        positionJob = scope.launch {
+            while (true) {
+                val state = player.playState
+                dataViewModel.applyTick(
+                    positionMs = player.currentPosition.coerceAtLeast(0L),
+                    durationMs = player.duration.coerceAtLeast(0L),
+                    buffering = state == PlayState.PREPARING || state == PlayState.BUFFERING,
+                    playing = player.isPlaying,
+                )
+                delay(POSITION_TICK_MS)
+            }
         }
+    }
+
+    private fun stopPositionTick() {
+        positionJob?.cancel()
+        positionJob = null
     }
 
     private fun onPlayStateChanged(playState: PlayState) {

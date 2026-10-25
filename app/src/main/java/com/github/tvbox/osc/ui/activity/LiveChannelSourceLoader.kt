@@ -1,6 +1,6 @@
 package com.github.tvbox.osc.ui.activity
 
-import android.os.Handler
+import androidx.lifecycle.viewModelScope
 import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.bean.LiveChannelGroup
 import com.github.tvbox.osc.bean.LiveChannelItem
@@ -8,13 +8,13 @@ import com.github.tvbox.osc.player.MyVideoView
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.KV
 import com.github.tvbox.osc.util.LOG
+import kotlinx.coroutines.launch
 import java.util.ArrayList
 
 internal class LiveChannelSourceLoader(
     private val vm: LivePlayViewModel,
     private val host: Host,
     private val overlay: LiveOverlayController,
-    private val handler: Handler,
 ) {
 
     internal interface Host {
@@ -36,7 +36,7 @@ internal class LiveChannelSourceLoader(
 
         fun initPlayer(view: MyVideoView)
 
-        fun changeSourceTimeout(): Runnable
+        fun cancelSourceSwitch()
 
         fun toast(msg: String)
     }
@@ -88,30 +88,18 @@ internal class LiveChannelSourceLoader(
         if (loadingLiveConfigOnEnter) return
         loadingLiveConfigOnEnter = true
         vm.updateFrame { it.copy(pageState = PageState.LOADING) }
-        ApiConfig.get().loadLiveConfig(true, object : ApiConfig.LoadConfigCallback {
-            override fun success() {
-                handler.post {
-                    loadingLiveConfigOnEnter = false
-                    initLiveChannelList()
-                    host.initLiveSettingGroupList()
-                    host.onSettingsInputsChanged()
-                }
+        vm.viewModelScope.launch {
+            val error = ApiConfig.get().loadLiveConfig(true)
+            loadingLiveConfigOnEnter = false
+            if (error == null) {
+                initLiveChannelList()
+                host.initLiveSettingGroupList()
+                host.onSettingsInputsChanged()
+            } else {
+                LOG.e("echo-live-config-error msg=$error")
+                setEmptyLiveChannelList()
             }
-
-            override fun error(msg: String?) {
-                handler.post {
-                    loadingLiveConfigOnEnter = false
-                    LOG.e("echo-live-config-error msg=$msg")
-                    setEmptyLiveChannelList()
-                }
-            }
-
-            override fun notice(msg: String?) {
-                handler.post {
-                    host.toast(msg.orEmpty())
-                }
-            }
-        })
+        }
     }
 
     private fun loadProxyLives(url: String) {
@@ -180,7 +168,7 @@ internal class LiveChannelSourceLoader(
         vm.updateEpg { it.copy(lookBackIndex = -1) }
         vm.resetSourceSwitchAttempts()
         vm.updateChannelList { it.copy(confirmedPasswordGroups = emptySet(), expandedGroups = emptySet()) }
-        handler.removeCallbacks(host.changeSourceTimeout())
+        host.cancelSourceSwitch()
         host.cancelEpgPending()
         overlay.hideSwitchChannelSnapshot()
         vm.updateTimeshift { it.copy(isBackState = false) }
@@ -206,7 +194,7 @@ internal class LiveChannelSourceLoader(
         vm.updateSourceIndex(-1)
         vm.onChannelGroupsChanged(emptyList())
         ApiConfig.get().clearLiveChannelGroups()
-        handler.removeCallbacks(host.changeSourceTimeout())
+        host.cancelSourceSwitch()
         host.cancelEpgPending()
         overlay.hideSwitchChannelSnapshot()
         if (releasePlayer) host.releasePlayerKernel()

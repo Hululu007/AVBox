@@ -2,6 +2,7 @@ package com.github.tvbox.osc.ui.activity
 
 import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.api.ConfigRepository
@@ -22,6 +23,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 internal enum class PageState { LOADING, EMPTY, READY }
 
@@ -393,8 +395,6 @@ internal class LivePlayViewModel : ViewModel() {
         fun toast(msg: String)
 
         fun isFinishing(): Boolean
-
-        fun postToMain(action: Runnable)
     }
 
     private var liveConfigRequestId = 0
@@ -466,31 +466,18 @@ internal class LivePlayViewModel : ViewModel() {
                 }
                 ConfigRepository.switchLiveSource(target)
                 ApiConfig.get().refreshLiveApiHistoryItems()
-                ApiConfig.get().loadLiveConfig(false, object : ApiConfig.LoadConfigCallback {
-                    override fun success() {
-                        host.postToMain(Runnable {
-                            if (requestId != liveConfigRequestId || host.isFinishing()) return@Runnable
-                            host.refreshChannelListAndPlay(configChannelName, configSourceIndex)
-                        })
+                viewModelScope.launch {
+                    val error = ApiConfig.get().loadLiveConfig(false)
+                    if (requestId != liveConfigRequestId || host.isFinishing()) return@launch
+                    if (error == null) {
+                        host.refreshChannelListAndPlay(configChannelName, configSourceIndex)
+                    } else {
+                        host.releasePlayerKernel()
+                        ApiConfig.get().refreshLiveApiHistoryItems()
+                        host.setEmptyChannelList(false)
+                        host.toast(error)
                     }
-
-                    override fun error(msg: String?) {
-                        host.postToMain(Runnable {
-                            if (requestId != liveConfigRequestId || host.isFinishing()) return@Runnable
-                            host.releasePlayerKernel()
-                            ApiConfig.get().refreshLiveApiHistoryItems()
-                            host.setEmptyChannelList(false)
-                            host.toast(msg ?: "")
-                        })
-                    }
-
-                    override fun notice(msg: String?) {
-                        host.postToMain(Runnable {
-                            if (requestId != liveConfigRequestId || host.isFinishing()) return@Runnable
-                            host.toast(msg ?: "")
-                        })
-                    }
-                })
+                }
             }
         }
         refreshSettingsSnapshot()

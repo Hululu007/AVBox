@@ -315,7 +315,6 @@ class DetailViewModel : ViewModel(), TmdbPosterCache {
     val pendingPicture: String get() = vodPicture
 
     private val sourceViewModel = SourceViewModel()
-    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val navStack = DetailNavStack()
     private var searchJob: Job? = null
     private var detailBuildToken = 0
@@ -323,6 +322,7 @@ class DetailViewModel : ViewModel(), TmdbPosterCache {
     private var detailRequestToken = 0
 
     private var detailRetryTarget: String? = null
+    private var detailRetryJob: Job? = null
 
     private val fallbackCandidates = ArrayList<Movie.Video>()
     private val candidateKeys = HashSet<String>()
@@ -338,6 +338,7 @@ class DetailViewModel : ViewModel(), TmdbPosterCache {
     private var fallbackEpisode: VodInfo.VodSeries? = null
     private var fallbackEpisodeIndex = -1
     private var detailTimeoutScheduled = false
+    private var detailTimeoutJob: Job? = null
 
     private class SwitchSnapshot(
         val vodInfo: VodInfo,
@@ -593,9 +594,11 @@ class DetailViewModel : ViewModel(), TmdbPosterCache {
         if (detailRetryTarget == target) return false
         detailRetryTarget = target
         LOG.i("echo-detail-retry key=$key id=$id reason=$reason")
-        mainHandler.postDelayed({
+        detailRetryJob?.cancel()
+        detailRetryJob = viewModelScope.launch {
+            delay(DETAIL_RETRY_DELAY_MS)
             if (sourceKey == key && vodId == id) loadDetail(id, key)
-        }, DETAIL_RETRY_DELAY_MS)
+        }
         return true
     }
 
@@ -983,19 +986,23 @@ class DetailViewModel : ViewModel(), TmdbPosterCache {
     private fun scheduleDetailTimeout() {
         if (detailTimeoutScheduled) return
         detailTimeoutScheduled = true
-        mainHandler.postDelayed({
+        detailTimeoutJob = viewModelScope.launch {
+            delay(DETAIL_FALLBACK_DETAIL_TIMEOUT_MS)
             detailTimeoutScheduled = false
             if (fallbackLoadingCandidate) {
                 fallbackLoadingCandidate = false
                 sourceViewModel.cancelDetail()
                 loadNextFallbackCandidate()
             }
-        }, DETAIL_FALLBACK_DETAIL_TIMEOUT_MS)
+        }
     }
 
     private fun cancelDetailTimeout() {
         detailTimeoutScheduled = false
-        mainHandler.removeCallbacksAndMessages(null)
+        detailTimeoutJob?.cancel()
+        detailTimeoutJob = null
+        detailRetryJob?.cancel()
+        detailRetryJob = null
     }
 
     private fun captureFallbackEpisode() {

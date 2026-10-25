@@ -38,8 +38,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.launch
 
 private const val SYSBAR_APPEARANCE_REASSERT_DELAY_MS = 400L
-private const val CAST_URL_POLL_MS = 250L
-private const val CAST_URL_WAIT_ATTEMPTS = 20
 
 class DetailActivity : BaseActivity(), PageHost {
 
@@ -52,25 +50,6 @@ class DetailActivity : BaseActivity(), PageHost {
     private var appliedFullscreen = false
     private var pendingEpisodeSync = false
     private var videoSizeWatchArmed = false
-    private var castWaitAttempts = 0
-
-    private val castWaitRunnable = object : Runnable {
-        override fun run() {
-            val container = playContainer ?: return
-            if (container.hasCastUrl()) {
-                container.endCastPrepare()
-                container.showCast()
-                return
-            }
-            if (castWaitAttempts >= CAST_URL_WAIT_ATTEMPTS) {
-                container.endCastPrepare()
-                container.showCast()
-                return
-            }
-            castWaitAttempts += 1
-            window.decorView.postDelayed(this, CAST_URL_POLL_MS)
-        }
-    }
 
     private val localSubtitlePicker = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -158,7 +137,7 @@ class DetailActivity : BaseActivity(), PageHost {
         pendingEpisodeSync = false
         vm.onFullScreenToggleRequested(false, playbackFacts())
         vm.dismissEpisodeSheet()
-        cancelCastWait()
+        playContainer?.cancelCastWait()
         playContainer?.endCastPrepare()
         playContainer?.uiState()?.clearOverlays()
         playContainer?.hideTipOnUiThread()
@@ -224,7 +203,7 @@ class DetailActivity : BaseActivity(), PageHost {
 
     fun playCurrent() {
         val container = ensurePlayContainer()
-        cancelCastWait()
+        container.cancelCastWait()
         container.endCastPrepare()
         container.clearCastAbort()
         val session = vm.preparePlaySession()
@@ -267,7 +246,7 @@ class DetailActivity : BaseActivity(), PageHost {
 
     fun openCast() {
         val container = ensurePlayContainer()
-        cancelCastWait()
+        container.cancelCastWait()
         container.beginCastPrepare()
         val session = vm.preparePlaySession()
         if (session == null) {
@@ -276,12 +255,7 @@ class DetailActivity : BaseActivity(), PageHost {
             return
         }
         container.setData(session)
-        window.decorView.postDelayed(castWaitRunnable, CAST_URL_POLL_MS)
-    }
-
-    private fun cancelCastWait() {
-        castWaitAttempts = 0
-        window.decorView.removeCallbacks(castWaitRunnable)
+        container.beginCastWait()
     }
 
     fun musicPlaybackDetected(): Boolean {
@@ -455,7 +429,7 @@ class DetailActivity : BaseActivity(), PageHost {
     }
 
     override fun onDestroy() {
-        window.decorView.removeCallbacks(castWaitRunnable)
+        playContainer?.cancelCastWait()
         releasePlayContainer()
         vm.destroyEngine()
         super.onDestroy()

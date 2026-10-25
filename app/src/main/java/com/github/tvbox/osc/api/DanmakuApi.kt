@@ -1,7 +1,5 @@
 package com.github.tvbox.osc.api
 
-import android.os.Handler
-import android.os.Looper
 import android.text.TextUtils
 
 import androidx.collection.ArrayMap
@@ -28,30 +26,21 @@ import java.util.ArrayList
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.Response
 
 class DanmakuApi {
 
-    interface SearchCallback {
-        fun onFound(url: String)
-
-        fun onNotFound() {
-        }
-    }
-
-    interface SearchListCallback {
-        fun onSuccess(results: List<DanmuSearchResult>?)
-
-        fun onError(message: String?)
-    }
-
-    interface SearchResultCallback {
-        fun onSuccess(danmu: String?)
-
-        fun onError(message: String?)
-    }
+    class DanmakuException(message: String) : Exception(message)
 
     private class EpisodeList(@JvmField val episodes: JSONArray?, @JvmField val isMovie: Boolean)
 
@@ -71,7 +60,6 @@ class DanmakuApi {
         private const val BUILTIN_MAX_RETRY = 2
         private const val EPISODE_QUERY_NUMBER = 0
         private const val EPISODE_QUERY_EMPTY = 1
-        private val handler = Handler(Looper.getMainLooper())
         private val searchSeq = AtomicInteger()
 
         @JvmStatic
@@ -98,116 +86,89 @@ class DanmakuApi {
         }
 
         @JvmStatic
-        fun search(name: String?, episode: String?, callback: SearchCallback?) {
+        suspend fun search(name: String?, episode: String?): String? {
             val apiUrl = getApiUrl()
-            if (TextUtils.isEmpty(apiUrl) || callback == null) return
-            try {
-                OkHttp.cancel(TAG)
-                val seq = searchSeq.incrementAndGet()
-                if (!hasPlaceholder(apiUrl) && !isDanmakuSearchApi(apiUrl)) {
-                    searchBuiltin(apiUrl, name, episode, callback, 0, seq)
-                    return
+            if (TextUtils.isEmpty(apiUrl)) return null
+            val seq = nextSearch()
+            return withContext(Dispatchers.IO) {
+                try {
+                    if (!hasPlaceholder(apiUrl) && !isDanmakuSearchApi(apiUrl)) {
+                        searchBuiltin(apiUrl, name, episode, seq)
+                    } else {
+                        searchRemote(apiUrl, name, episode, seq)
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (th: Throwable) {
+                    ensureCurrent(seq)
+                    LOG.e("echo-danmaku search start error: " + th.message)
+                    null
                 }
-                newCall(apiUrl, name, episode).enqueue(object : Callback {
-                    override fun onFailure(call: Call, e: IOException) {
-                        if (!isCurrentSearch(seq)) return
-                        LOG.e("echo-danmaku search error: " + e.message)
-                        notifyNotFound(callback, seq)
-                    }
-
-                    override fun onResponse(call: Call, response: Response) {
-                        if (!isCurrentSearch(seq)) return
-                        try {
-                            val body = if (response.body == null) "" else response.body.string()
-                            val url = parseUrl(body)
-                            if (!TextUtils.isEmpty(url) && isCurrentSearch(seq)) {
-                                handler.post(Runnable {
-                                    if (isCurrentSearch(seq)) callback.onFound(url)
-                                })
-                            } else {
-                                notifyNotFound(callback, seq)
-                            }
-                        } catch (th: Throwable) {
-                            LOG.e("echo-danmaku search parse error: " + th.message)
-                            notifyNotFound(callback, seq)
-                        }
-                    }
-                })
-            } catch (th: Throwable) {
-                LOG.e("echo-danmaku search start error: " + th.message)
-                notifyNotFound(callback, searchSeq.get())
             }
         }
 
         @JvmStatic
-        fun searchList(name: String?, episode: String?, callback: SearchListCallback?) {
-            if (callback == null) return
-            OkHttp.cancel(TAG)
-            val seq = searchSeq.incrementAndGet()
-            val apiUrl = getApiUrl()
-            if (TextUtils.isEmpty(apiUrl)) {
-                notifySearchListError(callback, seq, str(R.string.danmu_search_api_empty))
-                return
-            }
-            if (!hasPlaceholder(apiUrl) && !isDanmakuSearchApi(apiUrl)) {
-                searchBuiltinList(apiUrl, name, callback, seq)
-                return
-            }
-            try {
-                newCall(apiUrl, name, episode).enqueue(object : Callback {
-                    override fun onFailure(call: Call, e: IOException) {
-                        notifySearchListError(callback, seq, getErrorMessage(e))
+        suspend fun searchList(name: String?, episode: String?): List<DanmuSearchResult> {
+            val seq = nextSearch()
+            return withContext(Dispatchers.IO) {
+                val apiUrl = getApiUrl()
+                if (TextUtils.isEmpty(apiUrl)) throw DanmakuException(str(R.string.danmu_search_api_empty))
+                try {
+                    if (!hasPlaceholder(apiUrl) && !isDanmakuSearchApi(apiUrl)) {
+                        searchBuiltinList(apiUrl, name, seq)
+                    } else {
+                        parseSearchList(requestText(newCall(apiUrl, name, episode), seq, true))
                     }
-
-                    override fun onResponse(call: Call, response: Response) {
-                        try {
-                            if (!response.isSuccessful) throw IOException("HTTP " + response.code)
-                            val body = if (response.body == null) "" else response.body.string()
-                            notifySearchListSuccess(callback, seq, parseSearchList(body))
-                        } catch (th: Throwable) {
-                            notifySearchListError(callback, seq, getErrorMessage(th))
-                        } finally {
-                            response.close()
-                        }
-                    }
-                })
-            } catch (th: Throwable) {
-                notifySearchListError(callback, seq, getErrorMessage(th))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (th: Throwable) {
+                    ensureCurrent(seq)
+                    throw DanmakuException(getErrorMessage(th))
+                }
             }
         }
 
         @JvmStatic
-        fun loadSearchResult(result: DanmuSearchResult?, callback: SearchResultCallback?) {
-            if (callback == null) return
-            OkHttp.cancel(TAG)
-            val seq = searchSeq.incrementAndGet()
-            if (result == null || TextUtils.isEmpty(result.url)) {
-                notifySearchResultError(callback, seq, str(R.string.danmu_url_empty))
-                return
-            }
-            if (!result.isBuiltIn) {
-                notifySearchResultSuccess(callback, seq, result.url)
-                return
-            }
-            OkHttp.newCall(OkHttp.client(BUILTIN_TIMEOUT), result.url, TAG).enqueue(object : Callback {
-                override fun onFailure(call: Call, e: IOException) {
-                    notifySearchResultError(callback, seq, getErrorMessage(e))
+        suspend fun loadSearchResult(result: DanmuSearchResult?): String {
+            val seq = nextSearch()
+            if (result == null || TextUtils.isEmpty(result.url)) throw DanmakuException(str(R.string.danmu_url_empty))
+            if (!result.isBuiltIn) return result.url
+            return withContext(Dispatchers.IO) {
+                val body = try {
+                    requestText(OkHttp.newCall(OkHttp.client(BUILTIN_TIMEOUT), result.url, TAG), seq, true)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (th: Throwable) {
+                    ensureCurrent(seq)
+                    throw DanmakuException(getErrorMessage(th))
                 }
+                val danmu = try {
+                    commentJsonToXml(body)
+                } catch (th: Throwable) {
+                    ensureCurrent(seq)
+                    throw DanmakuException(getErrorMessage(th))
+                }
+                if (TextUtils.isEmpty(danmu)) throw DanmakuException(str(R.string.danmu_content_empty))
+                danmu
+            }
+        }
 
-                override fun onResponse(call: Call, response: Response) {
-                    try {
-                        if (!response.isSuccessful) throw IOException("HTTP " + response.code)
-                        val body = if (response.body == null) "" else response.body.string()
-                        val danmu = commentJsonToXml(body)
-                        if (TextUtils.isEmpty(danmu)) throw IOException(str(R.string.danmu_content_empty))
-                        notifySearchResultSuccess(callback, seq, danmu)
-                    } catch (th: Throwable) {
-                        notifySearchResultError(callback, seq, getErrorMessage(th))
-                    } finally {
-                        response.close()
-                    }
-                }
-            })
+        private suspend fun searchRemote(apiUrl: String, name: String?, episode: String?, seq: Int): String? {
+            val call = newCall(apiUrl, name, episode)
+            val body = try {
+                requestText(call, seq)
+            } catch (e: IOException) {
+                ensureCurrent(seq)
+                LOG.e("echo-danmaku search error: " + e.message)
+                return null
+            }
+            return try {
+                parseUrl(body).ifEmpty { null }
+            } catch (th: Throwable) {
+                ensureCurrent(seq)
+                LOG.e("echo-danmaku search parse error: " + th.message)
+                null
+            }
         }
 
         @JvmStatic
@@ -216,142 +177,104 @@ class DanmakuApi {
             OkHttp.cancel(TAG)
         }
 
-        private fun searchBuiltinList(apiUrl: String, name: String?, callback: SearchListCallback?, seq: Int) {
+        private suspend fun searchBuiltinList(apiUrl: String, name: String?, seq: Int): List<DanmuSearchResult> {
             val baseUrl = normalizeBaseUrl(apiUrl)
             val searchUrl = baseUrl + "/api/v2/search/episodes?anime=" + encode(Trans.t2s(name ?: ""))
-            OkHttp.newCall(OkHttp.client(BUILTIN_TIMEOUT), searchUrl, TAG).enqueue(object : Callback {
-                override fun onFailure(call: Call, e: IOException) {
-                    notifySearchListError(callback, seq, getErrorMessage(e))
-                }
-
-                override fun onResponse(call: Call, response: Response) {
-                    try {
-                        if (!response.isSuccessful) throw IOException("HTTP " + response.code)
-                        val body = if (response.body == null) "" else response.body.string()
-                        notifySearchListSuccess(callback, seq, parseBuiltinSearchList(body, baseUrl))
-                    } catch (th: Throwable) {
-                        notifySearchListError(callback, seq, getErrorMessage(th))
-                    } finally {
-                        response.close()
-                    }
-                }
-            })
+            val body = requestText(OkHttp.newCall(OkHttp.client(BUILTIN_TIMEOUT), searchUrl, TAG), seq, true)
+            return parseBuiltinSearchList(body, baseUrl)
         }
 
-        private fun searchBuiltin(apiUrl: String, name: String?, episode: String?, callback: SearchCallback?, retry: Int, seq: Int) {
-            searchBuiltin(apiUrl, name, episode, callback, retry, seq, EPISODE_QUERY_NUMBER)
+        private suspend fun searchBuiltin(apiUrl: String, name: String?, episode: String?, seq: Int): String? {
+            return searchBuiltin(apiUrl, name, episode, seq, EPISODE_QUERY_NUMBER)
         }
 
-        private fun searchBuiltin(apiUrl: String, name: String?, episode: String?, callback: SearchCallback?, retry: Int, seq: Int, queryMode: Int) {
+        private suspend fun searchBuiltin(apiUrl: String, name: String?, episode: String?, seq: Int, queryMode: Int): String? {
             val baseUrl = normalizeBaseUrl(apiUrl)
             val simpleName = Trans.t2s(name ?: "") ?: ""
             val simpleEpisode = Trans.t2s(episode ?: "") ?: ""
             val episodeQuery = getEpisodeQuery(simpleEpisode, queryMode)
             val searchUrl = baseUrl + "/api/v2/search/episodes?anime=" + encode(simpleName) +
                     (if (TextUtils.isEmpty(episodeQuery)) "" else "&episode=" + encode(episodeQuery))
-            OkHttp.newCall(OkHttp.client(BUILTIN_TIMEOUT), searchUrl, TAG).enqueue(object : Callback {
-                override fun onFailure(call: Call, e: IOException) {
-                    if (!isCurrentSearch(seq)) return
-                    if (retry < BUILTIN_MAX_RETRY) {
-                        LOG.e("echo-danmaku builtin search error: " + e.message + ", retry later")
-                        handler.postDelayed(Runnable {
-                            if (isCurrentSearch(seq)) searchBuiltin(apiUrl, name, episode, callback, retry + 1, seq, queryMode)
-                        }, 1500L * (retry + 1))
-                    } else {
-                        LOG.e("echo-danmaku builtin search error: " + e.message)
-                        searchBuiltinAnime(baseUrl, simpleName, simpleEpisode, callback, seq, true)
-                    }
-                }
-
-                override fun onResponse(call: Call, response: Response) {
-                    if (!isCurrentSearch(seq)) return
-                    try {
-                        val body = if (response.body == null) "" else response.body.string()
-                        val episodeMatch = findEpisodeFromSearchEpisodes(body, simpleEpisode)
-                        if (episodeMatch != null && !TextUtils.isEmpty(episodeMatch.id)) {
-                            loadBuiltinComment(baseUrl, simpleName, simpleEpisode, episodeMatch, callback, seq)
-                            return
-                        }
-                        if (isSearchEpisodesMovieResult(body)) {
-                            LOG.i("echo-danmaku builtin movie result not matched, skip anime fallback")
-                            notifyNotFound(callback, seq)
-                            return
-                        }
-                        if (tryNextEpisodeQuery(apiUrl, name, episode, callback, seq, queryMode)) return
-                        LOG.i("echo-danmaku builtin episode not matched, title: " + safeLog(simpleName) + ", episode: " + safeLog(simpleEpisode))
-                        searchBuiltinAnime(baseUrl, simpleName, simpleEpisode, callback, seq, true)
-                    } catch (th: Throwable) {
-                        LOG.e("echo-danmaku builtin episode parse error: " + th.message)
-                        if (tryNextEpisodeQuery(apiUrl, name, episode, callback, seq, queryMode)) return
-                        searchBuiltinAnime(baseUrl, simpleName, simpleEpisode, callback, seq, true)
-                    }
-                }
-            })
+            val body = try {
+                builtinSearchText(searchUrl, seq)
+            } catch (e: IOException) {
+                LOG.e("echo-danmaku builtin search error: " + e.message)
+                return searchBuiltinAnime(baseUrl, simpleName, simpleEpisode, seq)
+            }
+            val episodeMatch = try {
+                findEpisodeFromSearchEpisodes(body, simpleEpisode)
+            } catch (th: Throwable) {
+                LOG.e("echo-danmaku builtin episode parse error: " + th.message)
+                val nextMode = getNextEpisodeQueryMode(simpleEpisode, queryMode)
+                return if (nextMode >= 0) searchBuiltin(apiUrl, name, episode, seq, nextMode)
+                else searchBuiltinAnime(baseUrl, simpleName, simpleEpisode, seq)
+            }
+            if (episodeMatch != null && !TextUtils.isEmpty(episodeMatch.id)) {
+                return loadBuiltinComment(baseUrl, simpleName, simpleEpisode, episodeMatch, seq)
+            }
+            if (isSearchEpisodesMovieResult(body)) {
+                LOG.i("echo-danmaku builtin movie result not matched, skip anime fallback")
+                return null
+            }
+            val nextMode = getNextEpisodeQueryMode(simpleEpisode, queryMode)
+            if (nextMode >= 0) return searchBuiltin(apiUrl, name, episode, seq, nextMode)
+            LOG.i("echo-danmaku builtin episode not matched, title: " + safeLog(simpleName) + ", episode: " + safeLog(simpleEpisode))
+            return searchBuiltinAnime(baseUrl, simpleName, simpleEpisode, seq)
         }
 
-        private fun tryNextEpisodeQuery(apiUrl: String, name: String?, episode: String?, callback: SearchCallback?, seq: Int, queryMode: Int): Boolean {
-            val nextMode = getNextEpisodeQueryMode(Trans.t2s(episode ?: "") ?: "", queryMode)
-            if (nextMode < 0) return false
-            searchBuiltin(apiUrl, name, episode, callback, 0, seq, nextMode)
-            return true
+        private suspend fun builtinSearchText(url: String, seq: Int): String {
+            var attempt = 0
+            while (true) {
+                try {
+                    return requestText(OkHttp.newCall(OkHttp.client(BUILTIN_TIMEOUT), url, TAG), seq)
+                } catch (e: IOException) {
+                    ensureCurrent(seq)
+                    if (attempt >= BUILTIN_MAX_RETRY) throw e
+                    LOG.e("echo-danmaku builtin search error: " + e.message + ", retry later")
+                    delay(1500L * (attempt + 1))
+                    attempt += 1
+                }
+            }
         }
 
-        private fun searchBuiltinAnime(baseUrl: String, name: String, episode: String, callback: SearchCallback?, seq: Int, notifyOnEmpty: Boolean) {
+        private suspend fun searchBuiltinAnime(baseUrl: String, name: String, episode: String, seq: Int): String? {
             val searchUrl = baseUrl + "/api/v2/search/anime?keyword=" + encode(name)
             LOG.i("echo-danmaku builtin search anime: " + searchUrl)
-            OkHttp.newCall(OkHttp.client(BUILTIN_TIMEOUT), searchUrl, TAG).enqueue(object : Callback {
-                override fun onFailure(call: Call, e: IOException) {
-                    if (!isCurrentSearch(seq)) return
-                    LOG.e("echo-danmaku builtin anime error: " + e.message)
-                    if (notifyOnEmpty) notifyNotFound(callback, seq)
-                }
-
-                override fun onResponse(call: Call, response: Response) {
-                    if (!isCurrentSearch(seq)) return
-                    try {
-                        val body = if (response.body == null) "" else response.body.string()
-                        val animeId = findAnimeId(body)
-                        if (TextUtils.isEmpty(animeId)) {
-                            if (notifyOnEmpty) notifyNotFound(callback, seq)
-                            return
-                        }
-                        loadBuiltinBangumi(baseUrl, animeId, episode, callback, seq)
-                    } catch (th: Throwable) {
-                        LOG.e("echo-danmaku builtin anime parse error: " + th.message)
-                        if (notifyOnEmpty) notifyNotFound(callback, seq)
-                    }
-                }
-            })
+            val body = try {
+                requestText(OkHttp.newCall(OkHttp.client(BUILTIN_TIMEOUT), searchUrl, TAG), seq)
+            } catch (e: IOException) {
+                LOG.e("echo-danmaku builtin anime error: " + e.message)
+                return null
+            }
+            val animeId = try {
+                findAnimeId(body)
+            } catch (th: Throwable) {
+                LOG.e("echo-danmaku builtin anime parse error: " + th.message)
+                return null
+            }
+            if (TextUtils.isEmpty(animeId)) return null
+            return loadBuiltinBangumi(baseUrl, animeId, episode, seq)
         }
 
-        private fun loadBuiltinBangumi(baseUrl: String, animeId: String, episode: String, callback: SearchCallback?, seq: Int) {
+        private suspend fun loadBuiltinBangumi(baseUrl: String, animeId: String, episode: String, seq: Int): String? {
             val bangumiUrl = baseUrl + "/api/v2/bangumi/" + animeId
-            OkHttp.newCall(OkHttp.client(BUILTIN_TIMEOUT), bangumiUrl, TAG).enqueue(object : Callback {
-                override fun onFailure(call: Call, e: IOException) {
-                    if (!isCurrentSearch(seq)) return
-                    LOG.e("echo-danmaku builtin bangumi error: " + e.message)
-                    notifyNotFound(callback, seq)
-                }
-
-                override fun onResponse(call: Call, response: Response) {
-                    if (!isCurrentSearch(seq)) return
-                    try {
-                        val body = if (response.body == null) "" else response.body.string()
-                        val episodeMatch = findEpisode(body, episode)
-                        if (episodeMatch != null && !TextUtils.isEmpty(episodeMatch.id)) {
-                            loadBuiltinComment(baseUrl, "", episode, episodeMatch, callback, seq)
-                        } else {
-                            notifyNotFound(callback, seq)
-                        }
-                    } catch (th: Throwable) {
-                        LOG.e("echo-danmaku builtin bangumi parse error: " + th.message)
-                        notifyNotFound(callback, seq)
-                    }
-                }
-            })
+            val body = try {
+                requestText(OkHttp.newCall(OkHttp.client(BUILTIN_TIMEOUT), bangumiUrl, TAG), seq)
+            } catch (e: IOException) {
+                LOG.e("echo-danmaku builtin bangumi error: " + e.message)
+                return null
+            }
+            val episodeMatch = try {
+                findEpisode(body, episode)
+            } catch (th: Throwable) {
+                LOG.e("echo-danmaku builtin bangumi parse error: " + th.message)
+                return null
+            }
+            if (episodeMatch == null || TextUtils.isEmpty(episodeMatch.id)) return null
+            return loadBuiltinComment(baseUrl, "", episode, episodeMatch, seq)
         }
 
-        private fun loadBuiltinComment(baseUrl: String, title: String, episode: String, episodeMatch: EpisodeMatch, callback: SearchCallback?, seq: Int) {
+        private suspend fun loadBuiltinComment(baseUrl: String, title: String, episode: String, episodeMatch: EpisodeMatch, seq: Int): String? {
             val commentUrl = baseUrl + "/api/v2/comment/" + episodeMatch.id + "?format=json"
             LOG.i("echo-danmaku builtin load title: " + safeLog(title) +
                     ", request episode: " + safeLog(episode) +
@@ -359,42 +282,58 @@ class DanmakuApi {
                     ", matched number: " + episodeMatch.number +
                     ", episodeId: " + episodeMatch.id)
             LOG.i("echo-danmaku builtin comment: " + commentUrl)
-            OkHttp.newCall(OkHttp.client(BUILTIN_TIMEOUT), commentUrl, TAG).enqueue(object : Callback {
-                override fun onFailure(call: Call, e: IOException) {
-                    if (!isCurrentSearch(seq)) return
-                    LOG.e("echo-danmaku builtin comment error: " + e.message)
-                    notifyNotFound(callback, seq)
-                }
+            val body = try {
+                requestText(OkHttp.newCall(OkHttp.client(BUILTIN_TIMEOUT), commentUrl, TAG), seq)
+            } catch (e: IOException) {
+                LOG.e("echo-danmaku builtin comment error: " + e.message)
+                return null
+            }
+            val xml = try {
+                commentJsonToXml(body)
+            } catch (th: Throwable) {
+                LOG.e("echo-danmaku builtin comment parse error: " + th.message)
+                return null
+            }
+            return xml.ifEmpty { null }
+        }
 
-                override fun onResponse(call: Call, response: Response) {
-                    if (!isCurrentSearch(seq)) return
-                    try {
-                        val body = if (response.body == null) "" else response.body.string()
-                        val xml = commentJsonToXml(body)
-                        if (TextUtils.isEmpty(xml) || !isCurrentSearch(seq)) {
-                            notifyNotFound(callback, seq)
+        private fun nextSearch(): Int {
+            val seq = searchSeq.incrementAndGet()
+            OkHttp.cancel(TAG)
+            return seq
+        }
+
+        private fun ensureCurrent(seq: Int) {
+            if (seq != searchSeq.get()) throw CancellationException("danmaku search superseded")
+        }
+
+        private suspend fun requestText(call: Call, seq: Int, checkStatus: Boolean = false): String {
+            val response = awaitResponse(call, seq)
+            response.use {
+                ensureCurrent(seq)
+                if (checkStatus && !it.isSuccessful) throw IOException("HTTP " + it.code)
+                return it.body.string()
+            }
+        }
+
+        private suspend fun awaitResponse(call: Call, seq: Int): Response {
+            ensureCurrent(seq)
+            return suspendCancellableCoroutine { cont ->
+                cont.invokeOnCancellation { call.cancel() }
+                call.enqueue(object : Callback {
+                    override fun onFailure(call: Call, e: IOException) {
+                        cont.resumeWithException(e)
+                    }
+
+                    override fun onResponse(call: Call, response: Response) {
+                        if (!cont.isActive) {
+                            response.close()
                             return
                         }
-                        handler.post(Runnable {
-                            if (isCurrentSearch(seq)) callback?.onFound(xml)
-                        })
-                    } catch (th: Throwable) {
-                        LOG.e("echo-danmaku builtin comment parse error: " + th.message)
-                        notifyNotFound(callback, seq)
+                        cont.resume(response)
                     }
-                }
-            })
-        }
-
-        private fun notifyNotFound(callback: SearchCallback?, seq: Int) {
-            if (callback == null || !isCurrentSearch(seq)) return
-            handler.post(Runnable {
-                if (isCurrentSearch(seq)) callback.onNotFound()
-            })
-        }
-
-        private fun isCurrentSearch(seq: Int): Boolean {
-            return seq == searchSeq.get()
+                })
+            }
         }
 
         private fun newCall(apiUrl: String, name: String?, episode: String?): Call {
@@ -790,33 +729,9 @@ class DanmakuApi {
             }
         }
 
-        private fun notifySearchListSuccess(callback: SearchListCallback?, seq: Int, results: List<DanmuSearchResult>?) {
-            handler.post(Runnable {
-                if (isCurrentSearch(seq)) callback?.onSuccess(results)
-            })
-        }
-
-        private fun notifySearchListError(callback: SearchListCallback?, seq: Int, message: String?) {
-            handler.post(Runnable {
-                if (isCurrentSearch(seq)) callback?.onError(message)
-            })
-        }
-
-        private fun notifySearchResultSuccess(callback: SearchResultCallback?, seq: Int, danmu: String?) {
-            handler.post(Runnable {
-                if (isCurrentSearch(seq)) callback?.onSuccess(danmu)
-            })
-        }
-
-        private fun notifySearchResultError(callback: SearchResultCallback?, seq: Int, message: String?) {
-            handler.post(Runnable {
-                if (isCurrentSearch(seq)) callback?.onError(message)
-            })
-        }
-
-        private fun getErrorMessage(th: Throwable?): String? {
+        private fun getErrorMessage(th: Throwable?): String {
             val message = if (th == null) "" else th.message
-            return if (TextUtils.isEmpty(message)) str(R.string.danmu_search_failed) else message
+            return if (TextUtils.isEmpty(message)) str(R.string.danmu_search_failed) else message ?: ""
         }
 
         private fun escapeXml(text: String?): String {

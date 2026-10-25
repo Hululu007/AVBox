@@ -29,7 +29,7 @@
 | `PlayUrlResolver` | `player/PlayUrlResolver.kt` | 取流/解析/嗅探调度(WebView 嗅探 + json/聚合/超级解析 + **代际闸门**) |
 | `PlaybackRetryDelegate` | `player/PlaybackRetryDelegate.kt` | 重试与换线:同址重播、硬解→软解回退、自动切内核、下一条线路;取流超时/失败/换线超时三处入口 |
 | `PlaybackFetch` | `player/PlaybackFetch.kt` | 取流结果观察者:收集 `SourceChannel.flow`,把结果落到会话数据(清晰度/进度键/字幕/歌词/封面) |
-| `PlaybackPreload` + `PreloadCoordinator` + `PreloadManagerHolder` | `player/PlaybackPreload.kt` / `PreloadCoordinator.kt` / `PreloadManagerHolder.kt` | 下一集预载:喂快照/取结果/作废时机(协调器)**随引擎存活**;管理器是**进程级单例**(线程/注册表/就绪回调) |
+| `PlaybackPreload` + `PreloadCoordinator` + `PreloadManagerHolder` | `player/PlaybackPreload.kt` / `PreloadCoordinator.kt` / `PreloadManagerHolder.kt` | 下一集预载:喂快照/取结果/作废时机(协调器)**随引擎存活**;管理器是**进程级单例**(线程/注册表/就绪 StateFlow) |
 | `MusicSessionDelegate` | `player/MusicSessionDelegate.kt` | 媒体会话与通知的维护实现(有音频轨就维护,影视同样);封面兜底、弹幕地址、清晰度切换 |
 | `MyVideoView`(→ `AppPlayerView`) | `player/MyVideoView.kt` / `AppPlayerView.kt` | **播放器视图**:渲染容器 `mPlayerContainer` + 封面/黑帧/弹幕/渲染模式/内核重建语义;`AppPlayerView` 是 fork `VideoView` 的 app 侧等价物 |
 | `KernelPlayer` / `ExoPlayer` | `player/core/KernelPlayer.kt` / `ExoPlayer.kt` | 内核契约(取代 `AbstractPlayer`)/ media3 适配器(取代 `ExoMediaPlayer`),**类名与方法面保留 ⇒ 宿主/控制器/调度层对内核换代透明** |
@@ -169,7 +169,7 @@ PlaybackService(前台服务,托管生命周期)
 
 ### 3.7 预载(下一集)
 
-- `PreloadManagerHolder` 是**进程级单例**(预载管理器/线程/注册表/就绪回调,全静态面),`PreloadCoordinator` **随引擎存活**(归 `player` 不归 `ui.player`,否则 `player` 反向依赖 UI)。
+- `PreloadManagerHolder` 是**进程级单例**(预载管理器/线程/注册表/就绪状态流 `completedUrl: StateFlow<String?>`,全静态面),`PreloadCoordinator` **随引擎存活**(归 `player` 不归 `ui.player`,否则 `player` 反向依赖 UI)。
 - 触发时机:正片稳定播放(`STATE_PLAYING`)延迟评估、弱网 `BUFFERING` 让路 + 冷却、`BUFFERED` **补一次评估**(内核的"首帧 PLAYING"只发一次,不补枪则拖一次进度条就永久停摆)。
 - 快照由**页面桥**组装(`buildPreloadSnapshot()` 需要页面上下文与集信息);无页面时留空、跳过评估。
 - 预载结果订阅:`PlaybackPreload` 收集 `vm.preloadResult.flow`(收集域随本对象,`destroy()` 取消),**不是** `PreloadCoordinator` 自己订阅。

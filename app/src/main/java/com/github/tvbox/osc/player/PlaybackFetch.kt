@@ -21,13 +21,15 @@ import org.json.JSONObject
 
 class PlaybackFetch(private val controller: PlaybackController) {
 
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var sourceViewModel: SourceViewModel? = null
     private var collectJob: Job? = null
+    private var danmuJob: Job? = null
 
     fun init() {
         val vm = SourceViewModel()
         sourceViewModel = vm
-        collectJob = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate).launch {
+        collectJob = scope.launch {
             vm.playResult.flow.collect { info -> handlePlayResult(info) }
         }
     }
@@ -35,6 +37,8 @@ class PlaybackFetch(private val controller: PlaybackController) {
     fun release() {
         collectJob?.cancel()
         collectJob = null
+        danmuJob?.cancel()
+        danmuJob = null
     }
 
     fun deliver(info: JSONObject?) {
@@ -199,17 +203,12 @@ class PlaybackFetch(private val controller: PlaybackController) {
         val vod = controller.vod() ?: return
         val series = controller.currentSeries(vod.playFlag, vod.playIndex)
         val key = controller.progressKey()
-        DanmakuApi.search(vod.name, if (series == null) "" else series.name, object : DanmakuApi.SearchCallback {
-            override fun onFound(url: String) {
-                if (!TextUtils.equals(key, controller.progressKey())) return
-                checkDanmu(url, null)
-            }
-
-            override fun onNotFound() {
-                if (!TextUtils.equals(key, controller.progressKey())) return
-                checkDanmu("", null)
-            }
-        })
+        danmuJob?.cancel()
+        danmuJob = scope.launch {
+            val url = DanmakuApi.search(vod.name, if (series == null) "" else series.name)
+            if (!TextUtils.equals(key, controller.progressKey())) return@launch
+            checkDanmu(url ?: "", null)
+        }
     }
 
     private fun checkDanmu(danmaku: String, onFailed: Runnable?) {
