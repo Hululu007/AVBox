@@ -594,6 +594,19 @@ class PlayContainer(activity: Activity) : FrameLayout(activity), CustomAdapt, Pl
         return TextUtils.equals(ownedPlaybackKey, scheduler?.startedPlaybackKey())
     }
 
+    fun isPlaybackActive(): Boolean {
+        val view = kernelView ?: return false
+        return when (view.playState) {
+            PlayState.PREPARING,
+            PlayState.PREPARED,
+            PlayState.PLAYING,
+            PlayState.BUFFERING,
+            PlayState.BUFFERED -> true
+
+            else -> false
+        }
+    }
+
     private fun isSamePlaybackOwned(session: PlaybackSession): Boolean {
         val view = kernelView
         if (HistoryHelper.isIncognito() && (view == null || !view.isPlaying)) return false

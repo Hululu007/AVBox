@@ -419,7 +419,7 @@ class DetailActivity : BaseActivity(), PageHost {
         val container = playContainer ?: return
         vm.applyPlaybackEntry(
             DetailPlaybackEntry.MusicReturn,
-            resumable = container.hasClaimedPlayback() && !container.ownsEngineContent(),
+            resumable = container.hasClaimedPlayback() && !container.ownsEngineContent() && container.isPlaybackActive(),
         )
     }
 

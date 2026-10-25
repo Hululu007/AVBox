@@ -56,11 +56,11 @@ python .tools/i18n_gate.py          # ui 层硬闸门须 0 处
 ## 红线
 
 - **小修改禁止跑测试**
-- **禁止未经允许提交**（本地 commit 也不行，先问）。
+- **禁止未经允许提交**（本地 commit 也不行，先问）
 - **禁止未经允许操控用户的设备**
 - **禁止未经允许跑 release 构建**
 - **禁止硬编码本机绝对路径**（盘符、用户主目录、SDK 路径）—— 文档、代码、脚本一律用相对仓库根或环境变量。
 - **改 `com.github.catvod.**` 前必须过 `javap -p -s` 符号守恒**：该包被动态 jar 按字节码访问，
   改签名会表现为“启动正常、点开某个源才崩”。细则见 `skill/avbox-kotlin-migration-spec.md` §3.2。
-- **裁剪依赖前先读 `skill/avbox-mobile-ui-spec.md` §6.3**：动态加载的爬虫 jar 需要宿主提供
+- **裁剪依赖前先读 `skill/avbox-mobile-ui-spec.md` §6.3**：动态加载的爬虫 jar 需要宿主提供。
   gson / okhttp / zxing，静态引用为 0 也不代表能删。

@@ -231,10 +231,10 @@
     <string name="toast_added_to_collect">Added to favorites</string>
 
     <string name="preload_next_episode">Preload next episode</string>
-    <string name="preload_next_episode_subtitle">Only supported by the Media3 player and some sources</string>
+    <string name="preload_next_episode_subtitle">Only some sources are supported</string>
     <string name="preload_duration">Preload duration</string>
     <string name="preload_play_cache">Cache while playing</string>
-    <string name="preload_play_cache_subtitle">May make the Media3 player unusable when enabled</string>
+    <string name="preload_play_cache_subtitle">Enabling this may cause playback errors</string>
     <string name="preload_cache_size">Cache size</string>
 
     <string name="search_field_hint">Search titles and actors</string>

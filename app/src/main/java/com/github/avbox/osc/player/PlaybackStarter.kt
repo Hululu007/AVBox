@@ -305,7 +305,8 @@ class PlaybackStarter(private val host: Host) {
         }
         val bridge = host.view()
         if (bridge == null || !bridge.isPageAlive()) return
-        playUrlGeneration = host.resolverCurrentGen()
+        val generation = host.resolverCurrentGen()
+        playUrlGeneration = generation
         val finalUrl = url
         scope.launch {
             val live = host.view()
@@ -319,7 +320,7 @@ class PlaybackStarter(private val host: Host) {
                 host.cancelPlayTimeout()
                 return@launch
             }
-            if (playUrlGeneration != host.resolverCurrentGen()) {
+            if (generation != host.resolverCurrentGen()) {
                 AppLog.i("echo-ignore goPlayUrl of stale parse result")
                 host.resolverCancelParseTimeout()
                 return@launch
@@ -385,6 +386,20 @@ class PlaybackStarter(private val host: Host) {
             }
             if (PlaybackController.looksLikeAudioUrl(targetUrl)) {
                 host.view()?.useTextureRenderForAudio()
+            }
+            if (host.attemptState().castAborted) {
+                AppLog.i("echo-cast abort: drop play url at fire")
+                host.cancelPlayTimeout()
+                return@launch
+            }
+            if (generation != host.resolverCurrentGen()) {
+                AppLog.i("echo-ignore play url at fire: stale generation")
+                return@launch
+            }
+            if (host.attemptState().castPrepareOnly) {
+                AppLog.i("echo-cast prepare: drop play url at fire")
+                host.cancelPlayTimeout()
+                return@launch
             }
             host.view()?.startVideoPlayback(targetUrl, headers, forceExoPlayer)
         }

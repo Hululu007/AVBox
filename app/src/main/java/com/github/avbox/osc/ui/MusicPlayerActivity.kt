@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.view.ViewGroup
+import android.webkit.WebView
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.compose.setContent
@@ -29,6 +30,7 @@ import com.github.avbox.osc.player.PlaybackSession
 import com.github.avbox.osc.player.PlaybackViewBridge
 import com.github.avbox.osc.player.engine.MediaSources
 import com.github.avbox.osc.player.state.CastSheetState
+import com.github.avbox.osc.player.usecase.WebParseUseCase
 import com.github.avbox.osc.player.core.PlayState
 import com.github.avbox.osc.ui.music.MusicLrc
 import com.github.avbox.osc.ui.music.MusicPlayerScreen
@@ -187,6 +189,7 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
             } else {
                 engine.detach(this)
             }
+            controller.stopLoadWebView(true)
         }
         super.onDestroy()
     }
@@ -475,6 +478,7 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
     ) : PlaybackViewBridge by base {
 
         private val main = Handler(Looper.getMainLooper())
+        private val webParse = WebParseUseCase()
 
         override fun isPageAlive(): Boolean = !activity.isFinishing && !activity.isDestroyed
 
@@ -537,6 +541,17 @@ class MusicPlayerActivity : BaseActivity(), PlaybackPage {
 
         override fun useTextureRenderForAudio() {
             activity.player.setRenderViewFactory(EngineTextureRenderViewFactory.create())
+        }
+
+        override fun newSniffWebView(): WebView = WebView(activity)
+
+        override fun attachSniffWebView(webView: WebView) {
+            if (!isPageAlive()) return
+            activity.addContentView(webView, ViewGroup.LayoutParams(1, 1))
+        }
+
+        override fun evaluateScript(url: String, webView: WebView?) {
+            webParse.evaluateScript(activity.controller.sourceBean(), url, webView)
         }
 
         override fun playExternalPlayer(

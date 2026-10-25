@@ -231,10 +231,10 @@
     <string name="toast_added_to_collect">已加入收藏夹</string>
 
     <string name="preload_next_episode">下一集预载</string>
-    <string name="preload_next_episode_subtitle">仅Media3播放器和部分源支持</string>
+    <string name="preload_next_episode_subtitle">仅部分源支持</string>
     <string name="preload_duration">预载时长</string>
     <string name="preload_play_cache">边播边缓存</string>
-    <string name="preload_play_cache_subtitle">开启后可能导致Media3播放器无法使用</string>
+    <string name="preload_play_cache_subtitle">开启后可能导致播放错误</string>
     <string name="preload_cache_size">缓存容量</string>
 
     <string name="search_field_hint">搜索片名、演员</string>
