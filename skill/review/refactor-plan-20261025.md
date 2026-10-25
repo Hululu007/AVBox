@@ -271,7 +271,7 @@ pkg_cycles.py                     : 互导对 4、环簇 4（全 2 包环）
 
 ## 10.2 第 2 步：闸门（已落地）
 
-`tools/ui_layer_gate.py` + `ui_layer_baseline.json`（首冻 **20 文件 / 35 处**）。
+`.tools/ui_layer_gate.py` + `.tools/ui_layer_baseline.json`（首冻 **20 文件 / 35 处**）。
 
 - 判定对象 = `ui/**` 内含 `@Composable` 的文件；违规 = import `osc.{api,base,data,sourcedata,net}.*`。
 - 白名单：`*ViewModel`（Composable 持有 VM 是常规形态）、`AppBootstrap`（presentation 全局状态，包归属待定）。

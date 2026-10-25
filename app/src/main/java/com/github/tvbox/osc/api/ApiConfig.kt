@@ -118,6 +118,10 @@ class ApiConfig private constructor() {
         configLoader.refreshIfChanged(onChanged)
     }
 
+    fun refreshLiveConfigIfChanged() {
+        configLoader.refreshLiveIfChanged()
+    }
+
     fun applyRefreshedConfig(apiUrl: String, body: String) {
         configLoader.applyRefreshed(apiUrl, body)
     }

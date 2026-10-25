@@ -38,17 +38,19 @@
 - **禁用全局单槽**：`App.setVodInfo` / `App.getVodInfo` 这种全局可变量不得新增。
 - 不加 `@Suppress("UNUSED_EXPRESSION")` 这类 revision hack；不用 `override var` 表达可变接口属性。
 
-验法：`python tools/udf_gate.py`（8 条规则，存量已全部归零，新增即 FAIL）。
+验法：`python .tools/udf_gate.py`（8 条规则，存量已全部归零，新增即 FAIL）。
 
 ## 交付前必跑
 
+门禁脚本在本地 `.tools/` 目录（已 gitignore，不入库）：
+
 ```bash
 .\gradlew.bat :app:assembleDebug :app:testDebugUnitTest   # 判读 BUILD SUCCESSFUL + 用例 0 失败
-python tools/ui_layer_gate.py      # Composable 穿透；基线只减不增（数字见 tools/ui_layer_baseline.json）
-python tools/null_assert_gate.py   # 裸 !!；判定域已归零，新增即 FAIL
-python tools/udf_gate.py           # 单向数据流 8 条规则
-python tools/playstate_gate.py     # PlayState 单一真源
-python tools/i18n_gate.py          # ui 层硬闸门须 0 处
+python .tools/ui_layer_gate.py      # Composable 穿透；基线只减不增（数字见 .tools/ui_layer_baseline.json）
+python .tools/null_assert_gate.py   # 裸 !!；判定域已归零，新增即 FAIL
+python .tools/udf_gate.py           # 单向数据流 8 条规则
+python .tools/playstate_gate.py     # PlayState 单一真源
+python .tools/i18n_gate.py          # ui 层硬闸门须 0 处
 ```
 
 ## 红线

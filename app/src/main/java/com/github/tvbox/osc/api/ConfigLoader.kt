@@ -12,6 +12,7 @@ import com.github.tvbox.osc.io.LocalSourceTree
 import com.github.tvbox.osc.net.OkGoHelper
 import com.github.tvbox.osc.util.ApiLineSignal
 import com.github.tvbox.osc.boot.BootGuard
+import com.github.tvbox.osc.data.PlaybackPorts
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.HistoryHelper
 import com.github.tvbox.osc.util.KV
@@ -167,6 +168,68 @@ class ConfigLoader(private val owner: ApiConfig) {
                 })
             } catch (th: Throwable) {
                 LOG.debugI("echo-config-refresh: error " + th.message)
+            }
+        })
+    }
+
+    fun refreshLiveIfChanged() {
+        configLoadExecutor.execute(Runnable {
+            try {
+                val liveApiUrl = ApiConfig.getEffectiveLiveUrl()
+                if (ApiConfig.isLiveFollowVod() || !isRemoteSource(liveApiUrl)) {
+                    LOG.debugI("echo-live-refresh: skip follow-vod-or-local")
+                    return@Runnable
+                }
+                val app = App.getInstance() ?: return@Runnable
+                val cache = File(app.getFilesDir().getAbsolutePath() + "/" + MD5.encode(liveApiUrl))
+                val previous = if (cache.exists()) readConfigFile(cache) else ""
+                val resolved = ConfigParser.configUrl(liveApiUrl, Supplier { ApiConfig.localFileBase() })
+                fetchConfigAsync(liveApiUrl, resolved.url, resolved.key, KIND_LIVE_REFRESH, object : ConfigFetchCallback {
+                    override fun success(body: String) {
+                        try {
+                            if (liveApiUrl != KV.get(HawkConfig.LIVE_API_URL, "")) {
+                                LOG.debugI("echo-live-refresh: drop stale")
+                                return
+                            }
+                            if (switchLiveApiCollectionIfNeeded(liveApiUrl, body)) {
+                                FileUtils.saveCache(cache, body)
+                                return
+                            }
+                            if (ConfigContentDiff.isSame(body, previous)) {
+                                LOG.debugI("echo-live-refresh: unchanged")
+                                return
+                            }
+                            FileUtils.saveCache(cache, body)
+                            if (PlaybackPorts.ports?.hasAttachedPage() == true) {
+                                LOG.debugI("echo-live-refresh: deferred, page attached")
+                                return
+                            }
+                            try {
+                                owner.parseLiveConfigContent(liveApiUrl, body)
+                            } catch (th: Throwable) {
+                                LOG.e("ApiConfig", th)
+                                LOG.debugI("echo-live-refresh: parse failed, restore old cache")
+                                if (previous.isNotEmpty()) FileUtils.saveCache(cache, previous)
+                                return
+                            }
+                            if (!owner.hasLiveConfigResult()) {
+                                LOG.debugI("echo-live-refresh: parse empty, restore old cache")
+                                if (previous.isNotEmpty()) FileUtils.saveCache(cache, previous)
+                                return
+                            }
+                            LOG.debugI("echo-live-refresh: changed " + previous.length + "->" + body.length)
+                            owner.loadedLiveConfigUrl = liveApiUrl
+                        } catch (th: Throwable) {
+                            LOG.e("ApiConfig", th)
+                        }
+                    }
+
+                    override fun error(error: String?) {
+                        LOG.debugI("echo-live-refresh: failed " + error)
+                    }
+                })
+            } catch (th: Throwable) {
+                LOG.debugI("echo-live-refresh: error " + th.message)
             }
         })
     }
@@ -466,5 +529,6 @@ class ConfigLoader(private val owner: ApiConfig) {
         private const val KIND_VOD = "vod"
         private const val KIND_REFRESH = "refresh"
         private const val KIND_LIVE = "live"
+        private const val KIND_LIVE_REFRESH = "live_refresh"
     }
 }

@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -421,18 +420,9 @@ internal fun EpisodeSheet(vm: DetailViewModel, slideFromEnd: Boolean, showQualit
                 maxNameLength <= 12 -> 2
                 else -> 1
             }
-            val gridModifier = if (slideFromEnd) {
-                Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-            } else {
-                val rowCount = if (episodes.isEmpty()) 0 else (episodes.size + gridColumnCount - 1) / gridColumnCount
-                val gridContentHeight = (rowCount * 40).dp + (((rowCount - 1).coerceAtLeast(0)) * 8).dp
-                Modifier
-                    .fillMaxWidth()
-                    .weight(1f, fill = false)
-                    .heightIn(max = minOf(560.dp, gridContentHeight))
-            }
+            val gridModifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
             androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
                 state = gridState,
                 columns = androidx.compose.foundation.lazy.grid.GridCells.Fixed(gridColumnCount),

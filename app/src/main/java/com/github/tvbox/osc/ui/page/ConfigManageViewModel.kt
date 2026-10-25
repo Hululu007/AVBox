@@ -80,14 +80,18 @@ data class ConfigTmdbActions(
 
 enum class TmdbTest { None, Api, Image }
 
+internal fun sanitizeConfigText(value: String): String =
+    value.filterNot { it.isISOControl() }.trim()
+
 internal fun parseSubscribe(value: String): SubscribeSource {
     val index = value.indexOf(SUBSCRIBE_SPLIT)
     return if (index < 0) {
-        SubscribeSource(value.trim(), value.trim())
+        val cleaned = sanitizeConfigText(value)
+        SubscribeSource(cleaned, cleaned)
     } else {
         SubscribeSource(
-            value.substring(0, index).trim(),
-            value.substring(index + SUBSCRIBE_SPLIT.length),
+            sanitizeConfigText(value.substring(0, index)),
+            sanitizeConfigText(value.substring(index + SUBSCRIBE_SPLIT.length)),
         )
     }
 }

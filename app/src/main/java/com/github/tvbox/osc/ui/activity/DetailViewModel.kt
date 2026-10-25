@@ -1340,7 +1340,7 @@ class DetailViewModel : ViewModel(), TmdbPosterCache {
             text = text.replace(Regex("\\b(19|20)\\d{2}\\b"), "")
             text = text.lowercase(Locale.ROOT).replace(Regex("2160p|1080p|720p|480p|4k|h26[45]|x26[45]|mp4"), "")
 
-        val matcher = Regex("(?i)(?:ep|第|e|[\\-\\.\\s])\\s?(\\d{1,4})").find(text)
+        val matcher = Regex("(?i)(?:ep|第|e|[\\-\\.\\s])\\s?(\\d{1,4})").find(text) // i18n: keep(选集序号匹配关键字)
             if (matcher != null) {
                 matcher.groupValues[1].toInt()
             } else {
@@ -1365,7 +1365,7 @@ class DetailViewModel : ViewModel(), TmdbPosterCache {
         private const val SOURCE_SEARCH_TIMEOUT_MS = 30_000L
         private const val SOURCE_SEARCH_CONCURRENCY = 6
 
-        private const val SOURCE_EMPTY_MSG = "数据列表"
+        private const val SOURCE_EMPTY_MSG = "数据列表" // i18n: keep(源错误消息判据值,只比较不展示)
 
         internal fun isSourceErrorMsg(msg: String?): Boolean =
             !msg.isNullOrEmpty() && msg != SOURCE_EMPTY_MSG

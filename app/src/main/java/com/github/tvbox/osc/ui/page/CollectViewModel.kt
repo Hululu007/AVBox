@@ -28,12 +28,16 @@ class CollectViewModel(
     override fun tmdbCachedPoster(name: String?, year: Int, altName: String?): String? =
         TmdbPoster.cachedPoster(name, year, altName)
 
-    val loading = MutableStateFlow(true)
-    val items = MutableStateFlow<List<VodCollect>>(emptyList())
+    private val _loading = MutableStateFlow(true)
+    val loading: StateFlow<Boolean> = _loading.asStateFlow()
+    private val _items = MutableStateFlow<List<VodCollect>>(emptyList())
+    val items: StateFlow<List<VodCollect>> = _items.asStateFlow()
 
-    val columns = MutableStateFlow(KV.get(HawkConfig.COLLECT_COLUMNS, 3))
+    private val _columns = MutableStateFlow(KV.get(HawkConfig.COLLECT_COLUMNS, 3))
+    val columns: StateFlow<Int> = _columns.asStateFlow()
 
-    val unavailableKeys = MutableStateFlow<Set<String>>(emptySet())
+    private val _unavailableKeys = MutableStateFlow<Set<String>>(emptySet())
+    val unavailableKeys: StateFlow<Set<String>> = _unavailableKeys.asStateFlow()
 
     private val _editMode = MutableStateFlow(false)
     val editMode: StateFlow<Boolean> = _editMode.asStateFlow()
@@ -47,9 +51,9 @@ class CollectViewModel(
         }
         viewModelScope.launch(Dispatchers.IO) {
             collect.observeAll().collect { list ->
-                items.value = list
+                _items.value = list
                 recomputeUnavailableNow()
-                loading.value = false
+                _loading.value = false
             }
         }
         viewModelScope.launch {
@@ -61,11 +65,12 @@ class CollectViewModel(
         }
     }
 
-    val placementAnim = MutableStateFlow(false)
+    private val _placementAnim = MutableStateFlow(false)
+    val placementAnim: StateFlow<Boolean> = _placementAnim.asStateFlow()
 
     private fun recomputeUnavailableNow() {
         if (AppBootstrap.state.value !is AppBootstrap.Boot.Ready) return
-        unavailableKeys.value = computeUnavailable(items.value)
+        _unavailableKeys.value = computeUnavailable(_items.value)
     }
 
     private fun computeUnavailable(list: List<VodCollect>): Set<String> {
@@ -85,7 +90,7 @@ class CollectViewModel(
         viewModelScope.launch {
             UiEvents.changes.collect { change ->
                 if (change is UiChange.CollectLayoutChanged) {
-                    columns.value = KV.get(HawkConfig.COLLECT_COLUMNS, 3)
+                    _columns.value = KV.get(HawkConfig.COLLECT_COLUMNS, 3)
                 }
             }
         }
@@ -112,7 +117,7 @@ class CollectViewModel(
 
     fun deleteSelected(list: List<VodCollect>) {
         if (list.isEmpty()) return
-        placementAnim.value = true
+        _placementAnim.value = true
         viewModelScope.launch(Dispatchers.IO) {
             list.forEach { item -> collect.deleteVodCollect(item.id) }
         }

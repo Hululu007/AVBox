@@ -15,7 +15,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ContainedLoadingIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -216,6 +218,7 @@ private fun rememberCastPerson(vm: DetailViewModel, id: Int): CastPersonState {
 private fun TmdbCastSheet(vm: DetailViewModel, member: TmdbCastMember, onDismiss: () -> Unit) {
     AVBoxBottomSheet(
         onDismissRequest = onDismiss,
+        isScrollable = false,
         modifier = Modifier.fillMaxHeight(CastSheetHeightFraction),
     ) {
         val state = rememberCastPerson(vm, member.id)
@@ -262,6 +265,7 @@ private fun TmdbCastSheet(vm: DetailViewModel, member: TmdbCastMember, onDismiss
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .weight(1f)
                         .padding(top = 16.dp),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -276,6 +280,8 @@ private fun TmdbCastSheet(vm: DetailViewModel, member: TmdbCastMember, onDismiss
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier
                             .fillMaxWidth()
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState())
                             .padding(top = 16.dp),
                     )
                 }

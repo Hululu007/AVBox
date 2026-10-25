@@ -29,7 +29,7 @@ description: 项目规则、通用原则、通用代码规范、交付验证与�
   - **许可证块**：第三方派生文件（`subtitle/**` 等）的 `Copyright` / `Permission is hereby granted` / `SPDX-License` 声明——删了违反许可
   - **机器可读指令**：`// i18n: keep`（`i18n_gate.py` 的白名单，删了 ui 层硬闸门立刻变红）、`// null-assert: keep`（`null_assert_gate.py` 的行级豁免，删了该行断言立刻变红）、`//noinspection`
   - **禁止**任何解释性注释：含"为什么"、决策叙事（日期 / 规范章节号 §x.x / 出处 / 演进对比）——这些一律归 `skill/history/`
-  - 批量删注释用 `tools/strip_comments_all.py`（`--dry` 报告 / `--apply` 写回 / `--verify` 校验）；`--verify` 做的是"剥注释后的代码投影与 `git HEAD` 逐行一致"，这是唯一能证明"只动了注释"的手段。删完必须重跑 `prune_imports.py`（只在注释里被引用的 import 会变成未使用）
+  - 批量删注释用 `.tools/strip_comments_all.py`（`--dry` 报告 / `--apply` 写回 / `--verify` 校验）；`--verify` 做的是"剥注释后的代码投影与 `git HEAD` 逐行一致"，这是唯一能证明"只动了注释"的手段。删完必须重跑 `prune_imports.py`（只在注释里被引用的 import 会变成未使用）
 - **错误处理**：禁止静默忽略错误；使用统一错误处理方式，明确处理异常
 - **空安全**：不用裸 `!!`。空属正常业务状态 ⇒ 守卫早退（`?: return` / `isNullOrEmpty()`）；数据本该存在 ⇒ `requireNotNull(x) { "英文消息" }`。**禁止用 `?.` 把崩溃改成静默跳过来"消除"断言**，也不得顺手改可空性标注 / 签名。存量已清零，新增断言由 `null_assert_gate.py` 拦截（判定口径见 `skill/avbox-code-review-spec.md` 的「空安全与非空断言」）
 - **并发**：遵循项目现有异步编程方式；永远不要阻塞主线程；避免共享可变状态，确保线程安全
@@ -44,8 +44,8 @@ description: 项目规则、通用原则、通用代码规范、交付验证与�
 - **禁止擅自跑 release 构建（2026-10-05 用户指令）**：`:app:assembleRelease` 未经用户明确许可一律不跑（单次 4–5 分钟，只为 R8/keep/混淆与契约层 release 侧 `javap` 比对服务）；日常验证只跑 debug 变体。
 - **验证不得攒到最后**：每完成一组改动（或一轮审查修复）立即跑 `.\gradlew :app:assembleDebug` 与 `.\gradlew :app:testDebugUnitTest`；改配置解析 / 规则 / 字段取值的必须补单测锁口径（范例：`ConfigParserTest`、`HeaderGuardTest`）。纯人眼推理会把"会崩 / 会失效"级问题拖到很后面才暴露。
 - **跑构建的三个坑（2026-09-23 实测，别再重复踩）**：①**不要用 `| Select-String … | Select-Object -First N` 过滤 gradle 输出** —— 管道会在拿到 `BUILD SUCCESSFUL/FAILED` 之前被截断，命令以非零码结束，极易误判成"构建失败"（本次为此白跑一轮）。要过滤就 `> log 2>&1` 落盘后再读。②**该日志是 UTF-16**，Git Bash 的 `grep` / `tail` 对它零命中（表现为"明明有输出却搜不到"），只能走 PowerShell 的 `Get-Content`。③Git Bash 里 `./gradlew` 报 `ClassNotFoundException: GradleWrapperMain`（jar 完好，脚本路径问题），用 PowerShell 的 `.\gradlew.bat`。判读结果以 `BUILD SUCCESSFUL` 与 `app/build/test-results/testDebugUnitTest/*.xml` 的用例计数为准，别只看退出码。
-- **新增非空断言须过门禁（手动执行，项目暂无 CI）**：与 `i18n_gate.py` 同族，交付前跑 `python tools/null_assert_gate.py`；判定域（`src/main` + Chaquopy）已归零，`libs/backdrop`/`quickjs` 两处 vendored 自 2026-10-25 起**剔出判定域、只打印**，故基线文件已删除（`--update` 会按需重建）；新增断言即 FAIL，行级例外用 `// null-assert: keep` 并逐条登记理由。
-- **Composable 不得直连下层（手动执行，项目暂无 CI）**：跑 `python tools/ui_layer_gate.py`。口径 = `ui/**` 里含 `@Composable` 的文件禁止 `import …osc.{api,base,data,sourcedata,net}.*`；`*ViewModel` 与 `AppBootstrap` 白名单放行。基线 `ui_layer_baseline.json`（2026-10-25 首冻：20 文件 / 35 处）**只允许下调**，收敛目标见 `skill/review/refactor-plan-20261025.md` §10。ViewModel / Activity / Controller 不在判定范围 —— 它们依赖下层是合理方向。
+- **新增非空断言须过门禁（手动执行，项目暂无 CI）**：与 `i18n_gate.py` 同族，交付前跑 `python .tools/null_assert_gate.py`；判定域（`src/main` + Chaquopy）已归零，`libs/backdrop`/`quickjs` 两处 vendored 自 2026-10-25 起**剔出判定域、只打印**，故基线文件已删除（`--update` 会按需重建）；新增断言即 FAIL，行级例外用 `// null-assert: keep` 并逐条登记理由。
+- **Composable 不得直连下层（手动执行，项目暂无 CI）**：跑 `python .tools/ui_layer_gate.py`。口径 = `ui/**` 里含 `@Composable` 的文件禁止 `import …osc.{api,base,data,sourcedata,net}.*`；`*ViewModel` 与 `AppBootstrap` 白名单放行。基线 `ui_layer_baseline.json`（2026-10-25 首冻：20 文件 / 35 处）**只允许下调**，收敛目标见 `skill/review/refactor-plan-20261025.md` §10。ViewModel / Activity / Controller 不在判定范围 —— 它们依赖下层是合理方向。
 - **审查有终止线，不以"零发现"为目标**：换个角度总能找到东西，无限轮没有收益。可以收尾 = 连续一轮没有 阻断 / 高 / 中 级发现，且剩余发现全部属于"既有问题"或"口味差异"。每轮发现按「严重度」×「本次引入 / 既有 / 口味差异」两轴记账，严重度单调下降即可停。
 - **改动前两项自查**：①直接沿用既有写法时必须连带抄它的防御与归一化，漏抄等于把既有缺陷一起复制进来；②改动全局字段 / 新增数据源 / 触碰"第 0 项""唯一"这类隐式约定时，先列出它打破的不变量与全部消费方。实例与修复过程见 `history/features.md` 的 2026-09-23 条目。
 

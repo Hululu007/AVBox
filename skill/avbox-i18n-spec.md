@@ -280,7 +280,7 @@ Android 13+ 的「系统设置 → 应用 → 语言」需要 `res/xml/locales_c
 **A. 静态检查(脚本可复现)**
 
 - `ui/`、`ui/player/` 下含中文的字符串字面量 = 0(白名单 = §1.3 R1–R5 的 `// i18n: keep` 行);
-- `values-en` / `values-b+zh+Hant` 与 `values` 的 key 集合**逐一对齐**(无多无少),`values-zh-rHK` 为**子集**(允许少、禁止多);校验工具 `tools/i18n_align.py <lang> [--subset]` = **key 集合 + 占位符(含 `%%`、是否带位置) + 空值/首尾空白 + 简繁残留提示**(CJK 残留检查只对 `en` 开,繁体层改 `S2T-SUSPECT` 提示项) —— 2026-09-22 三目录全 PASS:`en` 424=424、`b+zh+Hant` 424=424(S2T-SUSPECT 仅 1 条 = 语言名 endonym「简体中文」)、`zh-rHK` 66 子集(0 多余/0 冗余/0 占位符失配;`--subset` 模式含 `REDUNDANT-VS-UPPER` 检查 = 差异层里与上级层同值的条目);
+- `values-en` / `values-b+zh+Hant` 与 `values` 的 key 集合**逐一对齐**(无多无少),`values-zh-rHK` 为**子集**(允许少、禁止多);校验工具 `.tools/i18n_align.py <lang> [--subset]` = **key 集合 + 占位符(含 `%%`、是否带位置) + 空值/首尾空白 + 简繁残留提示**(CJK 残留检查只对 `en` 开,繁体层改 `S2T-SUSPECT` 提示项) —— 2026-09-22 三目录全 PASS:`en` 424=424、`b+zh+Hant` 424=424(S2T-SUSPECT 仅 1 条 = 语言名 endonym「简体中文」)、`zh-rHK` 66 子集(0 多余/0 冗余/0 占位符失配;`--subset` 模式含 `REDUNDANT-VS-UPPER` 检查 = 差异层里与上级层同值的条目);
 - `values-zh-rHK`(差异层)的 key 必须是 `values` 的**子集**(允许少、禁止多;缺失条目按预期回落基础层);
 - 无"中文片段拼接"(`"共" + n + "集"` 形态);
 - 占位符一致性:各语言条目的 `%1$s` 参数齐全;
@@ -345,12 +345,12 @@ Android 13+ 的「系统设置 → 应用 → 语言」需要 `res/xml/locales_c
 
 **A.2 非 UI 层(32 文件 / 213 处,逐条甄别)** —— `api/`:ApiConfig 33、SpiderLoader 5、DanmakuApi 4、ConfigParser 1;`player/`:PlaybackController 25、PlayUrlResolver 15、ComposeVideoController 19、PlaybackService 6、M3u8PurifyUseCase 2、PlayerUiState 2、IjkMediaPlayer 2、ExoPlayer 1;`util/`:PlayerHelper 17、Thunder 13、LocalConfigHelper 11、DefaultConfig 6、OkGoHelper 4、Proxy 2、FileUtils 2、KV 1、HistoryHelper 1、EpisodeTotals 1、parser/SuperParse 1、live/TxtSubscribe 1;`bean/`:LivePlayerManager 9;`sourcedata/`:SourceViewModel 15;`dlna/`:DLNACastManager 2;`crawler/`:RSAEncrypt 6、Trans 2、JsSpider 1;`python/java/`:PythonSpider 2、PyLog 1。
 
-> **2026-10-01 注记(结构拆分)**：以上是实施当时的逐文件快照。V5 把播放三件套拆出 5 个协作者（`player/PlaybackTimeouts`/`PlaybackPreload`/`PlaybackFetch`、`player/controller/GestureController`、`ui/player/TrackSelectorDelegate`），相关文案随之迁移（例：手势提示与音轨弹窗跟着走）；卡口以实测为准 —— 复跑 `tools/i18n_gate.py` 为 **ui 0 处 + 非 ui 0 处**。
+> **2026-10-01 注记(结构拆分)**：以上是实施当时的逐文件快照。V5 把播放三件套拆出 5 个协作者（`player/PlaybackTimeouts`/`PlaybackPreload`/`PlaybackFetch`、`player/controller/GestureController`、`ui/player/TrackSelectorDelegate`），相关文案随之迁移（例：手势提示与音轨弹窗跟着走）；卡口以实测为准 —— 复跑 `.tools/i18n_gate.py` 为 **ui 0 处 + 非 ui 0 处**。
 
 ## 附录 B:统计口径与复现
 
-- 统计脚本(仓库工具,2026-10-25 起入库于 `tools/`):`tools/i18n_hardcoded_scan.py` —— 状态机剥离注释与字符边界,只统计"含中文的字符串字面量",按所在行是否日志上下文分类;输出同目录 `i18n_scan_out.json`。
-- 第 1 步新增的配套工具(同在 `tools/`,2026-10-25 起入库):`i18n_file.py <file...>`(逐文件列字面量+行号)、**`i18n_gate.py`(§7-A 卡口:ui 层硬闸门 + `// i18n: keep`[本行或上一行] + 日志豁免)**、`i18n_check_keys.py`(声明↔引用一致/重名/未用/**重复文案**/首尾空白)、**`i18n_align.py <lang> [--subset]`(第 2/3/4 步:多语言资源与 `values` 的 key 集合/占位符/空值逐条对齐;`--subset` = 地区差异层只允许少;繁体层以 `S2T-SUSPECT` 提示简繁漏转)**、`i18n_fidelity.py` + `i18n_verify_long.py`(HEAD 版原字面量 vs 资源值,逐字符含 `\n` 转义还原)。
+- 统计脚本(本地工具,位于 `.tools/`,不入库):`.tools/i18n_hardcoded_scan.py` —— 状态机剥离注释与字符边界,只统计"含中文的字符串字面量",按所在行是否日志上下文分类;输出 `.codebuddy/tools/i18n_scan_out.json`。
+- 第 1 步新增的配套工具(门禁件在 `.tools/`,不入库;`i18n_check_keys.py`/`i18n_fidelity.py`/`i18n_verify_long.py` 留在 `.codebuddy/tools/`):`i18n_file.py <file...>`(逐文件列字面量+行号)、**`i18n_gate.py`(§7-A 卡口:ui 层硬闸门 + `// i18n: keep`[本行或上一行] + 日志豁免)**、`i18n_check_keys.py`(声明↔引用一致/重名/未用/**重复文案**/首尾空白)、**`i18n_align.py <lang> [--subset]`(第 2/3/4 步:多语言资源与 `values` 的 key 集合/占位符/空值逐条对齐;`--subset` = 地区差异层只允许少;繁体层以 `S2T-SUSPECT` 提示简繁漏转)**、`i18n_fidelity.py` + `i18n_verify_long.py`(HEAD 版原字面量 vs 资源值,逐字符含 `\n` 转义还原)。
 - 复核(Win 下 PowerShell,口径略宽含注释,看趋势够用):
 
 ```powershell

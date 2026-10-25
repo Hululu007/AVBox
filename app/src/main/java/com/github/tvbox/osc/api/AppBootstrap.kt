@@ -149,7 +149,10 @@ object AppBootstrap {
                     ApiConfig.get().warmSearchSpiders()
                     SearchSourcesState.refresh()
                     _state.value = Boot.Ready(generation)
-                    if (!offline && !forceFresh) scheduleConfigRefresh(generation)
+                    if (!offline && !forceFresh) {
+                        scheduleConfigRefresh(generation)
+                        scheduleLiveConfigRefresh(generation)
+                    }
                 }
             }
         }
@@ -166,6 +169,14 @@ object AppBootstrap {
             ApiConfig.get().refreshConfigIfChanged { newBody, oldBody ->
                 applyRefreshedConfig(newBody, oldBody, generation)
             }
+        }
+    }
+
+    private fun scheduleLiveConfigRefresh(generation: Long) {
+        scope.launch {
+            delay(CONFIG_REFRESH_DELAY_MS)
+            if (!bootGeneration.isLatest(generation)) return@launch
+            ApiConfig.get().refreshLiveConfigIfChanged()
         }
     }
 
