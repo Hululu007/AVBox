@@ -1,15 +1,11 @@
 package com.github.tvbox.osc.util
 
 object HistoryMerge {
-    private const val KEY = "history_merge"
+    internal const val KEY = "history_merge"
 
     private val YEAR_PATTERN = Regex("(?:19|20)\\d{2}")
 
     fun isEnabled(): Boolean = KV.get(KEY, false)
-
-    fun setEnabled(enabled: Boolean) {
-        KV.put(KEY, enabled)
-    }
 
     fun normalize(title: String?): String = StringUtils.normalizeTitle(title)
 

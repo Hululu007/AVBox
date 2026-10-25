@@ -28,10 +28,10 @@ import com.github.tvbox.osc.player.PlaybackService
 import com.github.tvbox.osc.player.engine.MediaSources
 import com.github.tvbox.osc.player.core.PlayState
 import com.github.tvbox.osc.ui.player.PlayContainer
+import com.github.tvbox.osc.ui.settings.UiSettingsState
 import com.github.tvbox.osc.ui.theme.AVBoxTheme
 import com.github.tvbox.osc.ui.theme.AppThemeState
 import com.github.tvbox.osc.util.LOG
-import com.github.tvbox.osc.util.MusicSettings
 import com.github.tvbox.osc.util.PermissionHelper
 import com.github.tvbox.osc.util.SpiderStorageNotice
 import java.util.concurrent.atomic.AtomicBoolean
@@ -259,7 +259,7 @@ class DetailActivity : BaseActivity(), PageHost {
     }
 
     fun musicPlaybackDetected(): Boolean {
-        if (!MusicSettings.autoOpenPage()) return false
+        if (!UiSettingsState.config.musicAutoOpenPage) return false
         val container = playContainer ?: return false
         val engine = PlaybackService.peek() ?: return false
         if (engine.isReleased() || engine.attachedPage() !== container) return false

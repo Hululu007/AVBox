@@ -6,7 +6,7 @@ import com.github.tvbox.osc.bean.ParseBean
 import com.github.tvbox.osc.data.WatchProgressStore
 import com.github.tvbox.osc.player.controller.VodControlListener
 import com.github.tvbox.osc.player.state.DanmuSettingSheetState
-import com.github.tvbox.osc.util.DanmuHelper
+import com.github.tvbox.osc.util.DanmuSettingsState
 import com.github.tvbox.osc.util.LOG
 import org.json.JSONObject
 import java.util.HashMap
@@ -19,7 +19,7 @@ class PlayContainerControlListener(private val container: PlayContainer) : VodCo
             DanmuSettingSheetState(
                 onOpenSearch = { container.openDanmuSearchSheet() },
                 onReset = {
-                    DanmuHelper.reset()
+                    DanmuSettingsState.reset()
                     container.applyDanmuSettings(false)
                 },
                 onSettingsApplied = { forColor -> container.applyDanmuSettings(forColor) },

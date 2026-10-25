@@ -1,6 +1,7 @@
 package com.github.tvbox.osc.data
 
 import com.github.tvbox.osc.bean.VodInfo
+import kotlinx.coroutines.flow.Flow
 
 interface FollowRepository {
 
@@ -8,7 +9,7 @@ interface FollowRepository {
 
     suspend fun find(sourceKey: String?, vodId: String?): VodFollow?
 
-    suspend fun getAll(): List<VodFollow>
+    fun observeAll(): Flow<List<VodFollow>>
 
     suspend fun upsert(sourceKey: String?, vodInfo: VodInfo, days: Set<Int>, hour: Int)
 
@@ -24,7 +25,7 @@ internal class RoomFollowRepository(
     override suspend fun find(sourceKey: String?, vodId: String?): VodFollow? =
         follows().getVodFollow(CurrentSubscription.cid(), sourceKey, vodId)
 
-    override suspend fun getAll(): List<VodFollow> = follows().getAll()
+    override fun observeAll(): Flow<List<VodFollow>> = follows().observeAll()
 
     override suspend fun upsert(sourceKey: String?, vodInfo: VodInfo, days: Set<Int>, hour: Int) {
         val cid = CurrentSubscription.cid()

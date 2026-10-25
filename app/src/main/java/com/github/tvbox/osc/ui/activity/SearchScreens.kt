@@ -66,7 +66,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.bean.Movie
-import com.github.tvbox.osc.net.SearchSettings
+import com.github.tvbox.osc.util.SearchSettingsState
 import com.github.tvbox.osc.ui.components.ClearFocusOnImeDismiss
 import com.github.tvbox.osc.ui.components.PressableCard
 import com.github.tvbox.osc.ui.components.VodPoster
@@ -111,8 +111,8 @@ internal fun hideIme(activity: android.app.Activity?) {
 
 @Composable
 internal fun LayoutSwitchAction(
-    selected: SearchSettings.SearchLayout,
-    onSelect: (SearchSettings.SearchLayout) -> Unit,
+    selected: SearchSettingsState.SearchLayout,
+    onSelect: (SearchSettingsState.SearchLayout) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     Box {
@@ -142,19 +142,19 @@ internal fun LayoutSwitchAction(
                 LayoutSwitchCard(
                     iconRes = R.drawable.ic_layout_horizontal,
                     label = stringResource(R.string.search_result_layout_horizontal),
-                    selected = selected == SearchSettings.SearchLayout.Horizontal,
+                    selected = selected == SearchSettingsState.SearchLayout.Horizontal,
                     onClick = {
                         expanded = false
-                        onSelect(SearchSettings.SearchLayout.Horizontal)
+                        onSelect(SearchSettingsState.SearchLayout.Horizontal)
                     },
                 )
                 LayoutSwitchCard(
                     iconRes = R.drawable.ic_layout_vertical,
                     label = stringResource(R.string.search_result_layout_vertical),
-                    selected = selected == SearchSettings.SearchLayout.Vertical,
+                    selected = selected == SearchSettingsState.SearchLayout.Vertical,
                     onClick = {
                         expanded = false
-                        onSelect(SearchSettings.SearchLayout.Vertical)
+                        onSelect(SearchSettingsState.SearchLayout.Vertical)
                     },
                 )
             }

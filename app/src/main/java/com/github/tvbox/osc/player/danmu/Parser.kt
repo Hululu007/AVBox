@@ -5,7 +5,7 @@ import android.text.TextUtils
 import com.github.tvbox.osc.bean.Danmu
 import com.github.tvbox.osc.io.FileUtils
 import com.github.tvbox.osc.net.OkGoHelper
-import com.github.tvbox.osc.util.DanmuHelper
+import com.github.tvbox.osc.util.DanmuSettingsState
 import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.util.RegexUtils
 import com.github.tvbox.osc.util.SSL.SSLSocketFactoryCompat
@@ -238,8 +238,8 @@ class Parser : BaseDanmakuParser {
             if (item == null) return null
             val time = (values[0].toFloat() * 1000).toLong()
             val size = values[2].toFloat() * Math.max(1.0f, mDispDensity - 0.6f)
-            val color = if (DanmuHelper.useRandomColor()) {
-                DanmuHelper.randomColor()
+            val color = if (DanmuSettingsState.config.randomColor) {
+                DanmuSettingsState.randomColor()
             } else {
                 (0x00000000ff000000L or java.lang.Long.parseLong(values[3])).toInt()
             }

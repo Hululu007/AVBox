@@ -19,11 +19,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.tvbox.osc.R
+import com.github.tvbox.osc.player.AppPlayerView
 import com.github.tvbox.osc.player.PlaybackService
 import com.github.tvbox.osc.player.PlayerHelper
 import com.github.tvbox.osc.player.effect.anime4k.Anime4kTier
+import com.github.tvbox.osc.player.state.PlaybackSettingsState
 import com.github.tvbox.osc.ui.components.AVBoxAlertDialog
 import com.github.tvbox.osc.ui.components.AppTopBarScaffold
 import com.github.tvbox.osc.ui.components.LocalSheetDismiss
@@ -35,21 +36,19 @@ import com.github.tvbox.osc.ui.components.SettingsOptionMenuRow
 import com.github.tvbox.osc.ui.components.SettingsSliderRow
 import com.github.tvbox.osc.ui.components.SettingsSwitchRow
 import com.github.tvbox.osc.ui.components.TopBarActionBox
-import com.github.tvbox.osc.util.HawkConfig
-import com.github.tvbox.osc.util.MusicSettings
+import com.github.tvbox.osc.ui.settings.UiSettingsState
 import kotlin.math.roundToInt
-import com.github.tvbox.osc.player.AppPlayerView
 
 private const val DecodeHard = "硬解码" // i18n: keep
 private const val DecodeSoft = "软解码" // i18n: keep
 
 @Composable
-fun PlaySettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = viewModel()) {
-    val state by vm.state
+fun PlaySettingsScreen(onNavigateBack: () -> Unit) {
+    val config = PlaybackSettingsState.config
     val context = LocalContext.current
     var showPrewarmWarning by remember { mutableStateOf(false) }
-    var sliderPreloadDuration by remember(state.preloadDuration) { mutableStateOf(state.preloadDuration) }
-    var sliderCacheSize by remember(state.exoCacheSizeMb) { mutableStateOf(state.exoCacheSizeMb) }
+    var sliderPreloadDuration by remember(config.preloadDuration) { mutableStateOf(config.preloadDuration) }
+    var sliderCacheSize by remember(config.exoCacheSizeMb) { mutableStateOf(config.exoCacheSizeMb) }
 
     val listState = rememberScrollState()
     AppTopBarScaffold(
@@ -74,7 +73,7 @@ fun PlaySettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = viewM
             Spacer(Modifier.height(topPad + 8.dp))
 
             val playerTypes = PlayerHelper.getExistPlayerTypes().sortedDescending()
-            val currentPlayType = if (playerTypes.contains(state.playType)) state.playType else 2
+            val currentPlayType = if (playerTypes.contains(config.playType)) config.playType else 2
             SettingsGroup(title = stringResource(R.string.settings_group_play_picture)) {
                 SettingsCard(SettingsCardPosition.FIRST) {
                     SettingsOptionMenuRow(
@@ -83,20 +82,20 @@ fun PlaySettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = viewM
                         valueText = PlayerHelper.getPlayerName(currentPlayType),
                         options = playerTypes.map { PlayerHelper.getPlayerName(it) },
                         selectedIndex = playerTypes.indexOf(currentPlayType).coerceAtLeast(0),
-                        onSelect = { idx -> vm.put(HawkConfig.PLAY_TYPE, playerTypes[idx]) },
+                        onSelect = { idx -> PlaybackSettingsState.setPlayType(playerTypes[idx]) },
                     )
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {
                     SettingsOptionMenuRow(
                         title = stringResource(R.string.settings_play_render),
                         leadingIconRes = R.drawable.ic_play_render,
-                        valueText = PlayerHelper.getRenderName(state.playRender),
+                        valueText = PlayerHelper.getRenderName(config.playRender),
                         options = listOf("SurfaceView", "TextureView"),
-                        selectedIndex = 1 - state.playRender,
+                        selectedIndex = 1 - config.playRender,
                         onSelect = { idx ->
                             val render = 1 - idx
-                            if (render == 0 && state.playTunnel) vm.put(HawkConfig.PLAY_TUNNEL, false)
-                            vm.put(HawkConfig.PLAY_RENDER, render)
+                            if (render == 0 && config.playTunnel) PlaybackSettingsState.setPlayTunnel(false)
+                            PlaybackSettingsState.setPlayRender(render)
                         },
                     )
                 }
@@ -112,14 +111,14 @@ fun PlaySettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = viewM
                     SettingsOptionMenuRow(
                         title = stringResource(R.string.settings_play_scale),
                         leadingIconRes = R.drawable.ic_play_scale,
-                        valueText = PlayerHelper.getScaleName(state.playScale),
+                        valueText = PlayerHelper.getScaleName(config.playScale),
                         options = scales.map { it.second },
-                        selectedIndex = scales.indexOfFirst { it.first == state.playScale },
-                        onSelect = { idx -> vm.put(HawkConfig.PLAY_SCALE, scales[idx].first) },
+                        selectedIndex = scales.indexOfFirst { it.first == config.playScale },
+                        onSelect = { idx -> PlaybackSettingsState.setPlayScale(scales[idx].first) },
                     )
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {
-                    val codec = state.exoDecode
+                    val codec = config.exoDecode
                     val decodeLabels = listOf(
                         stringResource(R.string.player_decode_hard),
                         stringResource(R.string.player_decode_soft),
@@ -135,13 +134,13 @@ fun PlaySettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = viewM
                         enabled = currentPlayType == 2,
                         options = decodeLabels,
                         selectedIndex = if (codec == DecodeSoft) 1 else 0,
-                        onSelect = { idx -> vm.put(HawkConfig.EXO_DECODE, if (idx == 1) DecodeSoft else DecodeHard) },
+                        onSelect = { idx -> PlaybackSettingsState.setExoDecode(if (idx == 1) DecodeSoft else DecodeHard) },
                     )
                 }
                 SettingsCard(SettingsCardPosition.LAST) {
                     val tiers = Anime4kTier.entries
                     val labels = tiers.map { stringResource(it.labelRes) }
-                    val selected = tiers.indexOf(state.anime4kTier).coerceAtLeast(0)
+                    val selected = tiers.indexOfFirst { it.name == config.anime4kTier }.coerceAtLeast(0)
                     SettingsOptionMenuRow(
                         title = stringResource(R.string.settings_play_anime4k),
                         leadingIconRes = R.drawable.ic_play_anime4k,
@@ -149,7 +148,7 @@ fun PlaySettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = viewM
                         enabled = currentPlayType == 2,
                         options = labels,
                         selectedIndex = selected,
-                        onSelect = { idx -> vm.put(HawkConfig.ANIME4K_TIER, tiers[idx].name) },
+                        onSelect = { idx -> PlaybackSettingsState.setAnime4kTier(tiers[idx].name) },
                     )
                 }
             }
@@ -162,12 +161,12 @@ fun PlaySettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = viewM
                         title = stringResource(R.string.settings_play_kernel_prewarm),
                         leadingIconRes = R.drawable.ic_play_prewarm,
                         subtitle = stringResource(R.string.settings_play_kernel_prewarm_subtitle),
-                        checked = state.kernelPrewarm,
+                        checked = config.kernelPrewarm,
                         onCheckedChange = { checked ->
                             if (checked) {
                                 showPrewarmWarning = true
                             } else {
-                                vm.put(HawkConfig.KERNEL_PREWARM, false)
+                                PlaybackSettingsState.setKernelPrewarm(false)
                                 PlaybackService.onPrewarmPreferenceChanged(context, false)
                             }
                         },
@@ -177,10 +176,10 @@ fun PlaySettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = viewM
                     SettingsSwitchRow(
                         title = stringResource(R.string.settings_play_tunnel),
                         leadingIconRes = R.drawable.ic_play_tunnel,
-                        checked = state.playTunnel,
+                        checked = config.playTunnel,
                         onCheckedChange = { checked ->
-                            if (checked && state.playRender != 1) vm.put(HawkConfig.PLAY_RENDER, 1)
-                            vm.put(HawkConfig.PLAY_TUNNEL, checked)
+                            if (checked && config.playRender != 1) PlaybackSettingsState.setPlayRender(1)
+                            PlaybackSettingsState.setPlayTunnel(checked)
                         },
                     )
                 }
@@ -188,8 +187,8 @@ fun PlaySettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = viewM
                     SettingsSwitchRow(
                         title = stringResource(R.string.settings_play_prefer_aac),
                         leadingIconRes = R.drawable.ic_play_aac,
-                        checked = state.preferAac,
-                        onCheckedChange = { vm.put(HawkConfig.PLAY_PREFER_AAC, it) },
+                        checked = config.preferAac,
+                        onCheckedChange = { PlaybackSettingsState.setPreferAac(it) },
                     )
                 }
                 SettingsCard(SettingsCardPosition.LAST) {
@@ -197,11 +196,8 @@ fun PlaySettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = viewM
                         title = stringResource(R.string.settings_music_page),
                         leadingIconRes = R.drawable.ic_music_page,
                         subtitle = stringResource(R.string.settings_music_page_subtitle),
-                        checked = state.musicPlayerPage,
-                        onCheckedChange = {
-                            MusicSettings.setAutoOpenPage(it)
-                            vm.refresh()
-                        },
+                        checked = UiSettingsState.config.musicAutoOpenPage,
+                        onCheckedChange = { UiSettingsState.setMusicAutoOpenPage(it) },
                     )
                 }
             }
@@ -214,8 +210,8 @@ fun PlaySettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = viewM
                         title = stringResource(R.string.preload_next_episode),
                         leadingIconRes = R.drawable.ic_preload_next,
                         subtitle = stringResource(R.string.preload_next_episode_subtitle),
-                        checked = state.preloadNextEpisode,
-                        onCheckedChange = { vm.put(HawkConfig.PRELOAD_NEXT_EPISODE, it) },
+                        checked = config.preloadNextEpisode,
+                        onCheckedChange = { PlaybackSettingsState.setPreloadNextEpisode(it) },
                     )
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {
@@ -228,8 +224,8 @@ fun PlaySettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = viewM
                         steps = 9,
                         onValueChange = { sliderPreloadDuration = ((it - 20) / 10).roundToInt() * 10 + 20 },
                         onValueChangeFinished = {
-                            if (sliderPreloadDuration != state.preloadDuration) {
-                                vm.put(HawkConfig.PRELOAD_DURATION, sliderPreloadDuration)
+                            if (sliderPreloadDuration != config.preloadDuration) {
+                                PlaybackSettingsState.setPreloadDuration(sliderPreloadDuration)
                             }
                         },
                     )
@@ -239,8 +235,8 @@ fun PlaySettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = viewM
                         title = stringResource(R.string.preload_play_cache),
                         leadingIconRes = R.drawable.ic_play_cache,
                         subtitle = stringResource(R.string.preload_play_cache_subtitle),
-                        checked = state.playCache,
-                        onCheckedChange = { vm.put(HawkConfig.PLAY_CACHE, it) },
+                        checked = config.playCache,
+                        onCheckedChange = { PlaybackSettingsState.setPlayCache(it) },
                     )
                 }
                 SettingsCard(SettingsCardPosition.LAST) {
@@ -253,8 +249,8 @@ fun PlaySettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = viewM
                         steps = 30,
                         onValueChange = { sliderCacheSize = ((it - 128) / 128).roundToInt() * 128 + 128 },
                         onValueChangeFinished = {
-                            if (sliderCacheSize != state.exoCacheSizeMb) {
-                                vm.put(HawkConfig.EXO_CACHE_SIZE_MB, sliderCacheSize)
+                            if (sliderCacheSize != config.exoCacheSizeMb) {
+                                PlaybackSettingsState.setExoCacheSizeMb(sliderCacheSize)
                             }
                         },
                     )
@@ -280,7 +276,7 @@ fun PlaySettingsScreen(onNavigateBack: () -> Unit, vm: SettingsViewModel = viewM
                 val dismissThen = LocalSheetDismissThen.current
                 TextButton(onClick = {
                     dismissThen {
-                        vm.put(HawkConfig.KERNEL_PREWARM, true)
+                        PlaybackSettingsState.setKernelPrewarm(true)
                         PlaybackService.onPrewarmPreferenceChanged(context, true)
                         showPrewarmWarning = false
                     }

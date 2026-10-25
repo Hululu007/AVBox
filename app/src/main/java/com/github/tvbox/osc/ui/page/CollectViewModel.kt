@@ -9,10 +9,6 @@ import com.github.tvbox.osc.bean.TmdbPosterCache
 import com.github.tvbox.osc.data.AppGraph
 import com.github.tvbox.osc.data.CollectRepository
 import com.github.tvbox.osc.data.VodCollect
-import com.github.tvbox.osc.event.UiChange
-import com.github.tvbox.osc.event.UiEvents
-import com.github.tvbox.osc.util.HawkConfig
-import com.github.tvbox.osc.util.KV
 import com.github.tvbox.osc.util.SubscribeList
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,9 +29,6 @@ class CollectViewModel(
     private val _items = MutableStateFlow<List<VodCollect>>(emptyList())
     val items: StateFlow<List<VodCollect>> = _items.asStateFlow()
 
-    private val _columns = MutableStateFlow(KV.get(HawkConfig.COLLECT_COLUMNS, 3))
-    val columns: StateFlow<Int> = _columns.asStateFlow()
-
     private val _unavailableKeys = MutableStateFlow<Set<String>>(emptySet())
     val unavailableKeys: StateFlow<Set<String>> = _unavailableKeys.asStateFlow()
 
@@ -45,7 +38,6 @@ class CollectViewModel(
     val selected: StateFlow<Set<Int>> = _selected.asStateFlow()
 
     init {
-        observeUiEvents()
         viewModelScope.launch(Dispatchers.IO) {
             AppBootstrap.subscriptionCid.drop(1).collect { recomputeUnavailableNow() }
         }
@@ -84,16 +76,6 @@ class CollectViewModel(
                 (cid.isEmpty() || cid == current) && ApiConfig.get().getSource(item.sourceKey) == null
             }
         }.mapNotNull { it.sourceKey }.toSet()
-    }
-
-    private fun observeUiEvents() {
-        viewModelScope.launch {
-            UiEvents.changes.collect { change ->
-                if (change is UiChange.CollectLayoutChanged) {
-                    _columns.value = KV.get(HawkConfig.COLLECT_COLUMNS, 3)
-                }
-            }
-        }
     }
 
     fun enterEdit() {

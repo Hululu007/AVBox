@@ -66,6 +66,7 @@ object HawkConfig {
     const val GESTURE_CONTROL_DISABLED = "gesture_control_disabled"
     const val NAV_ANIMATION_DISABLED = "nav_animation_disabled"
     const val NAV_LIVE_HIDDEN = "nav_live_hidden"
+    const val MUSIC_AUTO_OPEN_PAGE = "music_auto_open_page"
     const val SEARCH_THREADS = "search_threads"
     const val SEARCH_THREADS_DEFAULT = 32
     const val LONG_PRESS_SPEED = "long_press_speed"

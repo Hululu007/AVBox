@@ -2,7 +2,7 @@ package com.github.tvbox.osc.api
 
 import com.github.tvbox.osc.api.ApiConfig
 import com.github.tvbox.osc.bean.SourceBean
-import com.github.tvbox.osc.net.SearchSettings
+import com.github.tvbox.osc.util.SearchSettingsState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,14 +23,18 @@ object SearchSourcesState {
     }
 
     fun applySelection(next: Set<String>) {
-        SearchSettings.putSourcesForSearch(next)
+        val searchable = ApiConfig.get().getSourceBeanList()
+            .filter(SourceBean::isSearchable)
+            .map { it.key.orEmpty() }
+            .toSet()
+        SearchSettingsState.putSourcesForSearch(next, searchable)
         refresh()
     }
 
     private fun build(): Ui {
         val sources = ApiConfig.get().getSourceBeanList().filter(SourceBean::isSearchable)
         val keys = sources.map { it.key.orEmpty() }.toSet()
-        val stored = SearchSettings.currentSelection()
+        val stored = SearchSettingsState.currentSelection()
         val picked = when {
             stored == null -> keys
             stored.isEmpty() -> emptySet()

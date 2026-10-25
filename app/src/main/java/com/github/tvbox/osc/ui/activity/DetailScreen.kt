@@ -29,6 +29,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,10 +58,13 @@ import com.github.tvbox.osc.ui.components.PosterBackdrop
 import com.github.tvbox.osc.ui.components.VodCardMenu
 import com.github.tvbox.osc.ui.components.rememberVodCardMenuState
 import com.github.tvbox.osc.ui.theme.AppThemeState
+import com.github.tvbox.osc.ui.settings.UiSettingsState
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.github.tvbox.osc.ui.page.jumpToSearch
@@ -180,12 +184,17 @@ fun DetailScreen(activity: DetailActivity, vm: DetailViewModel) {
     }
     LaunchedEffect(musicWatch, musicArmed) {
         if (!musicWatch || !musicArmed) return@LaunchedEffect
-        while (true) {
-            delay(300)
-            if (!activity.musicPlaybackDetected()) continue
-            if (!activity.handOffToMusicPlayer()) continue
-            musicArmed = false
-            return@LaunchedEffect
+        while (musicArmed) {
+            snapshotFlow {
+                activity.playContainer?.uiState()?.playState to UiSettingsState.config.musicAutoOpenPage
+            }
+                .filter { (_, enabled) -> enabled }
+                .first { activity.musicPlaybackDetected() }
+            if (activity.handOffToMusicPlayer()) {
+                musicArmed = false
+            } else {
+                delay(300)
+            }
         }
     }
 

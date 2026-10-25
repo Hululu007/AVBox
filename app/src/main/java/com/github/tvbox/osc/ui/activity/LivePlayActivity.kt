@@ -14,8 +14,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -34,8 +32,8 @@ import com.github.tvbox.osc.player.PlaybackService
 import com.github.tvbox.osc.player.controller.ComposeLiveController
 import com.github.tvbox.osc.player.engine.MediaSources
 import com.github.tvbox.osc.player.core.PlayState
-import com.github.tvbox.osc.ui.components.LocalSheetDismiss
 import com.github.tvbox.osc.ui.components.SheetHostScaffold
+import com.github.tvbox.osc.ui.settings.LiveSettingsState
 import com.github.tvbox.osc.ui.theme.AVBoxTheme
 import com.github.tvbox.osc.ui.theme.AppThemeState
 import com.github.tvbox.osc.util.HawkConfig
@@ -460,7 +458,7 @@ class LivePlayActivity : BaseActivity() {
             val attempts = vm.bumpSourceSwitchAttempts()
             if (currentLiveChannelItem?.sourceNum == attempts) {
                 vm.resetSourceSwitchAttempts()
-                val next = getNextChannel(if (KV.get(HawkConfig.LIVE_CHANNEL_REVERSE, false)) -1 else 1)
+                val next = getNextChannel(if (LiveSettingsState.config.channelReverse) -1 else 1)
                 playChannel(next[0], next[1], false)
             } else {
                 playNextSource()
@@ -479,7 +477,7 @@ class LivePlayActivity : BaseActivity() {
             currentGroupIndex = currentChannelGroupIndex,
             currentChannelIndex = currentLiveChannelIndex,
             direction = direction,
-            crossGroup = KV.get(HawkConfig.LIVE_CROSS_GROUP, false),
+            crossGroup = LiveSettingsState.config.crossGroup,
             channelsOf = { groupIndex -> channelSourceLoader.getLiveChannels(groupIndex) },
         )
     }
@@ -594,6 +592,7 @@ class LivePlayActivity : BaseActivity() {
     }
 
     internal fun openSettingsSheet() {
+        LiveSettingsState.reload()
         ApiConfig.get().refreshLiveApiHistoryItems()
         initLiveSettingGroupList()
         loadCurrentSourceList()
@@ -605,6 +604,7 @@ class LivePlayActivity : BaseActivity() {
     }
 
     internal fun onSettingsInputsChanged() {
+        LiveSettingsState.reload()
         vm.onSettingsInputsChanged()
     }
 
@@ -615,13 +615,13 @@ class LivePlayActivity : BaseActivity() {
 
         override fun playerType(): Int = livePlayerManager.livePlayerType
 
-        override fun connectTimeoutIndex(): Int = KV.get(HawkConfig.LIVE_CONNECT_TIMEOUT, 1)
+        override fun connectTimeoutIndex(): Int = LiveSettingsState.config.connectTimeoutIndex
 
         override fun switchChecked(position: Int): Boolean = when (position) {
-            0 -> KV.get(HawkConfig.LIVE_SHOW_TIME, false)
-            1 -> KV.get(HawkConfig.LIVE_SHOW_NET_SPEED, false)
-            2 -> KV.get(HawkConfig.LIVE_CHANNEL_REVERSE, false)
-            3 -> KV.get(HawkConfig.LIVE_CROSS_GROUP, false)
+            0 -> LiveSettingsState.config.showTime
+            1 -> LiveSettingsState.config.showNetSpeed
+            2 -> LiveSettingsState.config.channelReverse
+            3 -> LiveSettingsState.config.crossGroup
             else -> false
         }
 
@@ -665,14 +665,6 @@ class LivePlayActivity : BaseActivity() {
 
         override fun releasePlayerKernel() {
             this@LivePlayActivity.releasePlayerKernel()
-        }
-
-        override fun refreshTimeOverlay() {
-            overlay.showTime()
-        }
-
-        override fun refreshNetSpeedOverlay() {
-            overlay.showNetSpeed()
         }
 
         override fun refreshChannelListAndPlay(channelName: String?, sourceIndex: Int) {

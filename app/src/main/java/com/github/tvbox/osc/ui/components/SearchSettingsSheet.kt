@@ -36,7 +36,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.bean.SourceBean
-import com.github.tvbox.osc.net.SearchSettings
+import com.github.tvbox.osc.util.SearchSettingsState
 import com.github.tvbox.osc.util.HomeSettings
 
 private val SourceCardShapeLeft = RoundedCornerShape(
@@ -64,7 +64,7 @@ fun SearchSettingsSheet(
 ) {
     val allKeys = remember(sources) { sources.map { it.key.orEmpty() }.toSet() }
     val homeLayout by HomeSettings.layoutFlow.collectAsStateWithLifecycle()
-    var exactMatch by remember { mutableStateOf(SearchSettings.isExactMatchEnabled()) }
+    var exactMatch by remember { mutableStateOf(SearchSettingsState.isExactMatchEnabled()) }
 
     val maxSheetHeight = (LocalConfiguration.current.screenHeightDp * 0.7f).dp
 
@@ -116,7 +116,7 @@ fun SearchSettingsSheet(
                         checked = exactMatch,
                         onCheckedChange = {
                             exactMatch = it
-                            SearchSettings.setExactMatchEnabled(it)
+                            SearchSettingsState.setExactMatchEnabled(it)
                         },
                     )
                 }

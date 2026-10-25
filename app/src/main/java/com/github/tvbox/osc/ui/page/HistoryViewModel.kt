@@ -1,5 +1,6 @@
 package com.github.tvbox.osc.ui.page
 
+import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.github.tvbox.osc.api.AppBootstrap
@@ -14,9 +15,11 @@ import com.github.tvbox.osc.data.EpisodeTotals
 import com.github.tvbox.osc.data.HistoryRepository
 import com.github.tvbox.osc.data.PlaybackProgress
 import com.github.tvbox.osc.data.WatchProgressStore
+import com.github.tvbox.osc.ui.settings.UiSettingsState
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.HistoryHelper
 import com.github.tvbox.osc.util.KV
+import com.github.tvbox.osc.util.SearchSettingsState
 import com.github.tvbox.osc.util.TrackMemory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -24,6 +27,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 
@@ -46,15 +50,18 @@ class HistoryViewModel(
     private val _incognito = MutableStateFlow(HistoryHelper.isIncognito())
     val incognito = _incognito.asStateFlow()
 
-    private val reloadTick = MutableStateFlow(0)
-
     init {
         observeUiEvents()
         viewModelScope.launch(Dispatchers.IO) {
-            combine(reloadTick, AppBootstrap.subscriptionCid) { _, cid -> cid }
-                .flatMapLatest { cid -> history.observeVodRecords(cid) }
-                .collect { list ->
-                    val hidden = HistoryHelper.isIncognito()
+            combine(
+                AppBootstrap.subscriptionCid.flatMapLatest { cid ->
+                    snapshotFlow { HistoryHelper.getHisNum(SearchSettingsState.config.historyNumIndex) }
+                        .distinctUntilChanged()
+                        .flatMapLatest { limit -> history.observeVodRecords(cid, limit) }
+                },
+                snapshotFlow { UiSettingsState.config.incognito }.distinctUntilChanged(),
+            ) { list, hidden -> list to hidden }
+                .collect { (list, hidden) ->
                     _incognito.value = hidden
                     _items.value = if (hidden) emptyList() else list
                     _episodeTotals.value = if (hidden) emptyMap() else EpisodeTotals.snapshot()
@@ -69,7 +76,10 @@ class HistoryViewModel(
         }
         viewModelScope.launch {
             AppBootstrap.state.collect { boot ->
-                if (boot is AppBootstrap.Boot.Ready) reloadTick.value++
+                if (boot is AppBootstrap.Boot.Ready) {
+                    _episodeTotals.value = EpisodeTotals.snapshot()
+                    resolveSourceNames()
+                }
             }
         }
     }
@@ -88,7 +98,6 @@ class HistoryViewModel(
                 _scrollSignal.value++
                 viewModelScope.launch(Dispatchers.IO) {
                     history.sweepDuplicates()
-                    reloadTick.value++
                 }
             }
         }

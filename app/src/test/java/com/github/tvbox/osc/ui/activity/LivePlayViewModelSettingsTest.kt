@@ -46,10 +46,6 @@ class LivePlayViewModelSettingsTest {
 
         override fun releasePlayerKernel() = Unit
 
-        override fun refreshTimeOverlay() = Unit
-
-        override fun refreshNetSpeedOverlay() = Unit
-
         override fun refreshChannelListAndPlay(channelName: String?, sourceIndex: Int) = Unit
 
         override fun setEmptyChannelList(releasePlayer: Boolean) = Unit

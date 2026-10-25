@@ -14,12 +14,15 @@ import com.github.tvbox.osc.data.FollowWatched
 import com.github.tvbox.osc.data.HistoryRepository
 import com.github.tvbox.osc.data.PlaybackProgress
 import com.github.tvbox.osc.data.VodFollow
+import com.github.tvbox.osc.event.UiChange
+import com.github.tvbox.osc.event.UiEvents
 import com.github.tvbox.osc.util.HistoryHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 internal data class FollowEntry(
@@ -55,8 +58,18 @@ internal class FollowingViewModel(
     private val _selected = MutableStateFlow<Set<Int>>(emptySet())
     val selected = _selected.asStateFlow()
 
+    private val historyTick = MutableStateFlow(0)
+
     init {
-        refresh()
+        observeHistoryChanges()
+        viewModelScope.launch(Dispatchers.IO) {
+            combine(follows.observeAll(), historyTick) { list, _ -> list }
+                .map { list -> list.map { follow -> FollowEntry(follow, resolveHistory(follow), emptySet()) } }
+                .collect {
+                    entries.value = it
+                    _episodeTotals.value = EpisodeTotals.snapshot()
+                }
+        }
         viewModelScope.launch(Dispatchers.IO) {
             combine(entries, FollowWatched.state) { list, watched ->
                 list.map { entry ->
@@ -72,33 +85,34 @@ internal class FollowingViewModel(
             }
         }
         viewModelScope.launch(Dispatchers.IO) {
-            AppBootstrap.subscriptionCid.drop(1).collect { refresh() }
+            AppBootstrap.subscriptionCid.drop(1).collect { historyTick.value++ }
         }
         viewModelScope.launch {
             AppBootstrap.state.collect { boot ->
-                if (boot is AppBootstrap.Boot.Ready) refresh()
+                if (boot is AppBootstrap.Boot.Ready) historyTick.value++
+            }
+        }
+    }
+
+    private fun observeHistoryChanges() {
+        viewModelScope.launch {
+            UiEvents.changes.collect { change ->
+                if (change is UiChange.HistoryChanged) historyTick.value++
             }
         }
     }
 
     fun refresh() {
         _today.value = FollowDays.todayIndex()
-        viewModelScope.launch(Dispatchers.IO) {
-            val list = follows.getAll()
-            entries.value = list.map { follow ->
-                FollowEntry(
-                    follow = follow,
-                    history = if (HistoryHelper.isIncognito()) {
-                        null
-                    } else {
-                        history.getVodInfo(follow.sourceKey.orEmpty(), follow.vodId.orEmpty())
-                    },
-                    watchedDays = emptySet(),
-                )
-            }
-            _episodeTotals.value = EpisodeTotals.snapshot()
-        }
+        historyTick.value++
     }
+
+    private suspend fun resolveHistory(follow: VodFollow): VodInfo? =
+        if (HistoryHelper.isIncognito()) {
+            null
+        } else {
+            history.getVodInfo(follow.sourceKey.orEmpty(), follow.vodId.orEmpty())
+        }
 
     fun setWatched(id: Int, watched: Boolean) {
         val entry = _items.value.firstOrNull { it.follow.id == id } ?: return
@@ -150,7 +164,6 @@ internal class FollowingViewModel(
         exitEdit()
         viewModelScope.launch(Dispatchers.IO) {
             follows.deleteSelected(ids)
-            refresh()
         }
     }
 }

@@ -36,10 +36,9 @@ enum class Anime4kTier(
 
         val default: Anime4kTier = Standard
 
-        fun current(): Anime4kTier {
-            val name = KV.get(HawkConfig.ANIME4K_TIER, default.name)
-            return entries.firstOrNull { it.name == name } ?: default
-        }
+        fun current(): Anime4kTier = byName(KV.get(HawkConfig.ANIME4K_TIER, default.name))
+
+        fun byName(name: String): Anime4kTier = entries.firstOrNull { it.name == name } ?: default
     }
 }
 
@@ -52,15 +51,7 @@ object Anime4kSettings {
 
     fun enabled(): Boolean = KV.get(HawkConfig.ANIME4K_ENABLED, false)
 
-    fun setEnabled(enabled: Boolean) {
-        KV.put(HawkConfig.ANIME4K_ENABLED, enabled)
-    }
-
     fun deblur(): Boolean = KV.get(HawkConfig.ANIME4K_DEBLUR, false)
-
-    fun setDeblur(enabled: Boolean) {
-        KV.put(HawkConfig.ANIME4K_DEBLUR, enabled)
-    }
 
     fun sharpen(): Float {
         if (sharpenCached < 0f) {

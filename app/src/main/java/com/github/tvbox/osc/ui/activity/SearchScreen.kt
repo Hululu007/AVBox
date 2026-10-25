@@ -42,7 +42,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.bean.Movie
 import com.github.tvbox.osc.bean.TmdbPosterCache
-import com.github.tvbox.osc.net.SearchSettings
+import com.github.tvbox.osc.util.SearchSettingsState
 import com.github.tvbox.osc.ui.components.AppTopBarScaffold
 import com.github.tvbox.osc.ui.components.LoadState
 import com.github.tvbox.osc.ui.components.LoadStateBox
@@ -85,7 +85,7 @@ fun SearchScreen(vm: SearchViewModel = rememberSearchViewModel()) {
         lookupCollected = vm::isVideoCollected,
         onCollectToggle = vm::toggleVideoCollect,
     )
-    var resultLayout by remember { mutableStateOf(SearchSettings.resultLayout()) }
+    var resultLayout by remember { mutableStateOf(SearchSettingsState.resultLayout()) }
 
     LaunchedEffect(query) {
         val t = query.trim()
@@ -127,7 +127,7 @@ fun SearchScreen(vm: SearchViewModel = rememberSearchViewModel()) {
                         selected = resultLayout,
                         onSelect = {
                             resultLayout = it
-                            SearchSettings.setResultLayout(it)
+                            SearchSettingsState.setResultLayout(it)
                         },
                     )
                 },
@@ -219,7 +219,7 @@ private fun SearchResultsContent(
     running: Boolean,
     selectedSource: String?,
     onSelectSource: (String?) -> Unit,
-    resultLayout: SearchSettings.SearchLayout,
+    resultLayout: SearchSettingsState.SearchLayout,
     listState: LazyListState,
     searchedTitle: String,
     exactMatch: Boolean,
@@ -244,7 +244,7 @@ private fun SearchResultsContent(
     AnimatedContent(
         targetState = resultLayout,
         transitionSpec = {
-            val toVertical = targetState == SearchSettings.SearchLayout.Vertical
+            val toVertical = targetState == SearchSettingsState.SearchLayout.Vertical
             (slideInHorizontally(spring(stiffness = Spring.StiffnessMedium)) { full ->
                 if (toVertical) full / 4 else -full / 4
             } + fadeIn(spring(stiffness = Spring.StiffnessMedium))).togetherWith(
@@ -255,7 +255,7 @@ private fun SearchResultsContent(
         },
         label = "searchResultLayout",
     ) { layout ->
-        if (layout == SearchSettings.SearchLayout.Vertical) {
+        if (layout == SearchSettingsState.SearchLayout.Vertical) {
             ProvideTmdbPosterLookup(tmdbCache) {
                 RailResults(
                     hits = hits,

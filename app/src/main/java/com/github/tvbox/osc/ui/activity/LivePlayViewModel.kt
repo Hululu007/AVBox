@@ -18,7 +18,7 @@ import com.github.tvbox.osc.util.HawkConfig
 
 import com.github.tvbox.osc.util.KV
 import com.github.tvbox.osc.util.LanguageManager
-import com.google.gson.JsonArray
+import com.github.tvbox.osc.ui.settings.LiveSettingsState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -382,10 +382,6 @@ internal class LivePlayViewModel : ViewModel() {
 
         fun releasePlayerKernel()
 
-        fun refreshTimeOverlay()
-
-        fun refreshNetSpeedOverlay()
-
         fun refreshChannelListAndPlay(channelName: String?, sourceIndex: Int)
 
         fun setEmptyChannelList(releasePlayer: Boolean)
@@ -420,23 +416,23 @@ internal class LivePlayViewModel : ViewModel() {
                 host.applyPlayerType(position)
             }
             3 -> {
-                if (position == KV.get(HawkConfig.LIVE_CONNECT_TIMEOUT, 1)) return
-                KV.put(HawkConfig.LIVE_CONNECT_TIMEOUT, position)
+                if (position == LiveSettingsState.config.connectTimeoutIndex) return
+                LiveSettingsState.setConnectTimeoutIndex(position)
             }
             4 -> {
                 when (position) {
-                    0 -> KV.put(HawkConfig.LIVE_SHOW_TIME, !KV.get(HawkConfig.LIVE_SHOW_TIME, false)).also { host.refreshTimeOverlay() }
-                    1 -> KV.put(HawkConfig.LIVE_SHOW_NET_SPEED, !KV.get(HawkConfig.LIVE_SHOW_NET_SPEED, false)).also { host.refreshNetSpeedOverlay() }
-                    2 -> KV.put(HawkConfig.LIVE_CHANNEL_REVERSE, !KV.get(HawkConfig.LIVE_CHANNEL_REVERSE, false))
-                    3 -> KV.put(HawkConfig.LIVE_CROSS_GROUP, !KV.get(HawkConfig.LIVE_CROSS_GROUP, false))
+                    0 -> LiveSettingsState.setShowTime(!LiveSettingsState.config.showTime)
+                    1 -> LiveSettingsState.setShowNetSpeed(!LiveSettingsState.config.showNetSpeed)
+                    2 -> LiveSettingsState.setChannelReverse(!LiveSettingsState.config.channelReverse)
+                    3 -> LiveSettingsState.setCrossGroup(!LiveSettingsState.config.crossGroup)
                 }
             }
             5 -> {
                 if (position == ApiConfig.getLiveGroupIndex()) return
                 val currentChannelName = preferredRefreshChannelName(host)
                 val currentSourceIndex = preferredRefreshSourceIndex(host)
-                val liveGroups = KV.get(HawkConfig.LIVE_GROUP_LIST, JsonArray())
-                if (liveGroups == null || position >= liveGroups.size()) return
+                val liveGroups = LiveSettingsState.config.groupList
+                if (position >= liveGroups.size()) return
                 liveConfigRequestId++
                 val livesOBJ = liveGroups.get(position).asJsonObject
                 ApiConfig.setLiveGroupIndex(position)

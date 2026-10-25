@@ -106,6 +106,7 @@ class KVKeySpec : KVDecoder.TypeRegistry {
             register(HawkConfig.GESTURE_CONTROL_DISABLED, false)
             register(HawkConfig.NAV_ANIMATION_DISABLED, false)
             register(HawkConfig.NAV_LIVE_HIDDEN, false)
+            register(HawkConfig.MUSIC_AUTO_OPEN_PAGE, true)
             register(HawkConfig.PLAY_TUNNEL, false)
             register(HawkConfig.PLAY_PREFER_AAC, false)
             register(HawkConfig.ANIME4K_ENABLED, false)

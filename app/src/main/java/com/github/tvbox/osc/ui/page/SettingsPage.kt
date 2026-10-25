@@ -34,7 +34,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
@@ -44,7 +43,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.io.FileUtils
 import com.github.tvbox.osc.net.OkGoHelper
-import com.github.tvbox.osc.player.effect.anime4k.Anime4kTier
 import com.github.tvbox.osc.ui.activity.ConfigManageActivity
 import com.github.tvbox.osc.ui.activity.PlaySettingsActivity
 import com.github.tvbox.osc.ui.activity.PreferenceSettingsActivity
@@ -58,12 +56,10 @@ import com.github.tvbox.osc.ui.components.SettingsCardPosition
 import com.github.tvbox.osc.ui.components.SettingsGroup
 import com.github.tvbox.osc.ui.components.SettingsOptionMenuRow
 import com.github.tvbox.osc.ui.components.SettingsRow
+import com.github.tvbox.osc.ui.settings.UiSettingsState
 import com.github.tvbox.osc.util.DefaultConfig
-import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.HistoryHelper
-import com.github.tvbox.osc.util.HistoryMerge
-import com.github.tvbox.osc.util.KV
-import com.github.tvbox.osc.util.MusicSettings
+import com.github.tvbox.osc.util.SearchSettingsState
 import com.github.tvbox.osc.util.SpiderStorageNotice
 import com.github.tvbox.osc.api.TmdbPoster
 import kotlinx.coroutines.Dispatchers
@@ -73,36 +69,6 @@ import kotlinx.coroutines.withContext
 private const val CACHE_SIZE_REFRESH_MIN_INTERVAL_MS = 60_000L
 
 data class SettingsState(
-    val playType: Int,
-    val playRender: Int,
-    val playScale: Int,
-    val exoDecode: String,
-    val anime4kTier: Anime4kTier,
-    val kernelPrewarm: Boolean,
-    val playTunnel: Boolean,
-    val preferAac: Boolean,
-    val musicPlayerPage: Boolean,
-    val autoSwitchLine: Boolean,
-    val m3u8Purify: Boolean,
-    val incognito: Boolean,
-    val hideStatusBar: Boolean,
-    val gestureControlDisabled: Boolean,
-    val navAnimationDisabled: Boolean,
-    val navLiveHidden: Boolean,
-    val collectColumns: Int,
-    val danmuOpen: Boolean,
-    val danmuApi: String,
-    val defaultLoadLive: Boolean,
-    val historyNumIndex: Int,
-    val historyMerge: Boolean,
-    val searchThreads: Int,
-    val longPressSpeed: Int,
-    val bufferTimes: Int,
-    val preloadNextEpisode: Boolean,
-    val preloadDuration: Int,
-    val playCache: Boolean,
-    val exoCacheSizeMb: Int,
-    val dohIndex: Int,
     val cacheSizeText: String = "",
 )
 
@@ -119,11 +85,13 @@ class SettingsViewModel : ViewModel() {
     val state: androidx.compose.runtime.State<SettingsState> = _state
 
     fun refresh() {
+        UiSettingsState.reload()
         _state.value = loadState()
         refreshCacheSize()
     }
 
     fun refreshState() {
+        UiSettingsState.reload()
         _state.value = loadState()
     }
 
@@ -163,43 +131,8 @@ class SettingsViewModel : ViewModel() {
     }
 
     private fun loadState(): SettingsState = SettingsState(
-        playType = KV.get(HawkConfig.PLAY_TYPE, 2),
-        playRender = KV.get(HawkConfig.PLAY_RENDER, 1),
-        playScale = KV.get(HawkConfig.PLAY_SCALE, 0),
-        exoDecode = KV.get(HawkConfig.EXO_DECODE, "硬解码"), // i18n: keep
-        anime4kTier = Anime4kTier.current(),
-        kernelPrewarm = KV.get(HawkConfig.KERNEL_PREWARM, HawkConfig.KERNEL_PREWARM_DEFAULT),
-        playTunnel = KV.get(HawkConfig.PLAY_TUNNEL, false),
-        preferAac = KV.get(HawkConfig.PLAY_PREFER_AAC, false),
-        musicPlayerPage = MusicSettings.autoOpenPage(),
-        autoSwitchLine = KV.get(HawkConfig.AUTO_SWITCH_LINE, HawkConfig.AUTO_SWITCH_LINE_DEFAULT),
-        m3u8Purify = KV.get(HawkConfig.M3U8_PURIFY, false),
-        incognito = KV.get(HawkConfig.INCOGNITO, false),
-        hideStatusBar = KV.get(HawkConfig.HIDE_STATUS_BAR, false),
-        gestureControlDisabled = KV.get(HawkConfig.GESTURE_CONTROL_DISABLED, false),
-        navAnimationDisabled = KV.get(HawkConfig.NAV_ANIMATION_DISABLED, false),
-        navLiveHidden = KV.get(HawkConfig.NAV_LIVE_HIDDEN, false),
-        collectColumns = KV.get(HawkConfig.COLLECT_COLUMNS, 3),
-        danmuOpen = KV.get(HawkConfig.DANMU_OPEN, true),
-        danmuApi = KV.get(HawkConfig.DANMU_API, ""),
-        defaultLoadLive = KV.get(HawkConfig.DEFAULT_LOAD_LIVE, false),
-        historyNumIndex = KV.get(HawkConfig.HISTORY_NUM, 0),
-        historyMerge = HistoryMerge.isEnabled(),
-        searchThreads = KV.get(HawkConfig.SEARCH_THREADS, HawkConfig.SEARCH_THREADS_DEFAULT),
-        longPressSpeed = KV.get(HawkConfig.LONG_PRESS_SPEED, HawkConfig.LONG_PRESS_SPEED_DEFAULT),
-        bufferTimes = KV.get(HawkConfig.BUFFER_TIMES, HawkConfig.BUFFER_TIMES_DEFAULT),
-        preloadNextEpisode = KV.get(HawkConfig.PRELOAD_NEXT_EPISODE, false),
-        preloadDuration = KV.get(HawkConfig.PRELOAD_DURATION, HawkConfig.PRELOAD_DURATION_DEFAULT),
-        playCache = KV.get(HawkConfig.PLAY_CACHE, false),
-        exoCacheSizeMb = KV.get(HawkConfig.EXO_CACHE_SIZE_MB, HawkConfig.EXO_CACHE_SIZE_MB_DEFAULT),
-        dohIndex = KV.get(HawkConfig.DOH_URL, 0),
         cacheSizeText = cacheSizeText,
     )
-
-    fun <T> put(key: String, value: T) {
-        KV.put(key, value)
-        refresh()
-    }
 }
 
 @Composable
@@ -279,17 +212,18 @@ fun SettingsPage(
 
             SettingsGroup(title = null) {
                 SettingsCard(SettingsCardPosition.FIRST) {
+                    val uiConfig = UiSettingsState.config
                     SettingsOptionMenuRow(
                         title = stringResource(R.string.settings_default_page),
                         subtitle = stringResource(R.string.settings_default_page_subtitle),
                         iconRes = R.drawable.ic_settings_start,
-                        valueText = stringResource(if (state.defaultLoadLive) R.string.common_live else R.string.common_vod),
+                        valueText = stringResource(if (uiConfig.defaultLoadLive) R.string.common_live else R.string.common_vod),
                         options = listOf(
                             stringResource(R.string.common_vod),
                             stringResource(R.string.common_live),
                         ),
-                        selectedIndex = if (state.defaultLoadLive) 1 else 0,
-                        onSelect = { idx -> vm.put(HawkConfig.DEFAULT_LOAD_LIVE, idx == 1) },
+                        selectedIndex = if (uiConfig.defaultLoadLive) 1 else 0,
+                        onSelect = { idx -> UiSettingsState.setDefaultLoadLive(idx == 1) },
                     )
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {
@@ -299,13 +233,13 @@ fun SettingsPage(
                         iconRes = R.drawable.ic_settings_history,
                         valueText = stringResource(
                             R.string.settings_history_limit_value,
-                            HistoryHelper.getHisNum(state.historyNumIndex),
+                            HistoryHelper.getHisNum(SearchSettingsState.config.historyNumIndex),
                         ),
                         options = listOf(0, 1, 2).map {
                             stringResource(R.string.settings_history_limit_value, HistoryHelper.getHisNum(it))
                         },
-                        selectedIndex = state.historyNumIndex,
-                        onSelect = { idx -> vm.put(HawkConfig.HISTORY_NUM, idx) },
+                        selectedIndex = SearchSettingsState.config.historyNumIndex,
+                        onSelect = { idx -> SearchSettingsState.setHistoryNumIndex(idx) },
                     )
                 }
                 SettingsCard(SettingsCardPosition.MIDDLE) {
@@ -348,18 +282,19 @@ fun SettingsPage(
                     }
                 }
                 SettingsCard(SettingsCardPosition.LAST) {
+                    val uiConfig = UiSettingsState.config
                     SettingsOptionMenuRow(
                         title = "DOH",
                         subtitle = stringResource(R.string.settings_doh_subtitle),
                         iconRes = R.drawable.ic_settings_doh,
-                        valueText = if (state.dohIndex == 0) stringResource(R.string.common_off)
-                        else OkGoHelper.dnsHttpsList.getOrNull(state.dohIndex)
+                        valueText = if (uiConfig.dohIndex == 0) stringResource(R.string.common_off)
+                        else OkGoHelper.dnsHttpsList.getOrNull(uiConfig.dohIndex)
                             ?: stringResource(R.string.common_off),
                         options = OkGoHelper.dnsHttpsList.mapIndexed { index, name ->
                             if (index == 0) context.getString(R.string.common_off) else name
                         },
-                        selectedIndex = state.dohIndex,
-                        onSelect = { idx -> vm.put(HawkConfig.DOH_URL, idx) },
+                        selectedIndex = uiConfig.dohIndex,
+                        onSelect = { idx -> UiSettingsState.setDohIndex(idx) },
                     )
                 }
             }

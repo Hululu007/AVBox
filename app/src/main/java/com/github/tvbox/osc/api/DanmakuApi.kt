@@ -10,7 +10,7 @@ import com.github.tvbox.osc.R
 import com.github.tvbox.osc.base.App
 import com.github.tvbox.osc.bean.DanmuSearchResult
 import com.github.tvbox.osc.bean.SourceBean
-import com.github.tvbox.osc.util.DanmuHelper
+import com.github.tvbox.osc.util.DanmuSettingsState
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.KV
 import com.github.tvbox.osc.util.LOG
@@ -55,7 +55,6 @@ class DanmakuApi {
 
         private val TAG = DanmakuApi::class.java.simpleName
         private const val BUILTIN_API = "https://logvardanmu.konfan.cn/87654321"
-        private const val USE_DEFAULT_KEY = "danmu_api_use_default"
         private val BUILTIN_TIMEOUT = TimeUnit.SECONDS.toMillis(20)
         private const val BUILTIN_MAX_RETRY = 2
         private const val EPISODE_QUERY_NUMBER = 0
@@ -65,24 +64,12 @@ class DanmakuApi {
         @JvmStatic
         fun canSearch(sourceBean: SourceBean?): Boolean {
             if (sourceBean != null && !sourceBean.isDanmakuEnabled()) return false
-            return DanmuHelper.isOpen() && !TextUtils.isEmpty(getApiUrl())
+            return DanmuSettingsState.config.open && !TextUtils.isEmpty(getApiUrl())
         }
 
         @JvmStatic
         fun isUseDefault(): Boolean {
-            return KV.get(USE_DEFAULT_KEY, false)
-        }
-
-        @JvmStatic
-        fun setUseDefault(useDefault: Boolean) {
-            KV.put(USE_DEFAULT_KEY, useDefault)
-            if (useDefault) KV.put(HawkConfig.DANMU_API, "")
-        }
-
-        @JvmStatic
-        fun setCustomApi(api: String?) {
-            KV.put(USE_DEFAULT_KEY, false)
-            KV.put(HawkConfig.DANMU_API, api)
+            return KV.get(HawkConfig.DANMU_API_USE_DEFAULT, false)
         }
 
         @JvmStatic

@@ -41,8 +41,8 @@ import com.github.tvbox.osc.R
 import com.github.tvbox.osc.ui.components.SettingsIconBadge
 import com.github.tvbox.osc.ui.components.clearFocusOnDrag
 import com.github.tvbox.osc.ui.page.ManageActionIcon
+import com.github.tvbox.osc.ui.settings.UiSettingsState
 import com.github.tvbox.osc.ui.theme.cardContainer
-import com.github.tvbox.osc.util.HistoryHelper
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
@@ -56,7 +56,7 @@ internal fun SearchIdleContent(
     onClearHistory: () -> Unit,
     onRemoveHistory: (String) -> Unit,
 ) {
-    val incognito = HistoryHelper.isIncognito()
+    val incognito = UiSettingsState.config.incognito
     val focusManager = LocalFocusManager.current
     Column(
         modifier = Modifier

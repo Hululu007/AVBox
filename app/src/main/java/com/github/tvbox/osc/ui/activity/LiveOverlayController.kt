@@ -2,14 +2,14 @@ package com.github.tvbox.osc.ui.activity
 
 import android.graphics.Bitmap
 import android.os.Handler
+import androidx.compose.runtime.snapshotFlow
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.bean.Epginfo
 import com.github.tvbox.osc.player.MyVideoView
 import com.github.tvbox.osc.player.PlaybackTimes
 import com.github.tvbox.osc.player.PlayerHelper
 import com.github.tvbox.osc.player.core.PlayState
-import com.github.tvbox.osc.util.HawkConfig
-import com.github.tvbox.osc.util.KV
+import com.github.tvbox.osc.ui.settings.LiveSettingsState
 import com.github.tvbox.osc.util.LOG
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -20,6 +20,8 @@ import java.util.TimeZone
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 
 internal class LiveOverlayController(
@@ -32,6 +34,21 @@ internal class LiveOverlayController(
     private var timeJob: Job? = null
     private var netSpeedJob: Job? = null
     private var timeshiftJob: Job? = null
+
+    init {
+        scope.launch {
+            snapshotFlow { LiveSettingsState.config.showTime }
+                .drop(1)
+                .distinctUntilChanged()
+                .collect { showTime() }
+        }
+        scope.launch {
+            snapshotFlow { LiveSettingsState.config.showNetSpeed }
+                .drop(1)
+                .distinctUntilChanged()
+                .collect { showNetSpeed() }
+        }
+    }
 
     internal interface Host {
         fun text(resId: Int, vararg args: Any): String
@@ -138,7 +155,7 @@ internal class LiveOverlayController(
     }
 
     fun showTime() {
-        val showTimeOn = KV.get(HawkConfig.LIVE_SHOW_TIME, false)
+        val showTimeOn = LiveSettingsState.config.showTime
         vm.updateOverlay { it.copy(showTimeOn = showTimeOn) }
         timeJob?.cancel()
         timeJob = if (showTimeOn) scope.launch {
@@ -150,7 +167,7 @@ internal class LiveOverlayController(
     }
 
     fun showNetSpeed() {
-        val showNetSpeedOn = KV.get(HawkConfig.LIVE_SHOW_NET_SPEED, false)
+        val showNetSpeedOn = LiveSettingsState.config.showNetSpeed
         vm.updateOverlay { it.copy(showNetSpeedOn = showNetSpeedOn) }
         netSpeedJob?.cancel()
         netSpeedJob = if (showNetSpeedOn) scope.launch {

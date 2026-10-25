@@ -53,6 +53,7 @@ import com.github.tvbox.osc.ui.WindowSize
 import com.github.tvbox.osc.ui.components.LoadState
 import com.github.tvbox.osc.ui.components.LoadStateBox
 import com.github.tvbox.osc.ui.components.VodPoster
+import com.github.tvbox.osc.ui.settings.UiSettingsState
 import com.github.tvbox.osc.util.SubscribeList
 import kotlinx.coroutines.launch
 
@@ -74,7 +75,7 @@ internal fun CollectTab(
     val loading by vm.loading.collectAsStateWithLifecycle()
     val placementAnim by vm.placementAnim.collectAsStateWithLifecycle()
     val unavailableKeys by vm.unavailableKeys.collectAsStateWithLifecycle()
-    val columns by vm.columns.collectAsStateWithLifecycle()
+    val columns = UiSettingsState.config.collectColumns
 
     when {
         loading -> Box(

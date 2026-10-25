@@ -10,6 +10,7 @@ import com.github.tvbox.osc.player.effect.anime4k.Anime4kTier
 import com.github.tvbox.osc.player.state.ParamsChoice
 import com.github.tvbox.osc.player.state.ParamsSheetState
 import com.github.tvbox.osc.player.state.PictureParamsState
+import com.github.tvbox.osc.player.state.PlaybackSettingsState
 import com.github.tvbox.osc.player.state.SelectDialogState
 import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.util.PlayerUtils
@@ -89,19 +90,19 @@ internal class PlayerConfigDelegate(private val host: VideoPlayerController) {
                 preset = PictureEffects.preset(),
                 tuning = PictureEffects.custom(),
                 unavailableReason = PictureEffects.unavailableReason(),
-                anime4kTierText = host.context.getString(Anime4kTier.current().labelRes),
-                anime4kEnabled = Anime4kSettings.enabled(),
+                anime4kTierText = host.context.getString(Anime4kTier.byName(PlaybackSettingsState.config.anime4kTier).labelRes),
+                anime4kEnabled = PlaybackSettingsState.config.anime4kEnabled,
                 anime4kUnavailable = PictureEffects.anime4kUnavailable(),
                 anime4kSharpen = Anime4kSettings.sharpen(),
-                anime4kDeblur = Anime4kSettings.deblur(),
+                anime4kDeblur = PlaybackSettingsState.config.anime4kDeblur,
                 onAnime4kToggled = {
-                    Anime4kSettings.setEnabled(it)
+                    PlaybackSettingsState.setAnime4kEnabled(it)
                     restartForPictureIfNeeded()
                     refreshParamsSheet()
                 },
                 onAnime4kSharpenChanged = { PictureEffects.setAnime4kSharpen(it) },
                 onAnime4kDeblurToggled = {
-                    Anime4kSettings.setDeblur(it)
+                    PlaybackSettingsState.setAnime4kDeblur(it)
                     restartForPictureIfNeeded()
                     refreshParamsSheet()
                 },

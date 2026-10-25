@@ -12,6 +12,7 @@ import com.github.tvbox.osc.net.SearchSettings
 import com.github.tvbox.osc.sourcedata.SourceViewModel
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.HistoryHelper
+import com.github.tvbox.osc.util.SearchSettingsState
 import com.github.tvbox.osc.util.KV
 import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.util.UA
@@ -99,7 +100,7 @@ class SearchViewModel(initialTitle: String? = null) : ViewModel(), TmdbPosterCac
 
     private var token = 0
     private var arriveSeq = 0
-    private var semaphorePermits = KV.get(HawkConfig.SEARCH_THREADS, HawkConfig.SEARCH_THREADS_DEFAULT)
+    private var semaphorePermits = SearchSettingsState.config.searchThreads
     private var semaphore = Semaphore(semaphorePermits)
     private val pendingSources = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.CompletableDeferred<Unit>>()
     private val scope = viewModelScope
@@ -224,7 +225,7 @@ class SearchViewModel(initialTitle: String? = null) : ViewModel(), TmdbPosterCac
     fun search(title: String) {
         val t = title.trim()
         if (t.isEmpty()) return
-        val configured = KV.get(HawkConfig.SEARCH_THREADS, HawkConfig.SEARCH_THREADS_DEFAULT)
+        val configured = SearchSettingsState.config.searchThreads
         if (configured != semaphorePermits) {
             semaphorePermits = configured
             semaphore = Semaphore(configured)
@@ -233,7 +234,7 @@ class SearchViewModel(initialTitle: String? = null) : ViewModel(), TmdbPosterCac
         val myToken = token
         val tokenStr = myToken.toString()
         _searchedTitle.value = t
-        _exactMatch.value = SearchSettings.isExactMatchEnabled()
+        _exactMatch.value = SearchSettingsState.isExactMatchEnabled()
         HistoryHelper.setSearchHistory(t)
         _searchHistory.value = readSearchHistory()
         clearSuggest()

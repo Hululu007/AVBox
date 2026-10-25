@@ -43,10 +43,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,7 +60,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.rememberLifecycleOwner
@@ -81,14 +78,13 @@ import com.github.tvbox.osc.ui.navbar.FloatingNavBar
 import com.github.tvbox.osc.ui.navbar.GlassTabItem
 import com.github.tvbox.osc.ui.navbar.NavAxis
 import com.github.tvbox.osc.ui.navbar.NavMetrics
+import com.github.tvbox.osc.ui.settings.UiSettingsState
 import com.github.tvbox.osc.ui.theme.LiquidGlassState
 import com.github.tvbox.osc.util.AppManager
 import com.github.tvbox.osc.boot.BootGuard
-import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.HomeSettings
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
-import com.github.tvbox.osc.util.KV
 import kotlinx.coroutines.launch
 
 private enum class AppTab(@StringRes val labelRes: Int, @DrawableRes val icon: Int) {
@@ -148,7 +144,7 @@ private fun MainContent() {
                 if (disabled.isNotEmpty()) {
                     Toast.makeText(context, context.getString(R.string.toast_source_auto_disabled), Toast.LENGTH_LONG).show()
                 }
-                if (KV.get(HawkConfig.DEFAULT_LOAD_LIVE, false)) {
+                if (UiSettingsState.config.defaultLoadLive) {
                     context.startActivity(Intent(context, LivePlayActivity::class.java))
                 }
             }
@@ -173,16 +169,9 @@ private fun MainContent() {
     }
 
     val sheetHost = remember { SheetHostState() }
-    var navAnimationEnabled by remember {
-        mutableStateOf(!KV.get(HawkConfig.NAV_ANIMATION_DISABLED, false))
-    }
-    var navLiveHidden by remember {
-        mutableStateOf(KV.get(HawkConfig.NAV_LIVE_HIDDEN, false))
-    }
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-        navAnimationEnabled = !KV.get(HawkConfig.NAV_ANIMATION_DISABLED, false)
-        navLiveHidden = KV.get(HawkConfig.NAV_LIVE_HIDDEN, false)
-    }
+    val navConfig = UiSettingsState.config
+    val navAnimationEnabled = !navConfig.navAnimationDisabled
+    val navLiveHidden = navConfig.navLiveHidden
 
     val selectTab: (Int) -> Unit = { index ->
         scope.launch {

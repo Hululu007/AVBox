@@ -20,7 +20,7 @@ interface HistoryRepository {
 
     suspend fun getVodInfo(sourceKey: String, vodId: String): VodInfo?
 
-    fun observeVodRecords(cid: String?): Flow<List<VodInfo>>
+    fun observeVodRecords(cid: String?, limit: Int): Flow<List<VodInfo>>
 
     suspend fun sweepDuplicates()
 
@@ -73,10 +73,9 @@ internal class RoomHistoryRepository(
         return null
     }
 
-    override fun observeVodRecords(cid: String?): Flow<List<VodInfo>> =
+    override fun observeVodRecords(cid: String?, limit: Int): Flow<List<VodInfo>> =
         records().observeAll(cid).map { recordList ->
-            val hisNum = HistoryHelper.getHisNum(KV.get(HawkConfig.HISTORY_NUM, 0))
-            recordList.take(hisNum).mapNotNull { parseRecord(it) }
+            recordList.take(limit).mapNotNull { parseRecord(it) }
         }
 
     private fun parseRecord(record: VodRecord): VodInfo? {

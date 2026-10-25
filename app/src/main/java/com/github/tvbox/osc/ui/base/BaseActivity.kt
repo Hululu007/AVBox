@@ -13,17 +13,20 @@ import android.view.View
 import android.view.ViewGroup
 
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.content.PermissionChecker
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 
 import com.github.tvbox.osc.R
 import com.github.tvbox.osc.ui.WindowSize
+import com.github.tvbox.osc.ui.settings.UiSettingsState
 import com.github.tvbox.osc.util.AppManager
-import com.github.tvbox.osc.util.HawkConfig
-import com.github.tvbox.osc.util.KV
 import com.github.tvbox.osc.util.LanguageManager
 import com.github.tvbox.osc.util.Probe
 import com.github.tvbox.osc.util.SpiderStorageNotice
@@ -31,6 +34,8 @@ import com.github.tvbox.osc.util.SpiderStorageNotice
 import java.io.BufferedReader
 import java.io.IOException
 import java.io.InputStreamReader
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 
 import me.jessyan.autosize.AutoSizeCompat
 import me.jessyan.autosize.AutoSizeConfig
@@ -82,6 +87,7 @@ abstract class BaseActivity : AppCompatActivity(), CustomAdapt {
         })
         mContext = this
         initSystemUiListener()
+        observeHideStatusBar()
         CutoutUtil.adaptCutoutAboveAndroidP(this, true)
         AppManager.getInstance().addActivity(this)
         applyOrientationPolicy()
@@ -104,12 +110,22 @@ abstract class BaseActivity : AppCompatActivity(), CustomAdapt {
 
     internal fun applyHideStatusBarPref() {
         val controller = WindowCompat.getInsetsController(window, window.decorView)
-        if (KV.get(HawkConfig.HIDE_STATUS_BAR, false) || keepStatusBarHidden()) {
+        if (UiSettingsState.config.hideStatusBar || keepStatusBarHidden()) {
             controller.systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             controller.hide(WindowInsetsCompat.Type.statusBars())
         } else {
             controller.show(WindowInsetsCompat.Type.statusBars())
+        }
+    }
+
+    private fun observeHideStatusBar() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                snapshotFlow { UiSettingsState.config.hideStatusBar }
+                    .distinctUntilChanged()
+                    .collect { applyHideStatusBarPref() }
+            }
         }
     }
 

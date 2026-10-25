@@ -5,7 +5,6 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 
 sealed interface UiChange {
-    data object CollectLayoutChanged : UiChange
     data object HistoryChanged : UiChange
     data object PlaybackStarted : UiChange
 }

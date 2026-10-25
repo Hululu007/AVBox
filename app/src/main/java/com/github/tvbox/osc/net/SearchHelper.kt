@@ -3,6 +3,7 @@ package com.github.tvbox.osc.net
 import com.github.tvbox.osc.bean.SourceBean
 import com.github.tvbox.osc.util.HawkConfig
 import com.github.tvbox.osc.util.KV
+import com.github.tvbox.osc.util.SearchSettingsState
 
 object SearchHelper {
 
@@ -15,9 +16,7 @@ object SearchHelper {
         try {
             val api = KV.get(HawkConfig.API_URL, "")
             if (api.isEmpty()) return null
-            val mCheckSourcesForApi: HashMap<String, HashMap<String, String>> =
-                    KV.get(HawkConfig.SOURCES_FOR_SEARCH, HashMap())
-            mCheckSources = mCheckSourcesForApi[api]
+            mCheckSources = SearchSettingsState.config.sourcesForSearch[api]
         } catch (e: Exception) {
             return null
         }

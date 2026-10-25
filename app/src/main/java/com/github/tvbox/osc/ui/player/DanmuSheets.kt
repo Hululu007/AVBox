@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -32,7 +31,7 @@ import com.github.tvbox.osc.api.DanmakuApi
 import com.github.tvbox.osc.bean.DanmuSearchResult
 import com.github.tvbox.osc.player.state.DanmuSearchSheetState
 import com.github.tvbox.osc.player.state.DanmuSettingSheetState
-import com.github.tvbox.osc.util.DanmuHelper
+import com.github.tvbox.osc.util.DanmuSettingsState
 import kotlinx.coroutines.launch
 
 private val DANMU_SPEEDS = listOf(2.4f, 1.8f, 1.5f, 1.0f)
@@ -42,13 +41,13 @@ fun DanmuSettingSheet(sheet: DanmuSettingSheetState, onDismiss: () -> Unit) {
     PlayerDialog(onDismiss = onDismiss) {
         val dismissThen = LocalPlayerSheetDismissThen.current
         SheetPanel(width = playerDim(R.dimen.vs_520)) {
-            var colorIdx by remember { mutableIntStateOf(if (DanmuHelper.useRandomColor()) 1 else 0) }
+            var colorIdx by remember { mutableIntStateOf(if (DanmuSettingsState.config.randomColor) 1 else 0) }
             var speedIdx by remember {
-                mutableIntStateOf(DANMU_SPEEDS.indexOf(DanmuHelper.getSpeed()).coerceAtLeast(0))
+                mutableIntStateOf(DANMU_SPEEDS.indexOf(DanmuSettingsState.config.speed).coerceAtLeast(0))
             }
-            var size by remember { mutableIntStateOf(Math.round(DanmuHelper.getSizeScale() * 10)) }
-            var line by remember { mutableIntStateOf(DanmuHelper.getMaxLine()) }
-            var alpha by remember { mutableIntStateOf(Math.round(DanmuHelper.getAlpha() * 100)) }
+            var size by remember { mutableIntStateOf(Math.round(DanmuSettingsState.config.sizeScale * 10)) }
+            var line by remember { mutableIntStateOf(DanmuSettingsState.config.maxLine) }
+            var alpha by remember { mutableIntStateOf(Math.round(DanmuSettingsState.config.alpha * 100)) }
             Spacer(Modifier.height(playerDim(R.dimen.vs_24)))
             SheetHeaderRow(title = stringResource(R.string.danmu_settings)) {
                 SheetTextAction(
@@ -57,11 +56,11 @@ fun DanmuSettingSheet(sheet: DanmuSettingSheetState, onDismiss: () -> Unit) {
                     fontSizeRes = R.dimen.ts_22,
                     onClick = {
                         sheet.onReset()
-                        colorIdx = if (DanmuHelper.useRandomColor()) 1 else 0
-                        speedIdx = DANMU_SPEEDS.indexOf(DanmuHelper.getSpeed()).coerceAtLeast(0)
-                        size = Math.round(DanmuHelper.getSizeScale() * 10)
-                        line = DanmuHelper.getMaxLine()
-                        alpha = Math.round(DanmuHelper.getAlpha() * 100)
+                        colorIdx = if (DanmuSettingsState.config.randomColor) 1 else 0
+                        speedIdx = DANMU_SPEEDS.indexOf(DanmuSettingsState.config.speed).coerceAtLeast(0)
+                        size = Math.round(DanmuSettingsState.config.sizeScale * 10)
+                        line = DanmuSettingsState.config.maxLine
+                        alpha = Math.round(DanmuSettingsState.config.alpha * 100)
                     },
                 )
             }
@@ -88,7 +87,7 @@ fun DanmuSettingSheet(sheet: DanmuSettingSheetState, onDismiss: () -> Unit) {
                         colorIdx,
                         onSelect = { idx ->
                         colorIdx = idx
-                        DanmuHelper.setRandomColor(idx == 1)
+                        DanmuSettingsState.setRandomColor(idx == 1)
                         postSettings(true)
                     })
                 }
@@ -103,7 +102,7 @@ fun DanmuSettingSheet(sheet: DanmuSettingSheetState, onDismiss: () -> Unit) {
                         speedIdx,
                         onSelect = { idx ->
                         speedIdx = idx
-                        DanmuHelper.setSpeed(DANMU_SPEEDS[idx])
+                        DanmuSettingsState.setSpeed(DANMU_SPEEDS[idx])
                         postSettings(false)
                     })
                 }
@@ -113,14 +112,14 @@ fun DanmuSettingSheet(sheet: DanmuSettingSheetState, onDismiss: () -> Unit) {
                         onMinus = {
                             if (size > 6) {
                                 size--
-                                DanmuHelper.setSizeScale(size / 10f)
+                                DanmuSettingsState.setSizeScale(size / 10f)
                                 postSettings(false)
                             }
                         },
                         onPlus = {
                             if (size < 20) {
                                 size++
-                                DanmuHelper.setSizeScale(size / 10f)
+                                DanmuSettingsState.setSizeScale(size / 10f)
                                 postSettings(false)
                             }
                         },
@@ -132,14 +131,14 @@ fun DanmuSettingSheet(sheet: DanmuSettingSheetState, onDismiss: () -> Unit) {
                         onMinus = {
                             if (line > 1) {
                                 line--
-                                DanmuHelper.setMaxLine(line)
+                                DanmuSettingsState.setMaxLine(line)
                                 postSettings(false)
                             }
                         },
                         onPlus = {
                             if (line < 15) {
                                 line++
-                                DanmuHelper.setMaxLine(line)
+                                DanmuSettingsState.setMaxLine(line)
                                 postSettings(false)
                             }
                         },
@@ -151,14 +150,14 @@ fun DanmuSettingSheet(sheet: DanmuSettingSheetState, onDismiss: () -> Unit) {
                         onMinus = {
                             if (alpha > 10) {
                                 alpha -= 10
-                                DanmuHelper.setAlpha(alpha / 100f)
+                                DanmuSettingsState.setAlpha(alpha / 100f)
                                 postSettings(false)
                             }
                         },
                         onPlus = {
                             if (alpha < 100) {
                                 alpha += 10
-                                DanmuHelper.setAlpha(alpha / 100f)
+                                DanmuSettingsState.setAlpha(alpha / 100f)
                                 postSettings(false)
                             }
                         },

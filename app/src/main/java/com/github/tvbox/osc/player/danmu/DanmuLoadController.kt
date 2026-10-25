@@ -8,7 +8,7 @@ import com.github.tvbox.osc.api.DanmakuApi
 import com.github.tvbox.osc.player.MyVideoView
 import com.github.tvbox.osc.player.controller.PlayerControlApi
 import com.github.tvbox.osc.player.core.PlayState
-import com.github.tvbox.osc.util.DanmuHelper
+import com.github.tvbox.osc.util.DanmuSettingsState
 import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.util.PlayerUtils
 import master.flame.danmaku.danmaku.model.BaseDanmaku
@@ -77,25 +77,26 @@ class DanmuLoadController(
 
     fun applySettings(reload: Boolean) {
         if (danmuView == null) return
-        if (!DanmuHelper.isOpen()) {
+        val config = DanmuSettingsState.config
+        if (!config.open) {
             releaseView()
             controller?.setHasDanmu(!TextUtils.isEmpty(danmuText))
             return
         }
         val maxLines = HashMap<Int, Int>()
-        val maxLine = DanmuHelper.getMaxLine()
+        val maxLine = config.maxLine
         maxLines[BaseDanmaku.TYPE_FIX_TOP] = maxLine
         maxLines[BaseDanmaku.TYPE_SCROLL_RL] = maxLine
         maxLines[BaseDanmaku.TYPE_SCROLL_LR] = maxLine
         maxLines[BaseDanmaku.TYPE_FIX_BOTTOM] = 0
         danmakuContext.setMaximumLines(maxLines)
-            .setScrollSpeedFactor(DanmuHelper.getSpeed())
-            .setDanmakuTransparency(DanmuHelper.getAlpha())
-            .setScaleTextSize(DanmuHelper.getSizeScale())
+            .setScrollSpeedFactor(config.speed)
+            .setDanmakuTransparency(config.alpha)
+            .setScaleTextSize(config.sizeScale)
             .setTypeface(danmuTypeface)
         danmakuContext.setDanmakuStyle(IDisplayer.DANMAKU_STYLE_STROKEN, 4f)
             .setDanmakuMargin(danmuMarginPx)
-        if (reload && !TextUtils.isEmpty(danmuText) && DanmuHelper.isOpen()) {
+        if (reload && !TextUtils.isEmpty(danmuText) && config.open) {
             prepare(danmuText)
         }
     }
@@ -118,7 +119,7 @@ class DanmuLoadController(
         releaseView()
         val hasDanmu = !TextUtils.isEmpty(danmuText)
         controller?.setHasDanmu(hasDanmu)
-        if (!hasDanmu || !DanmuHelper.isOpen()) {
+        if (!hasDanmu || !DanmuSettingsState.config.open) {
             setViewVisible(false)
             return
         }
@@ -131,7 +132,7 @@ class DanmuLoadController(
     }
 
     fun startIfReady() {
-        if (pendingPrepare && !TextUtils.isEmpty(danmuText) && DanmuHelper.isOpen() && isVideoReady()) {
+        if (pendingPrepare && !TextUtils.isEmpty(danmuText) && DanmuSettingsState.config.open && isVideoReady()) {
             pendingPrepare = false
             prepare(danmuText)
             return
@@ -181,7 +182,7 @@ class DanmuLoadController(
         startedSeq = -1
         placeholderRetryCount = 0
         releaseView()
-        pendingPrepare = !TextUtils.isEmpty(danmuText) && DanmuHelper.isOpen()
+        pendingPrepare = !TextUtils.isEmpty(danmuText) && DanmuSettingsState.config.open
     }
 
     fun setOverlayHidden(hidden: Boolean) {
@@ -197,7 +198,7 @@ class DanmuLoadController(
     private fun applyVisibility() {
         if (danmuView == null) return
         setViewVisible(
-            DanmuHelper.isOpen()
+            DanmuSettingsState.config.open
                 && !temporarilyClosed
                 && (!TextUtils.isEmpty(danmuText) || pendingPrepare || danmuView.isPrepared)
         )
@@ -250,7 +251,7 @@ class DanmuLoadController(
                     placeholderRetryCount = 0
                     view.prepare(parser, danmakuContext)
                     clearLoadCallback(seq)
-                    setViewVisible(DanmuHelper.isOpen())
+                    setViewVisible(DanmuSettingsState.config.open)
                     videoView?.startDanmuClock()
                     startIfReady(seq)
                     view.postDelayed({ startIfReady(seq) }, 300)
@@ -299,7 +300,7 @@ class DanmuLoadController(
             || !view.isPlaying
             || danmu == null
             || !danmu.isPrepared
-            || !DanmuHelper.isOpen()
+            || !DanmuSettingsState.config.open
         ) {
             return
         }

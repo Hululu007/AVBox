@@ -32,7 +32,7 @@ import com.github.tvbox.osc.player.usecase.PlayerSwitchUseCase
 import com.github.tvbox.osc.player.usecase.WebParseUseCase
 import com.github.tvbox.osc.sourcedata.Thunder
 import com.github.tvbox.osc.subtitle.widget.SimpleSubtitleView
-import com.github.tvbox.osc.util.DanmuHelper
+import com.github.tvbox.osc.util.DanmuSettingsState
 import com.github.tvbox.osc.util.LOG
 import com.github.tvbox.osc.util.PlayerUtils
 import com.github.tvbox.osc.util.SubtitleHelper
@@ -476,7 +476,7 @@ class VideoPlayerController(
     }
 
     private fun updateDanmuBtnState() {
-        state.updateDanmuOpen(DanmuHelper.isOpen())
+        state.updateDanmuOpen(DanmuSettingsState.config.open)
     }
 
     internal fun updateDanmuSearchBtnState() {
