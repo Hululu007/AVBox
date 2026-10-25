@@ -2,8 +2,8 @@ package com.github.catvod.net
 
 import androidx.collection.ArrayMap
 
-import com.github.tvbox.osc.util.LOG
-import com.github.tvbox.osc.util.SSL.SSLSocketFactoryCompat
+import com.github.avbox.osc.util.AppLog
+import com.github.avbox.osc.util.SSL.SSLSocketFactoryCompat
 
 import java.net.ProxySelector
 import java.security.cert.X509Certificate
@@ -116,7 +116,7 @@ class OkHttp {
                     return res.body.string()
                 }
             } catch (e: Exception) {
-                LOG.e("OkHttp", e)
+                AppLog.e("OkHttp", e)
                 return ""
             }
         }
@@ -129,7 +129,7 @@ class OkHttp {
                     return res.body.string()
                 }
             } catch (e: Exception) {
-                LOG.e("OkHttp", e)
+                AppLog.e("OkHttp", e)
                 return ""
             }
         }
@@ -142,7 +142,7 @@ class OkHttp {
                     return res.body.string()
                 }
             } catch (e: Exception) {
-                LOG.e("OkHttp", e)
+                AppLog.e("OkHttp", e)
                 return ""
             }
         }
@@ -231,7 +231,7 @@ class OkHttp {
                 builder.sslSocketFactory(sslSocketFactory, TRUST_ALL_CERT)
                 builder.hostnameVerifier { _, _ -> true }
             } catch (th: Throwable) {
-                LOG.e("OkHttp", "trust-all ssl setup failed, https sites may fail", th)
+                AppLog.e("OkHttp", "trust-all ssl setup failed, https sites may fail", th)
             }
         }
 

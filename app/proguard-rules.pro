@@ -106,7 +106,7 @@
 
 -dontwarn androidx.media3.**
 
--keep class com.github.tvbox.osc.bean.** { *; }
+-keep class com.github.avbox.osc.bean.** { *; }
 
 -keep class com.google.gson.**{*;}
 -keep class com.google.zxing.**{*;}
@@ -123,7 +123,7 @@
 -keep public class com.chaquo.python.** { *; }
 -dontwarn com.chaquo.python.**
 
--keep class com.github.tvbox.osc.** { *; }
+-keep class com.github.avbox.osc.** { *; }
 -keep class com.github.catvod.** { *; }
 
 -dontwarn com.bea.xml.stream.MXParserFactory
@@ -266,7 +266,7 @@
     public static *** log(...);
 }
 
--assumenosideeffects class com.github.tvbox.osc.util.LOG {
+-assumenosideeffects class com.github.avbox.osc.util.AppLog {
     public static *** d(...);
     public static *** i(...);
     public static *** e(...);

@@ -2,9 +2,9 @@ package com.github.catvod.crawler.js
 
 import android.text.TextUtils
 
-import com.github.tvbox.osc.util.LOG
-import com.github.tvbox.osc.util.RegexUtils
-import com.github.tvbox.osc.util.StringUtils
+import com.github.avbox.osc.util.AppLog
+import com.github.avbox.osc.util.RegexUtils
+import com.github.avbox.osc.util.StringUtils
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.select.Elements
@@ -50,7 +50,7 @@ class HtmlParser {
                 val url = URL(URL(base), child)
                 q = url.toExternalForm()
             } catch (e: MalformedURLException) {
-                LOG.e("HtmlParser", e)
+                AppLog.e("HtmlParser", e)
             }
             return q
         }

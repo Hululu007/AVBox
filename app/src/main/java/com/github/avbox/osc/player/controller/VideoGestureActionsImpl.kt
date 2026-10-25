@@ -1,0 +1,212 @@
+package com.github.avbox.osc.player.controller
+
+import android.app.Activity
+import android.content.Context
+import android.media.AudioManager
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import com.github.avbox.osc.R
+import com.github.avbox.osc.player.BasePlayerView
+import com.github.avbox.osc.player.gesture.VERBOSE_GESTURE_LOG
+import com.github.avbox.osc.player.gesture.VideoGestureActions
+import com.github.avbox.osc.player.gesture.VideoGestureSession
+import com.github.avbox.osc.player.gesture.isInBottomGestureBand
+import com.github.avbox.osc.player.core.PlayState
+import com.github.avbox.osc.util.GestureHelper
+import com.github.avbox.osc.util.KVKeys
+import com.github.avbox.osc.util.KV
+import com.github.avbox.osc.util.AppLog
+
+internal class VideoGestureActionsImpl(private val host: VideoPlayerController) : VideoGestureActions {
+
+    private enum class HintKind { NONE, SEEK, SLIDE }
+
+    private fun showSeekHintOnly() {
+        if (host.state.slideHintVisible) host.actions.hideSlideHint()
+        shownHint = HintKind.SEEK
+    }
+
+    private fun showSlideHintOnly() {
+        if (host.state.seekHintVisible) host.actions.hideSeekHint()
+        shownHint = HintKind.SLIDE
+    }
+
+    private val slideFullWidthMs = 120000f
+
+    private val verticalRangePerScreen = 2.5f
+
+    private val topBandFraction = 0.15f
+
+    private val bottomBandFallbackDp = 24f
+
+    private var seekTargetMs = -1
+
+    private var brightnessBase: Float? = null
+
+    private var volumeBase: Int? = null
+
+    private var lastAppliedBrightness = Float.NaN
+    private var lastAppliedVolume = Int.MIN_VALUE
+
+    private var cachedStreamMax = 0
+
+    private var shownHint: HintKind = HintKind.NONE
+
+    private val audioManager: AudioManager? by lazy {
+        host.context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    }
+
+    private val systemEffects = SystemEffectDispatcher({ host.playerActivity() }, { audioManager })
+
+    override fun inPlayback(): Boolean = host.isInPlaybackState()
+
+    private fun bottomGestureBandPx(activity: Activity?): Float {
+        val density = activity?.resources?.displayMetrics?.density ?: 3f
+        val fallback = bottomBandFallbackDp * density
+        val decor = activity?.window?.decorView ?: return fallback
+        val insets = ViewCompat.getRootWindowInsets(decor) ?: return fallback
+        val system = insets.getInsets(WindowInsetsCompat.Type.systemGestures()).bottom
+        return maxOf(system.toFloat(), fallback)
+    }
+
+    fun beginSession(width: Int, height: Int, screenWidth: Int, downY: Float): VideoGestureSession {
+        seekTargetMs = -1
+        val activity = host.playerActivity()
+        brightnessBase = activity?.window?.attributes?.screenBrightness?.let {
+            if (it < 0f) 0.5f else it
+        }
+        volumeBase = audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC)
+        cachedStreamMax = audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 0
+        lastAppliedBrightness = Float.NaN
+        lastAppliedVolume = Int.MIN_VALUE
+        val view = host.playerView
+        val paused = host.state.playState == PlayState.PAUSED
+        return VideoGestureSession(
+            inPlayback = host.isInPlaybackState(),
+            canChangePosition = host.gestureCanChangePosition(),
+            enableInNormal = host.gestureEnableInNormal(),
+            fullScreen = host.state.playerState == BasePlayerView.PLAYER_FULL_SCREEN,
+            locked = host.isLocked,
+            previewMode = host.state.previewMode,
+            paused = paused,
+            gestureEnabled = host.gestureEnabled(),
+            verticalSlidingDisabled = GestureHelper.isControlDisabled(),
+            width = width,
+            height = height,
+            screenWidth = screenWidth,
+            edge = isInBottomGestureBand(downY, height, bottomGestureBandPx(activity)),
+            fromTopBand = downY < height * topBandFraction,
+        )
+    }
+
+    override fun onSingleTap() {
+        if (host.isLocked) {
+            host.showLockView()
+            return
+        }
+        host.actions.toggleControls()
+    }
+
+    override fun onDoubleTapTogglePlay() {
+        if (host.isLocked) return
+        if (!host.isInPlaybackState()) return
+        host.togglePlayFromGesture()
+    }
+
+    override fun onLongPressStart() {
+        if (host.isLocked) return
+        host.state.updateSpeedOld(host.currentSpeed())
+        val boost = KV.get(KVKeys.LONG_PRESS_SPEED, KVKeys.LONG_PRESS_SPEED_DEFAULT).toFloat()
+        host.setSpeedFromGesture(boost)
+        host.state.updateSpeedBoostValue(boost)
+        host.state.updateSpeedBoostVisible(true)
+    }
+
+    override fun onLongPressEnd() {
+        host.setSpeedFromGesture(host.state.speedOld)
+        host.state.updateSpeedBoostVisible(false)
+    }
+
+    override fun onSeekPreview(totalDeltaX: Float) {
+        if (host.isLocked) return
+        val width = host.width
+        if (width <= 0) return
+        val snapshot = host.progressSnapshot()
+        if (snapshot == null) {
+            seekTargetMs = -1
+            return
+        }
+        val duration = snapshot.durationMs
+        val current = snapshot.positionMs
+        var target = (totalDeltaX / width * slideFullWidthMs + current).toInt()
+        if (target > duration) target = duration
+        if (target < 0) target = 0
+        showSeekHintOnly()
+        host.updateSeekUiHint(current, target)
+        seekTargetMs = target
+    }
+
+    override fun onSeekCommit() {
+        val target = seekTargetMs
+        seekTargetMs = -1
+        if (target < 0) return
+        if (host.progressSnapshot() == null) return
+        host.seekToFromGesture(target.toLong())
+        host.saveProgressFromView()
+    }
+
+    override fun onSeekCancel() {
+        seekTargetMs = -1
+    }
+
+    override fun onBrightnessSlide(totalDeltaY: Float) {
+        if (host.isLocked) return
+        if (host.playerActivity() == null) return
+        val height = host.height
+        if (height <= 0) return
+        val base = brightnessBase ?: return
+        val delta = -totalDeltaY / (height * verticalRangePerScreen)
+        var target = base + delta
+        if (target < 0f) target = 0f
+        if (target > 1f) target = 1f
+        if (target != lastAppliedBrightness) {
+            systemEffects.dispatch(SystemEffect.Brightness(target))
+            lastAppliedBrightness = target
+        }
+        if (VERBOSE_GESTURE_LOG) {
+            AppLog.i(
+                "echo-slide: kind=brightness dy=" + totalDeltaY + " h=" + height +
+                    " base=" + base + " target=" + target,
+            )
+        }
+        showSlideHintOnly()
+        host.showSlideHint(host.context.getString(R.string.player_gesture_percent, (target * 100).toInt()), brightness = true)
+    }
+
+    override fun onVolumeSlide(totalDeltaY: Float) {
+        if (host.isLocked) return
+        if (audioManager == null) return
+        val height = host.height
+        if (height <= 0) return
+        val streamMax = cachedStreamMax
+        if (streamMax <= 0) return
+        val base = volumeBase ?: return
+        val delta = -totalDeltaY / (height * verticalRangePerScreen) * streamMax
+        var index = base + delta
+        if (index > streamMax) index = streamMax.toFloat()
+        if (index < 0f) index = 0f
+        val applied = index.toInt()
+        if (applied != lastAppliedVolume) {
+            systemEffects.dispatch(SystemEffect.Volume(applied))
+            lastAppliedVolume = applied
+        }
+        if (VERBOSE_GESTURE_LOG) {
+            AppLog.i(
+                "echo-slide: kind=volume dy=" + totalDeltaY + " h=" + height +
+                    " base=" + base + " max=" + streamMax + " target=" + index,
+            )
+        }
+        showSlideHintOnly()
+        host.showSlideHint(host.context.getString(R.string.player_gesture_percent, (index / streamMax * 100).toInt()), brightness = false)
+    }
+}

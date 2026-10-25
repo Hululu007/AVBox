@@ -11,9 +11,9 @@ import com.github.catvod.crawler.Spider
 import com.github.catvod.crawler.SpiderNull
 import com.github.catvod.crawler.SpiderReaper
 import com.github.catvod.net.OkHttp
-import com.github.tvbox.osc.BuildConfig
-import com.github.tvbox.osc.net.OkGoHelper
-import com.github.tvbox.osc.util.LOG
+import com.github.avbox.osc.BuildConfig
+import com.github.avbox.osc.net.HttpClients
+import com.github.avbox.osc.util.AppLog
 
 import org.json.JSONException
 import org.json.JSONObject
@@ -88,7 +88,7 @@ class PythonLoader {
                 siteMap[key] = jo
             }
         } catch (e: JSONException) {
-            LOG.e("PythonLoader", e)
+            AppLog.e("PythonLoader", e)
         }
     }
 
@@ -173,7 +173,7 @@ class PythonLoader {
                 try {
                     spider.init(app, url, ext)
                 } catch (e: Exception) {
-                    LOG.e("PythonLoader", e)
+                    AppLog.e("PythonLoader", e)
                 }
             }
 
@@ -195,7 +195,7 @@ class PythonLoader {
                         spiders.putIfAbsent(key, done)
                     }
                 } catch (th: Throwable) {
-                    LOG.e("PyLoader", "python spider init failed", th)
+                    AppLog.e("PyLoader", "python spider init failed", th)
                 }
             }
             return SpiderNull()
@@ -227,7 +227,7 @@ class PythonLoader {
                 map[key] = value
             }
         } catch (e: JSONException) {
-            LOG.e("PythonLoader", e)
+            AppLog.e("PythonLoader", e)
         }
         return map
     }
@@ -238,7 +238,7 @@ class PythonLoader {
             return streamCallback.get(url, str2map(param), str2map(header))
         } else {
             try {
-                val client = OkGoHelper.getDefaultClient() ?: OkHttp.client()
+                val client = HttpClients.defaultClient ?: OkHttp.client()
                 val response = client.newCall(getRequest(url, str2map(param), str2map(header))).execute()
                 val body = response.body
                 if (body != null) return body.byteStream()

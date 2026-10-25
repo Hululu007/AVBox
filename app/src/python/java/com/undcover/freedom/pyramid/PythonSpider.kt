@@ -9,8 +9,8 @@ import androidx.media3.common.util.UriUtil
 
 import com.chaquo.python.PyObject
 import com.github.catvod.crawler.Spider
-import com.github.tvbox.osc.util.LOG
-import com.github.tvbox.osc.util.RegexUtils
+import com.github.avbox.osc.util.AppLog
+import com.github.avbox.osc.util.RegexUtils
 
 import org.json.JSONArray
 import org.json.JSONException
@@ -63,7 +63,7 @@ class PythonSpider : Spider {
             try {
                 spider.put("siteKey", name)
             } catch (ignored: Exception) {
-                LOG.d("PyLoader", "set siteKey failed")
+                AppLog.d("PyLoader", "set siteKey failed")
             }
 
             val poList = pyApp.callAttr("getDependence", spider).asList()
@@ -120,7 +120,7 @@ class PythonSpider : Spider {
                 }
             }
         } catch (e: JSONException) {
-            LOG.e("PythonSpider", e)
+            AppLog.e("PythonSpider", e)
         }
         return jo
     }
@@ -134,7 +134,7 @@ class PythonSpider : Spider {
                 }
             }
         } catch (e: JSONException) {
-            LOG.e("PythonSpider", e)
+            AppLog.e("PythonSpider", e)
         }
         return jo
     }
@@ -270,7 +270,7 @@ class PythonSpider : Spider {
             val pyApp = app
             if (pyApp != null && pySpider != null) pyApp.callAttr("destroy", pySpider)
         } catch (ignored: Exception) {
-            LOG.d("PyLoader", "python spider destroy failed")
+            AppLog.d("PyLoader", "python spider destroy failed")
         }
     }
 

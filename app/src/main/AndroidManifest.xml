@@ -52,12 +52,12 @@
         android:usesCleartextTraffic="true">
 
         <activity
-            android:name="com.github.avbox.osc.ComposeTestActivity"
+            android:name=".ui.ComposeTestActivity"
             android:exported="false"
             android:theme="@android:style/Theme.Material.Light.NoActionBar" />
 
         <activity
-            android:name=".ui.activity.MainActivity"
+            android:name=".ui.MainActivity"
             android:exported="true"
             android:theme="@style/AppTheme.Splash"
             android:windowSoftInputMode="adjustResize">
@@ -69,26 +69,26 @@
         </activity>
 
         <activity
-            android:name=".ui.activity.LivePlayActivity"
+            android:name=".ui.LivePlayActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize" />
         <activity
-            android:name=".ui.activity.DetailActivity"
+            android:name=".ui.DetailActivity"
             android:launchMode="singleTop"
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|screenSize" />
         <activity
-            android:name=".ui.activity.MusicPlayerActivity"
+            android:name=".ui.MusicPlayerActivity"
             android:configChanges="orientation|screenSize" />
         <activity
-            android:name=".ui.activity.SearchActivity"
+            android:name=".ui.SearchActivity"
             android:windowSoftInputMode="stateHidden|adjustResize" />
         <activity
-            android:name=".ui.activity.PartitionListActivity"
+            android:name=".ui.PartitionListActivity"
             android:launchMode="singleTop" />
         <activity
-            android:name=".ui.activity.ThemeSettingsActivity" />
+            android:name=".ui.ThemeSettingsActivity" />
         <activity
-            android:name=".ui.activity.ConfigManageActivity"
+            android:name=".ui.ConfigManageActivity"
             android:exported="true"
             android:launchMode="singleTop">
             <intent-filter>
@@ -102,9 +102,9 @@
             </intent-filter>
         </activity>
         <activity
-            android:name=".ui.activity.PlaySettingsActivity" />
+            android:name=".ui.PlaySettingsActivity" />
         <activity
-            android:name=".ui.activity.PreferenceSettingsActivity" />
+            android:name=".ui.PreferenceSettingsActivity" />
 
         <service
             android:name=".dlna.DLNACastService"

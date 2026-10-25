@@ -2,7 +2,7 @@ package com.github.catvod.crawler.js.rsa
 
 import android.util.Log
 
-import com.github.tvbox.osc.util.LOG
+import com.github.avbox.osc.util.AppLog
 
 import java.io.ByteArrayOutputStream
 import java.nio.charset.Charset
@@ -260,7 +260,7 @@ class RSAEncrypt {
         }
 
         private fun handleException(e: Exception) {
-            LOG.e("RSAEncrypt", e)
+            AppLog.e("RSAEncrypt", e)
             Log.e(TAG, TAG + e)
         }
     }

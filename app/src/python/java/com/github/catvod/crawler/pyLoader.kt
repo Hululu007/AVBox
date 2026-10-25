@@ -4,8 +4,8 @@ import android.os.Build
 import android.util.Log
 
 import com.github.catvod.crawler.python.IPyLoader
-import com.github.tvbox.osc.base.App
-import com.github.tvbox.osc.util.LOG
+import com.github.avbox.osc.base.App
+import com.github.avbox.osc.util.AppLog
 import com.undcover.freedom.pyramid.PythonLoader
 import com.undcover.freedom.pyramid.PythonSpider
 
@@ -63,7 +63,7 @@ class pyLoader : IPyLoader {
                 spiders[key] ?: getPythonLoader().getSpider(key, cls, ext)
             }
         } catch (th: Throwable) {
-            LOG.e("pyLoader", th)
+            AppLog.e("pyLoader", th)
             return SpiderNull()
         }
         if (sp is SpiderNull) return sp
@@ -79,14 +79,14 @@ class pyLoader : IPyLoader {
     override fun proxyInvoke(params: Map<String, String>?, key: String?): Array<Any?>? {
         if (!isPythonSupported()) return null
         if (key == null || key.isEmpty()) return null
-        LOG.i("echo-recentPyKey$key")
+        AppLog.i("echo-recentPyKey$key")
         try {
             val spider = spiders[key]
             if (spider !is PythonSpider) return null
             return SpiderReaper.track(spider) { spider.proxyLocal(params) }
         } catch (th: Throwable) {
-            LOG.i("echo-proxyInvoke_Throwable:---" + th.message)
-            LOG.e("pyLoader", th)
+            AppLog.i("echo-proxyInvoke_Throwable:---" + th.message)
+            AppLog.e("pyLoader", th)
         }
         return null
     }

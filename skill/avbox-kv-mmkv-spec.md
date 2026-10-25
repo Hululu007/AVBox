@@ -20,7 +20,7 @@
 |---|---|
 | Hawk 调用点 | **34 个文件、约 250+ 处**(`Hawk.get/put/contains/delete`) |
 | 高密度文件 | `ApiConfig` 48 / `LivePlayActivity` 35 / `SettingsPage` 28 / `HistoryHelper` 14 / `DanmuHelper` 12 |
-| 键总量 | `HawkConfig` 定义 78 个 `public static final String`(可用 `Select-String "public static final String"` 复核;另有 `DEFAULT_LOAD_LIVE` 等少量直接字符串键;2026-09-17 新增 `nav_animation_disabled`) |
+| 键总量 | `KVKeys` 定义 78 个 `public static final String`(可用 `Select-String "public static final String"` 复核;另有 `DEFAULT_LOAD_LIVE` 等少量直接字符串键;2026-09-17 新增 `nav_animation_disabled`) |
 | 其他存储 | ~~2 处独立 SharedPreferences(`thunder` 雷电标识、`AudioTrackMemory`),与 Hawk 无关,不在本次范围~~ → **2026-09-15 已补迁入 KV**(`thunder_imei`/`thunder_mac`;轨道记忆 —— 2026-09-25 起键族为 `track_mem_<sourceKey>@<vodId>_audio|video|text`,旧 `audio_track_<progressKey>_*` 已废弃),**全仓不再有 SharedPreferences**,见 `history/features.md` 同日"SP 残留清零"条目 |
 
 ### 1.2 键类型分布(决定编码规则的关键)
@@ -101,7 +101,7 @@ jar 的归属 `vod`/`live`,2026-10-21 新增)、`boot_disabled_jars`(ArrayList<S
 ```java
 public final class KV {
     public static void init(Context context);
-    public static <T> boolean put(String key, T value);      // 失败返回 false 并 LOG.e
+    public static <T> boolean put(String key, T value);      // 失败返回 false 并 AppLog.e
     public static <T> T get(String key);                     // 不存在/失败 → null
     public static <T> T get(String key, T defaultValue);     // 不存在/失败 → defaultValue
     public static boolean contains(String key);
@@ -146,14 +146,14 @@ public final class KV {
 ### 4.6 错误处理与可观测性(吸取 Hawk 教训)
 
 - `put` 返回 boolean ⇒ 由门面自身打 `echo-kv` 日志,失败不再静默(G4);需要补偿动作的调用方(极少数)自行检查返回值。
-- 集合读取:区分「键不存在」(返回默认值,正常)与「解不出类型」(返回默认值 + `LOG.e` + 键名)。
-- 关键事件打点前缀 `echo-kv*`,经 `util/LOG` 落盘(`FILE_LOG_PREFIXES` 已含 `echo-kv`),真机取日志:
+- 集合读取:区分「键不存在」(返回默认值,正常)与「解不出类型」(返回默认值 + `AppLog.e` + 键名)。
+- 关键事件打点前缀 `echo-kv*`,经 `util/AppLog` 落盘(`FILE_LOG_PREFIXES` 已含 `echo-kv`),真机取日志:
   `adb shell run-as <applicationId> cat files/preload_debug.log`(该 ROM 吞 logcat,此为既有约定)。
 - ⚠️ **单测里不能用 `android.text.TextUtils.isEmpty` 判空(2026-09-21,第三次踩)**:
   工程开了 `testOptions.unitTests.returnDefaultValues = true`,Android 桩方法**静默返回默认值** ——
   `TextUtils.isEmpty("")` 返 `false`、`TextUtils.isEmpty(null)` 也返 `false`。于是同一处判空
   "真机生效、单测失效",而**单测正是用来钉这类边界的**。踩过三次的落点:`ConfigParser`(最初)、
-  `bean/Depot`(空地址过滤在单测里不生效)、`boot/BootGuard`(`shouldDisable` 的"空 jar 不停用"守卫
+  `bean/SourceDepot`(空地址过滤在单测里不生效)、`boot/BootGuard`(`shouldDisable` 的"空 jar 不停用"守卫
   被新写的单测当场抓到)。**约定:纯逻辑类里判空一律写本地 `text == null || text.length() == 0`
   的小工具方法**,并在注释里指明原因(三处现有实现互相引用,便于后来者一次看懂)。
 
@@ -208,8 +208,8 @@ public final class KV {
 | R3 | §4.2 门面 API `get(key)` 返回 null | 增加 `@Nullable`/`@NonNull` 语义区分:`get(key)` 标 `@Nullable`,`get(key, def)` 不标(契约恒不为 null) | 带默认值的重载若标 `@Nullable`,Kotlin 侧 33 个文件的调用全部报"可空类型不可当非空用",违背"业务侧近乎零改动" |
 | R4 | §4.3 "键 → Type 注册表"(一次性) | **转为长期设施**:`KVKeySpec` 是实现 `KVDecoder.TypeRegistry` 的常驻登记表,**不随迁移删除** | 泛型擦除下 `new ArrayList()` / `new HashMap<>()` / `null` 默认值都带不来元素类型;没有登记表,`subscribe_list` 等键会解出 `LinkedTreeMap` 元素 → 取值 ClassCastException。它是 KV 正常运行的必需件,与 Hawk 无关 |
 | R5 | §4.6 "批量替换时同步补 `put` 返回值检查" | **未逐点补**:失败留痕收敛到门面内(`KV.put` 自行打 `echo-kv` + 返回 false) | 250+ 处调用点逐个加 `if (!KV.put(...))` 会把"存储替换"变成"业务改写"(违反 N1),且绝大多数调用点也没有可执行的补偿动作。G4"写入失败可感知"由门面日志 + 布尔返回共同满足 |
-| R6 | ——(原方案未提及) | 新增 `util/kvcodec` 纯 JVM 包(`KVDecoder`/`KVLog`)与 `app/src/test` 单测 19 例 | §5-P0 要求"集合与嵌套泛型单测"。把编解码核心与 Android(MMKV/LOG)解耦后,单测可纯 JVM 跑,不需要 Robolectric |
-| R7 | §4.6 `echo-kv*` 打点 | 仅保留**事件级**日志(类型登记表装载/类型解不出/解码失败);正常读写不打点 | 热路径(如播放器每帧读设置)打点会淹没有效信息;日志前缀已加入 `util/LOG.FILE_LOG_PREFIXES` |
+| R6 | ——(原方案未提及) | 新增 `util/kvcodec` 纯 JVM 包(`KVDecoder`/`KVLog`)与 `app/src/test` 单测 19 例 | §5-P0 要求"集合与嵌套泛型单测"。把编解码核心与 Android(MMKV/AppLog)解耦后,单测可纯 JVM 跑,不需要 Robolectric |
+| R7 | §4.6 `echo-kv*` 打点 | 仅保留**事件级**日志(类型登记表装载/类型解不出/解码失败);正常读写不打点 | 热路径(如播放器每帧读设置)打点会淹没有效信息;日志前缀已加入 `util/AppLog.FILE_LOG_PREFIXES` |
 | R8 | ——(原方案未提及) | 迁移(已删除)期间暴露的两个真实缺陷被固化修复:`KVMigrate` 必须先判键存在性;`KVCodec` 用 `containsKey` 而非 `getValueSize` 判存在性 | 见 §9。前者随迁移一起删除,后者是**现行代码**的修复,必须保留 |
 | R9 | §7-Q2 隐含"gson 保持 ≤2.12 直到迁移完成" | **gson 2.10.1 → 2.14.0**(2026-09-13) | 原约束只服务于 Hawk 的集合读取;Hawk 已彻底移除,约束消失。KV 侧只用稳定 API(`TypeToken.get` / 显式 Type),不碰 gson 内部实现 ⇒ 升级零改动,编译 + 19 例单测通过。**这也是本次迁移的验收点之一(G3 解除 gson 版本枷锁)** |
 | R10 | ——(迁移完成后审查发现) | **修复登记类型与写入类型不一致**:`LIVE_WEB_HEADER` 由 `register(key, "")`(String)改为 `new TypeToken<HashMap<String,String>>(){}`;并新增单测 `KVKeySpecTest.liveWebHeader_roundTripDecodesAsStringMap` 锁死"写入类型 == 登记类型" | `ApiConfig.loadLives` 写入的是 `HashMap<String,String>`(header/ua),登记成 String 会让读取侧 Gson 用 String 解析对象原文抛错,又被 `KV.get(key)`(quiet 副本)静默吞成 null ⇒ **直播源配置的 UA/Referer/header 全部失效**(2026-09-13 全量缺陷审查发现)。教训:新增/修改复杂键必须按"写入值的实际类型"登记 |

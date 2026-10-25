@@ -7,9 +7,9 @@ import androidx.annotation.Keep
 
 import com.github.catvod.Proxy
 import com.github.catvod.crawler.js.rsa.RSAEncrypt
-import com.github.tvbox.osc.util.AppContextHolder
-import com.github.tvbox.osc.util.LOG
-import com.github.tvbox.osc.util.UA
+import com.github.avbox.osc.util.AppContextHolder
+import com.github.avbox.osc.util.AppLog
+import com.github.avbox.osc.util.UserAgentPool
 import com.whl.quickjs.wrapper.ContextSetter
 import com.whl.quickjs.wrapper.Function
 import com.whl.quickjs.wrapper.JSArray
@@ -231,28 +231,28 @@ class Global {
                 try {
                     mConfig = op.get("config") as String?
                 } catch (e: Exception) {
-                    LOG.e("Global", e)
+                    AppLog.e("Global", e)
                 }
             }
             if (op.has("type")) {
                 try {
                     mType = (op.get("type") as Double).toInt()
                 } catch (e: Exception) {
-                    LOG.e("Global", e)
+                    AppLog.e("Global", e)
                 }
             }
             if (op.has("long")) {
                 try {
                     mLong = (op.get("long") as Double).toInt()
                 } catch (e: Exception) {
-                    LOG.e("Global", e)
+                    AppLog.e("Global", e)
                 }
             }
             if (op.has("block")) {
                 try {
                     mBlock = op.get("block") as Boolean
                 } catch (e: Exception) {
-                    LOG.e("Global", e)
+                    AppLog.e("Global", e)
                 }
             }
         }
@@ -300,28 +300,28 @@ class Global {
                 try {
                     mConfig = op.get("config") as String?
                 } catch (e: Exception) {
-                    LOG.e("Global", e)
+                    AppLog.e("Global", e)
                 }
             }
             if (op.has("type")) {
                 try {
                     mType = (op.get("type") as Double).toInt()
                 } catch (e: Exception) {
-                    LOG.e("Global", e)
+                    AppLog.e("Global", e)
                 }
             }
             if (op.has("long")) {
                 try {
                     mLong = (op.get("long") as Double).toInt()
                 } catch (e: Exception) {
-                    LOG.e("Global", e)
+                    AppLog.e("Global", e)
                 }
             }
             if (op.has("block")) {
                 try {
                     mBlock = op.get("block") as Boolean
                 } catch (e: Exception) {
-                    LOG.e("Global", e)
+                    AppLog.e("Global", e)
                 }
             }
         }
@@ -389,7 +389,7 @@ class Global {
             ))
             null
         } catch (th: Throwable) {
-            LOG.e("Global", th)
+            AppLog.e("Global", th)
             deliver(ctx, complete, null, null, th.message.orEmpty())
             null
         }
@@ -431,7 +431,7 @@ class Global {
             })
             obj
         } catch (th: Throwable) {
-            LOG.e("Global", th)
+            AppLog.e("Global", th)
             opened?.let {
                 streams.remove(it)
                 it.close()
@@ -468,7 +468,7 @@ class Global {
                 fail = { message -> settleStream(reply, null, message) }
             ))
         } catch (th: Throwable) {
-            LOG.e("Global", th)
+            AppLog.e("Global", th)
             settleStream(reply, null, th.message.orEmpty())
         }
         return null
@@ -479,7 +479,7 @@ class Global {
     fun streamClose(token: Int): Boolean {
         val entry = proxyStreams.remove(token) ?: return false
         entry.stream.close()
-        LOG.i("echo-js-stream close " + token)
+        AppLog.i("echo-js-stream close " + token)
         return true
     }
 
@@ -494,13 +494,13 @@ class Global {
                 try {
                     if (result != null) reply.ok(result) else reply.fail(message)
                 } catch (th: Throwable) {
-                    LOG.e("Global", th)
+                    AppLog.e("Global", th)
                 } finally {
                     reply.release()
                 }
             })
         } catch (th: Throwable) {
-            LOG.d("Global", "executor shutdown, drop stream callback")
+            AppLog.d("Global", "executor shutdown, drop stream callback")
             reply.release()
         }
     }
@@ -546,10 +546,10 @@ class Global {
             })
             obj.setProperty("stream", handle)
             proxyStreams[token] = StreamEntry(ProxyStream(response), SystemClock.elapsedRealtime(), sessionId)
-            LOG.i("echo-js-stream open " + token + " code=" + response.code)
+            AppLog.i("echo-js-stream open " + token + " code=" + response.code)
             settleStream(reply, obj, "")
         } catch (th: Throwable) {
-            LOG.e("Global", th)
+            AppLog.e("Global", th)
             response.close()
             settleStream(reply, null, th.message.orEmpty())
         }
@@ -571,7 +571,7 @@ class Global {
             val json = HtmlQuery.query(html, plan.stringify())
             ctx.parse(json) as? JSObject
         } catch (th: Throwable) {
-            LOG.e("Global", th)
+            AppLog.e("Global", th)
             null
         }
     }
@@ -663,11 +663,11 @@ class Global {
                     val obj = if (result != null && req != null) Connect.success(ctx, req, result) else Connect.error(ctx, message)
                     complete.call(obj)
                 } catch (th: Throwable) {
-                    LOG.e("Global", th)
+                    AppLog.e("Global", th)
                 }
             })
         } catch (ignored: RejectedExecutionException) {
-            LOG.d("Global", "executor shutdown, drop callback")
+            AppLog.d("Global", "executor shutdown, drop callback")
         }
     }
 
@@ -702,12 +702,12 @@ class Global {
             try {
                 resolve.release()
             } catch (th: Throwable) {
-                LOG.d("Global", "release stream resolve failed")
+                AppLog.d("Global", "release stream resolve failed")
             }
             try {
                 reject.release()
             } catch (th: Throwable) {
-                LOG.d("Global", "release stream reject failed")
+                AppLog.d("Global", "release stream reject failed")
             }
         }
     }
@@ -723,8 +723,8 @@ class Global {
             val value = try {
                 WebSettings.getDefaultUserAgent(requireNotNull(AppContextHolder.context()) { "app context not initialized" })
             } catch (th: Throwable) {
-                LOG.e("Global", th)
-                UA.random()
+                AppLog.e("Global", th)
+                UserAgentPool.random()
             }
             userAgent = value
             return value

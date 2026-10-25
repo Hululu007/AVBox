@@ -1,6 +1,6 @@
 package com.github.catvod.crawler.js
 
-import com.github.tvbox.osc.util.LOG
+import com.github.avbox.osc.util.AppLog
 import java.util.ArrayDeque
 import java.util.concurrent.ExecutorService
 
@@ -79,7 +79,7 @@ class HttpGate(private val executor: ExecutorService) {
             request.start.run()
         } catch (th: Throwable) {
             finish()
-            LOG.e("HttpGate", th)
+            AppLog.e("HttpGate", th)
         }
     }
 

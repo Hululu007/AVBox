@@ -2,8 +2,8 @@ package com.github.catvod.crawler.js
 
 import androidx.annotation.Keep
 
-import com.github.tvbox.osc.util.KV
-import com.github.tvbox.osc.util.LOG
+import com.github.avbox.osc.util.KV
+import com.github.avbox.osc.util.AppLog
 import com.whl.quickjs.wrapper.Function
 
 class local {
@@ -14,7 +14,7 @@ class local {
         try {
             KV.delete("jsRuntime_" + str + "_" + str2)
         } catch (e: Exception) {
-            LOG.e("local", e)
+            AppLog.e("local", e)
         }
     }
 
@@ -35,7 +35,7 @@ class local {
         try {
             KV.put("jsRuntime_" + str + "_" + str2, str3)
         } catch (e: Exception) {
-            LOG.e("local", e)
+            AppLog.e("local", e)
         }
     }
 }

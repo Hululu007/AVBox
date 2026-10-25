@@ -9,7 +9,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <com.github.tvbox.osc.player.danmu.PlayerDanmakuView
+    <com.github.avbox.osc.player.danmu.PlayerDanmakuView
         android:id="@+id/danmaku"
         android:layout_width="match_parent"
         android:layout_height="match_parent"

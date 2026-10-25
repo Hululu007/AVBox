@@ -13,7 +13,7 @@
 **不变项(动它们等于动架构)**:
 - 播放器实例的生命周期**长于页面**:页面 `onDestroy` 只停播 + 摘视图,**不释放实例**(这是跨页复用的收益点)。
 - **退出播放页一律停播 + 撤通知 + 放锁**(影视与音乐都不后台继续,2026-09-14 用户选定);app 退后台时沿用原语义(纯音频继续、影视暂停)。
-- 内核唯一 = `androidx.media3.exoplayer.ExoPlayer`,由 app 侧 `ExoPlayer`(适配器)/`KernelPlayer`(契约)/`AppPlayerView`+`MyVideoView`(宿主视图)三层承接,**无 doikki / 无 IJK / 无 `PlayerFactory` 泛型链**。
+- 内核唯一 = `androidx.media3.exoplayer.ExoPlayer`,由 app 侧 `ExoPlayer`(适配器)/`KernelPlayer`(契约)/`BasePlayerView`+`PlayerKernelView`(宿主视图)三层承接,**无 doikki / 无 IJK / 无 `PlayerFactory` 泛型链**。
 - 媒体会话**不用 media3 `MediaSessionService`**:保留 `MediaSessionCompat` + `MediaStyle`(见 §7.1 的理由)。
 
 **非目标**:不换 UI 框架、不改数据层(Room/MMKV)、不引入 DI、不做画中画、**不追求"退页面继续播"**(除已确认的纯音频音乐会话)。
@@ -23,7 +23,7 @@
 | 组件 | 位置 | 职责 |
 |---|---|---|
 | `PlaybackService` | `player/PlaybackService.kt` | 前台服务(FGS `mediaPlayback`);**托管引擎生命周期**;媒体会话/通知/wake+wifi 锁;通知栏动作入口;**任务移除 = 完整释放引擎;服务被系统回收 = 按预热开关决定保留内核**(见 §3.3) |
-| `PlaybackEngine` | `player/PlaybackEngine.kt` | **持有** `MyVideoView` + `PlaybackController`;**挂摘协议**主体(attach/detach/detachForHandover);空闲释放;内核预热;直播人格切换;无页面时实现 `PlaybackHostApi` + `HeadlessView` 桥 |
+| `PlaybackEngine` | `player/PlaybackEngine.kt` | **持有** `PlayerKernelView` + `PlaybackController`;**挂摘协议**主体(attach/detach/detachForHandover);空闲释放;内核预热;直播人格切换;无页面时实现 `PlaybackHostApi` + `HeadlessView` 桥 |
 | `PlaybackController` | `player/PlaybackController.kt` | 会话与派生数据层:播什么(vod/`sourceKey`/`sourceBean`/播放器配置)、进度键与缓存键、清晰度、投屏地址改写、**已起播内容归属**;视图交互一律经 `PlaybackViewBridge` |
 | `PlaybackProgressSampler` | `player/PlaybackProgressSampler.kt` | **进度统计的单一写入者**(2026-10-11):播放中每 5s 采样写续播位置 + 历史百分比(经 `ProgressSink` 的显式落盘点也走它);暂停/停止 flush;完成标记 100%;门禁 `ProgressSampling`(纯函数) |
 | `PlayUrlResolver` | `player/PlayUrlResolver.kt` | 取流/解析/嗅探调度(WebView 嗅探 + json/聚合/超级解析 + **代际闸门**) |
@@ -31,7 +31,7 @@
 | `PlaybackFetch` | `player/PlaybackFetch.kt` | 取流结果观察者:收集 `SourceChannel.flow`,把结果落到会话数据(清晰度/进度键/字幕/歌词/封面) |
 | `PlaybackPreload` + `PreloadCoordinator` + `PreloadManagerHolder` | `player/PlaybackPreload.kt` / `PreloadCoordinator.kt` / `PreloadManagerHolder.kt` | 下一集预载:喂快照/取结果/作废时机(协调器)**随引擎存活**;管理器是**进程级单例**(线程/注册表/就绪 StateFlow) |
 | `MusicSessionDelegate` | `player/MusicSessionDelegate.kt` | 媒体会话与通知的维护实现(有音频轨就维护,影视同样);封面兜底、弹幕地址、清晰度切换 |
-| `MyVideoView`(→ `AppPlayerView`) | `player/MyVideoView.kt` / `AppPlayerView.kt` | **播放器视图**:渲染容器 `mPlayerContainer` + 封面/黑帧/弹幕/渲染模式/内核重建语义;`AppPlayerView` 是 fork `VideoView` 的 app 侧等价物 |
+| `PlayerKernelView`(→ `BasePlayerView`) | `player/PlayerKernelView.kt` / `BasePlayerView.kt` | **播放器视图**:渲染容器 `playerFrame` + 封面/黑帧/弹幕/渲染模式/内核重建语义;`BasePlayerView` 是 fork `VideoView` 的 app 侧等价物 |
 | `KernelPlayer` / `ExoPlayer` | `player/core/KernelPlayer.kt` / `ExoPlayer.kt` | 内核契约(取代 `AbstractPlayer`)/ media3 适配器(取代 `ExoMediaPlayer`),**类名与方法面保留 ⇒ 宿主/控制器/调度层对内核换代透明** |
 | `PlaybackSession` | `player/PlaybackSession.kt` | 一次播放的显式数据(vod/`sourceKey`/`userPickedLine`)+ **归属键 `playbackKey`** |
 | `PlaybackHostApi` | `player/PlaybackHostApi.kt` | **指令面**:页面/通知栏只通过这些方法驱动播放(实现方 = 页面 `PlayContainer` 或引擎) |
@@ -43,7 +43,7 @@
 | `host/*` | `player/host/` | 渲染宿主与音频焦点:`PlayerRenderView`(契约)、`EngineSurfaceRenderView`/`EngineTextureRenderView`(+Factory)、`RenderMeasure`、`TextureRenderHost`、`PlayerAudioFocus` |
 | `state/*` | `player/state/` | `PlayerUiState`(控制层集中状态容器)、`AudioOnlyState`/`NearEndRules`/`ScreenMode`/`VideoSizeGate`(UI 侧派生规则);**`PlayState`/`PlaybackStateMachine` 已于 2026-10-25 迁 `core/*`** |
 | `PlayContainer` | `ui/player/PlayContainer.kt` | 页面侧:`PlaybackHostApi` + `PlaybackPage` 实现;容器槽位 `surfaceSlot`;`hostResume/hostPause/hostDestroy` 生命周期;`handOverToNextPage()` 交接音乐页 |
-| `ComposeVideoController` / `ComposeLiveController` | `player/controller/` | Compose 覆盖层 + 手势(`VideoGestureLayer`);**不再继承 `BaseVideoController`**,自持进度定时器与锁定/显隐状态 |
+| `VideoPlayerController` / `ComposeLiveController` | `player/controller/` | Compose 覆盖层 + 手势(`VideoGestureLayer`);**不再继承 `BaseVideoController`**,自持进度定时器与锁定/显隐状态 |
 
 ## 2. 架构与所有权
 
@@ -52,7 +52,7 @@
 ```
 PlaybackService(前台服务,托管生命周期)
    └── PlaybackEngine(进程级,持有播放器)
-         ├── MyVideoView → AppPlayerView(渲染容器 mPlayerContainer + 内核 ExoPlayer)
+         ├── PlayerKernelView → BasePlayerView(渲染容器 playerFrame + 内核 ExoPlayer)
          └── PlaybackController(会话/派生数据/编排)
                ├── PlayUrlResolver / PlaybackRetryDelegate / PlaybackFetch
                └── PlaybackPreload(→ PreloadManagerHolder 进程单例)
@@ -76,8 +76,8 @@ PlaybackService(前台服务,托管生命周期)
 
 ### 2.3 数据流与指令流
 
-- **指令**:页面(Compose 按钮/手势)/通知栏/媒体键 → `PlaybackHostApi` → `PlaybackController` → `PlaybackViewBridge` → `MyVideoView`/内核。**会话/进度/配置类状态写只能走 controller 意图方法族**(`beginSourceSwitch(position)`、`onSessionTakenOver`/`onNewPlayArmed`、`playAdjacentEpisode(forward)`、`prepareUserReplay()`、`requestParse`、`beginCastPrepare`、`commitPlayerCfg(…, suppressAutoSwitch/suppressDecodeFallback)`、`onM3u8ProxyResolved`、`onDanmuChecked` 等;机械门 `udf_gate.py` r7——ui 包 `scheduler.set*/mark*` 直写 = FAIL,r7=0)。内核运行时命令(暂停/续播/seek/倍速/画面比例)经内核 Compose 控制器直打内核,属**运行时控制面**,不入此约束。**内核完成/错误由引擎侧派发**:`PlaybackEngine.onPlayStateChanged` 在音乐会话守卫(`handlePlayStateForMusicSession`)之后,对"有页面挂载且非 audio-only 页"派发 COMPLETED→`controller.onPlaybackCompleted()`(自动连播,清理 preKey 进度后 `play(false)`)、ERROR→`controller.onKernelPlayError()`(rememberHttpStatus + 起播态重试梯子/自动换线,穷尽后终态提示;与 `errorWithRetry` 内部同一梯子);无页面(headless)与音乐页不派发。片尾 et 跳过:`VideoPlayerController.onProgressTick` 把快照 position/duration 经 `onNearEndProgress` 上抛,controller 内以 `NearEndRules`(阈值判定)+ `PlaybackAttemptState.skipEndPending` 一次性闩锁判定,语义 =「闩锁武装 ⇔ 本内容尚未被推离」:复位点 = `startVideoPlayback`(与旧 VPC `resetSpeed` 同位);`onPlaybackCompleted` 以闩锁**武装为守卫**、`playAdjacentEpisode` 无条件消费(作废待触发近尾)、tick 上抛要求 `isPlaying`——三推进路径互斥,收口 HEAD 既有的全部双跳集竞态(COMPLETED×残余 tick、用户推集×窗口内自然播完)。
-- **状态**:内核事件 → `PlayerEngine` → `ExoPlayer`(适配器)→ **单一真源** `PlaybackStateMachine`(`PlayState`;`MyVideoView.playState` 同步读,`stateFlow` 为流式面)。派发面 `AppPlayerView.dispatchPlayState`(值变化去重 + `PREPARED`/`START_ABORT` 人造值;顺序 = 控制器 → flow):① `VideoControllerHost.setPlayState(PlayState)` → 页面控制器(UI)② `AppPlayerView.playStateFlow`(`SharedFlow`,`Dispatchers.Main.immediate` 订阅)→ 引擎状态订阅(业务:预载/进度/会话/揭黑帧)与音乐页。旧 int 面(`STATE_*`/`currentPlayState`/`OnStateChangeListener`/`fromLegacy`/`toLegacy`)已整体废除(2026-10-07,`skill/review/refactor-plan-20261007.md` 步 1–4;机械门 `.tools/playstate_gate.py`)。
+- **指令**:页面(Compose 按钮/手势)/通知栏/媒体键 → `PlaybackHostApi` → `PlaybackController` → `PlaybackViewBridge` → `PlayerKernelView`/内核。**会话/进度/配置类状态写只能走 controller 意图方法族**(`beginSourceSwitch(position)`、`onSessionTakenOver`/`onNewPlayArmed`、`playAdjacentEpisode(forward)`、`prepareUserReplay()`、`requestParse`、`beginCastPrepare`、`commitPlayerCfg(…, suppressAutoSwitch/suppressDecodeFallback)`、`onM3u8ProxyResolved`、`onDanmuChecked` 等;机械门 `udf_gate.py` r7——ui 包 `scheduler.set*/mark*` 直写 = FAIL,r7=0)。内核运行时命令(暂停/续播/seek/倍速/画面比例)经内核 Compose 控制器直打内核,属**运行时控制面**,不入此约束。**内核完成/错误由引擎侧派发**:`PlaybackEngine.onPlayStateChanged` 在音乐会话守卫(`handlePlayStateForMusicSession`)之后,对"有页面挂载且非 audio-only 页"派发 COMPLETED→`controller.onPlaybackCompleted()`(自动连播,清理 preKey 进度后 `play(false)`)、ERROR→`controller.onKernelPlayError()`(rememberHttpStatus + 起播态重试梯子/自动换线,穷尽后终态提示;与 `errorWithRetry` 内部同一梯子);无页面(headless)与音乐页不派发。片尾 et 跳过:`VideoPlayerController.onProgressTick` 把快照 position/duration 经 `onNearEndProgress` 上抛,controller 内以 `NearEndRules`(阈值判定)+ `PlaybackAttemptState.skipEndPending` 一次性闩锁判定,语义 =「闩锁武装 ⇔ 本内容尚未被推离」:复位点 = `startVideoPlayback`(与旧 VPC `resetSpeed` 同位);`onPlaybackCompleted` 以闩锁**武装为守卫**、`playAdjacentEpisode` 无条件消费(作废待触发近尾)、tick 上抛要求 `isPlaying`——三推进路径互斥,收口 HEAD 既有的全部双跳集竞态(COMPLETED×残余 tick、用户推集×窗口内自然播完)。
+- **状态**:内核事件 → `PlayerEngine` → `ExoPlayer`(适配器)→ **单一真源** `PlaybackStateMachine`(`PlayState`;`PlayerKernelView.playState` 同步读,`stateFlow` 为流式面)。派发面 `BasePlayerView.dispatchPlayState`(值变化去重 + `PREPARED`/`START_ABORT` 人造值;顺序 = 控制器 → flow):① `VideoControllerHost.setPlayState(PlayState)` → 页面控制器(UI)② `BasePlayerView.playStateFlow`(`SharedFlow`,`Dispatchers.Main.immediate` 订阅)→ 引擎状态订阅(业务:预载/进度/会话/揭黑帧)与音乐页。旧 int 面(`STATE_*`/`currentPlayState`/`OnStateChangeListener`/`fromLegacy`/`toLegacy`)已整体废除(2026-10-07,`skill/review/refactor-plan-20261007.md` 步 1–4;机械门 `.tools/playstate_gate.py`)。
 - **页面数据**:`PlaybackSession` 由详情页组装后交给引擎 —— **播放会话本身**不再经 `App.getInstance().getVodInfo()` 全局单槽 + `Bundle` 这两个隐式通道传递(改造前正是它们导致"详情页 B 覆盖 A 时 A 的播放数据被动改掉")。该单槽**已于 2026-10-24 全仓退役**(`App.set/getVodInfo` 删除,`RemoteServer`/`DetailViewModel` 改读 `PlaybackService.peek()?.controller()?.vod()` 投影);数据层反向读取经 `PlaybackDataPorts` 接口(2026-10-24 由可变 lambda 注册表改造,`base.App` 启动挂全量实现 + `PlaybackService.installDataPorts` 幂等兜底),动它要单独评估。
 
 ## 3. 运行机制
@@ -103,7 +103,7 @@ PlaybackService(前台服务,托管生命周期)
 4. 摘引用:`releaseController()` + `setDanmuView(null)` + `detachContainerFromHost()` + `attachViewBridge(headlessView)`。
 5. `scheduleIdleRelease()` —— 实例留着,但给它一个释放上界(见 3.3)。
 
-**容器搬运**:`AppPlayerView.attachContainerTo(host)` / `detachContainerFromHost()` 只搬 `mPlayerContainer`(插到宿主 index 0),**不碰系统栏、不改全屏状态** —— 本仓库的"全屏"是 Activity 级(方向 + 系统栏),容器始终留在页面槽位。搬运会触发 SurfaceView 的 `surfaceDestroyed`/`surfaceCreated`,渲染宿主在换父**之前**先 `detachVideoSurface()`(只解绑、不切渲染器启用态),再重挂(安全性见 §6-R1)。
+**容器搬运**:`BasePlayerView.attachContainerTo(host)` / `detachContainerFromHost()` 只搬 `playerFrame`(插到宿主 index 0),**不碰系统栏、不改全屏状态** —— 本仓库的"全屏"是 Activity 级(方向 + 系统栏),容器始终留在页面槽位。搬运会触发 SurfaceView 的 `surfaceDestroyed`/`surfaceCreated`,渲染宿主在换父**之前**先 `detachVideoSurface()`(只解绑、不切渲染器启用态),再重挂(安全性见 §6-R1)。
 
 ### 3.2 遮黑帧与揭开(两处真机 bug 的根因面)
 
@@ -122,7 +122,7 @@ PlaybackService(前台服务,托管生命周期)
 - **空闲释放**(`IDLE_RELEASE_DELAY_MS = 60_000`):摘下页面后若一直没人再来取,到点释放内核并回调 `PlaybackService.onEngineReleased`(清静态引擎引用 + 撤会话,**不 stopSelf** —— 服务为托管引擎而常驻,引擎可重建;`stopSelf` 到 `onDestroy` 之间有窗口会把新引擎误释放 ⇒ 黑屏)。**预热开关开启时抑制空闲释放**(`PrewarmPolicy`)。
 - **服务常驻语义**:`onStartCommand` 恒返回 `START_NOT_STICKY`(进程被回收后引擎已不存在,重启服务只会留下空壳);`onTaskRemoved`(用户划掉任务)= 停会话 + `stopSelf`,销毁时 `releaseEngine()` **完整释放**(`echo-p2 engine released (task removed)`)。
 - **服务被系统回收时的内核去留**(2026-10-09):`onDestroy` 不再无条件释放,停会话后调 `PlaybackEngine.keepKernelAfterServiceDestroy()` —— **总闸是内核预热开关**(与空闲释放同口径):预热关或直播态(`liveMode`)⇒ 完整 `release()`(回前台重建,日志 `engine released (service destroyed, keep off)`);预热开 ⇒ 保留内核并**先停播再保留**(在播则 `pause()`,否则服务已撤通知却仍出声)。保留期间只做不触碰内核与会话状态的轻量清理(`stopParse` + `stopLoadWebView(true)`);取流观察者与预载**刻意不销毁** —— `releaseFetch()`/`destroyPreload()` 之后没有重建路径(仅 `PlaybackEngine.init` 会 `initFetch`/`initPreload`),调了会让回前台起播的取流结果无处投递、预载永久失效。保留态下 `PlaybackService.updateSession` 遇 `isServiceLostKept()` 直接跳过,防 pause 派发的状态更新把刚被回收的服务重新拉起(Android 12+ 抛 FGS 异常/留下 `pendingStart`)。页面回来(`PlayContainer.hostResume` / 音乐页 `MusicHost.hostResume`)调 `consumeServiceLostKeep(resumePlayback)`:复位标记、按需恢复被停播放、并触发一次会话更新让服务/通知重建;新页面 `attach` 也清标记但**不**恢复播放。保留态**没有独立保底计时**(原 15min 方案已废):回收触发器 = 页面 `detach`(60s 空闲,预热开则抑制) / 划掉任务(立即) / 关闭预热后的服务回收(立即)。动机:该路径曾无视预热开关强杀内核(真机取证 `host onDestroy` → 回前台 `engine create`),与"预热 = 空闲常驻"语义冲突。
-- **内核预热开关默认值 = 开(2026-10-13,用户拍板)**:`HawkConfig.KERNEL_PREWARM_DEFAULT = true`,四处读取点(`SettingsPage` 的 `loadState`、`PlaybackService.prewarm`/`ensurePrewarmed`、`PlaybackEngine.prewarmEnabled`)一律传该常量,**禁止写字面量 `false`**;`KVKeySpec.register(HawkConfig.KERNEL_PREWARM, false)` 的第二个参数只是**类型样本**、不是默认值,别去改它(同 `EXO_VIDEO_DYNAMIC_SCHEDULING_DEFAULT` 的既有写法)。**连带效应**(默认开 ⇒ 对新装/从未动过该开关的安装生效):①`MainActivity.onResume` → `PlaybackService.prewarm` 会预建内核并常驻;②60s 空闲释放被 `PrewarmPolicy` 抑制;③服务被系统回收后内核**永久保留**(不再是原 15min 兜底)。**已显式存过值的安装不受影响**(存 true 保持 true、存 false 保持 false);设置页手动开启时的二次确认弹窗保留(默认开路径不再经过它)。
+- **内核预热开关默认值 = 开(2026-10-13,用户拍板)**:`KVKeys.KERNEL_PREWARM_DEFAULT = true`,四处读取点(`SettingsPage` 的 `loadState`、`PlaybackService.prewarm`/`ensurePrewarmed`、`PlaybackEngine.prewarmEnabled`)一律传该常量,**禁止写字面量 `false`**;`KVKeySpec.register(KVKeys.KERNEL_PREWARM, false)` 的第二个参数只是**类型样本**、不是默认值,别去改它(同 `EXO_VIDEO_DYNAMIC_SCHEDULING_DEFAULT` 的既有写法)。**连带效应**(默认开 ⇒ 对新装/从未动过该开关的安装生效):①`MainActivity.onResume` → `PlaybackService.prewarm` 会预建内核并常驻;②60s 空闲释放被 `PrewarmPolicy` 抑制;③服务被系统回收后内核**永久保留**(不再是原 15min 兜底)。**已显式存过值的安装不受影响**(存 true 保持 true、存 false 保持 false);设置页手动开启时的二次确认弹窗保留(默认开路径不再经过它)。
 
 ### 3.4 进度落盘与统计(单一写入者)与复用重播恢复点
 
@@ -143,16 +143,16 @@ PlaybackService(前台服务,托管生命周期)
 3. **引擎 release 时**(释放内核之后落盘);
 4. **同地址重播前**(`PlayContainer.replayCurrentAddress()` 先落一次,2026-10-07 补 —— 复用重播的恢复点靠它拿到"当前"位置)。
 
-`ProgressSink` 由 `PlaybackEngine` 注入 `MyVideoView`,语义逐条保留:位置 > 0 才落盘、`onCompletion` 显式清 0、release 在释放内核后落盘。**落盘值口径(2026-10-07)**:优先抓**内核实时位置**(`AppPlayerView.captureLivePosition()`,`release()` 开头与 `saveProgress()` 内各抓一次),抓不到(内核已释放/非播放态)才回落 UI 轮询缓存 `mCurrentPosition` —— 旧口径只信该缓存(每秒更新,暂停/seek 窗口会滞后),重建时可能把几秒前的位置写回。**直播期间摘下进度管理器**(`setProgressSink(null)`),且 `release()` 必须在还回点播进度管理器**之前**执行 —— 否则会把直播 position 写进点播进度缓存(看剧→进直播→返回,续播位置被污染)。
+`ProgressSink` 由 `PlaybackEngine` 注入 `PlayerKernelView`,语义逐条保留:位置 > 0 才落盘、`onCompletion` 显式清 0、release 在释放内核后落盘。**落盘值口径(2026-10-07)**:优先抓**内核实时位置**(`BasePlayerView.captureLivePosition()`,`release()` 开头与 `saveProgress()` 内各抓一次),抓不到(内核已释放/非播放态)才回落 UI 轮询缓存 `playbackPosition` —— 旧口径只信该缓存(每秒更新,暂停/seek 窗口会滞后),重建时可能把几秒前的位置写回。**直播期间摘下进度管理器**(`setProgressSink(null)`),且 `release()` 必须在还回点播进度管理器**之前**执行 —— 否则会把直播 position 写进点播进度缓存(看剧→进直播→返回,续播位置被污染)。
 
-**复用重播的恢复点(2026-10-07)**:`skipPositionWhenPlay` 的值分两种 —— **同内容**(换线/画面开关等重播,判据 `isSameStartedContent()`,必须在 `markContentStarted()` **之前**捕获)用 `MyVideoView.resumePositionForReplay(库内值)`(实时位置优先);**跨内容**(换集/换歌)继续用 `goPlayUrl` 时读出的库内值 `playTimeoutBasePosition`。旧口径一律用库内值,而"保存当前位置"发生在读它**之后** ⇒ 恢复的是"上次写库时的位置"(真机日志实测回退约 30 秒;本集从未写过库时恢复 0 = 从 0 开始播放)。三处复用起点(`PlayContainerViewBridge` / `PlaybackEngine.HeadlessView` / `MusicPlayerActivity`)同口径。
+**复用重播的恢复点(2026-10-07)**:`skipPositionWhenPlay` 的值分两种 —— **同内容**(换线/画面开关等重播,判据 `isSameStartedContent()`,必须在 `markContentStarted()` **之前**捕获)用 `PlayerKernelView.resumePositionForReplay(库内值)`(实时位置优先);**跨内容**(换集/换歌)继续用 `goPlayUrl` 时读出的库内值 `playTimeoutBasePosition`。旧口径一律用库内值,而"保存当前位置"发生在读它**之后** ⇒ 恢复的是"上次写库时的位置"(真机日志实测回退约 30 秒;本集从未写过库时恢复 0 = 从 0 开始播放)。三处复用起点(`PlayContainerViewBridge` / `PlaybackEngine.HeadlessView` / `MusicPlayerActivity`)同口径。
 
 **手动换线路续播(2026-10-11)**:进度 key 含线路名(`sourceKey+id+playFlag+playIndex+集名`),而唯一的 `inherit` 机制只挂在"换数据源"(`PlayContainer.stopForSourceSwitch`)路径上 ⇒ **手动点线路一度从 0 播**(2026-10-11 真机日志:FF 拖到 25 分钟→换 BF→`uiPosition=0`)。收口:①`PlaybackStarter.play()` 在解析地址前调 `PlaybackController.migrateProgressOnLineSwitch()` —— 判据 `ProgressSampling.lineSwitchMigrate`(仅 `st.userPickedLine` + 新旧 key 不同 + 位置 > 0)通过时,把**当前位置**(实时位置优先 `view.currentPosition()`,内核已释放则回落旧 key 库值 `getSavedProgress(startedProgressKey)`)用 `WatchProgressStore.save` 写入**新线路 key** ⇒ 后续 `playTimeoutBasePosition` 读到即续播,内核被重建(走 `view.start()`)时也成立;换集/换源/首播不满足判据、不受影响。**判据前置(2026-10-11 审查修复)**:`DetailViewModel.onEpisodeClick` 点到非换线目标集即作废换线标记、`PlayContainer.playNext/playPrevious` 显式 `scheduler.setUserPickedLine(false)` —— 只有"点线路后仍看同一集"才迁移(详见 `history/features.md` 同日"审查修复")。②`isSameContentRestart()` 改用 `ProgressSampling.restartKeepsProgress` —— 用户手动换线视为"同内容重启",换线瞬间进度条不再清零回缩(该判据同时是今天新增的 UI 清零点 `VideoPlayerController.onNewPlayStarted(sameContent)` 的输入)。
 
 ### 3.5 媒体会话、通知与前台服务
 
 - 有音频轨就维护会话(影视/音乐一视同仁),由 `PlaybackController.updateMusicSession()` 驱动;`owner = WeakReference<PlaybackHostApi>`,通知栏动作全部打到它(`resumeFromMediaSession`/`pauseFromMediaSession`/`stopFromMediaSession`/`seekFromMediaSession`/`playPrevious`/`playNext`)。
-- 通知:channel `music_playback`、id `1001`、`MediaStyle` 三键(上一集/播放暂停/下一集)+ 占位键;动作走 `PendingIntent.getService` + `ACTION_*`(`com.github.tvbox.osc.playback.*`)。
+- 通知:channel `music_playback`、id `1001`、`MediaStyle` 三键(上一集/播放暂停/下一集)+ 占位键;动作走 `PendingIntent.getService` + `ACTION_*`(`com.github.avbox.osc.playback.*`)。
 - **会话结束不 stopSelf、不释放引擎**:`stopPlaybackSession()` 只撤通知 + 放锁 + 释放 `mediaSession`。`ACTION_UPDATE` 若发现 `mediaSession == null` 会**重建**会话(服务为托管引擎而常驻,不能靠 `onCreate` 重建)。
 - **`updateSession` 的两道丢弃闸门**:`engine == null` 时丢弃(否则建出空通知 + 无人释放的 wake/wifi 锁);`!isSupported` 时丢弃(`O` 以下 / TV)。
 - **`startForeground` 被拒的两个恢复点**(2026-09-19):`foregroundDenied` 置位后,① `ACTION_UPDATE` 每次会话更新机会性重试;② `promoteIfForegroundDenied()` —— 用户动通知/媒体键那一刻(系统此刻一定允许提前台)。**不能只打日志了事**,否则一路走到"回页面点击无反应"都没痕迹。
@@ -165,7 +165,7 @@ PlaybackService(前台服务,托管生命周期)
 - `enterLiveState()`:从后台回直播前台时用。能执行到方法体(`liveMode == false`)就说明**必然被点播接管过** ⇒ 必须停死内核,返回 `true` 让直播页**重播当前频道**(直播流地址无法续播)。
 - `exitLive()`:⚠️ 归属判定必须在 `exitLiveState()` **之前**(后者会把 `liveMode` 置 false ⇒ 放后面判恒为 true,直播退出永不 release)。直播页销毁必须**停流 + 释放内核**(直播无后台播放语义),顺序 = `videoView.release()` → `exitLiveState()` → `releaseController()` → `scheduleIdleRelease()`。
 - **`setLiveFlag` 的唯一写入点是引擎的模式切换**(不再跟直播页 `onCreate`/`onDestroy`):`ApiConfig.proxyLocal()` 取流时读它决定爬虫路由,`ExoPlayer.setDataSource` 用它决定 rtmp 是否补 `live=1`;Activity 销毁时机与"引擎已切回点播"没有时序关系。
-- 已知边界(有意保留):直播自身的 release(切台/换解码器)路径不动;因此"点播→直播→点播"回点播会重建一次内核(同改造前);"内核实例不增长"的准确含义 = 直播与点播共用同一个 `MyVideoView`/播放器对象 + **点播↔点播多次进出不重建**。
+- 已知边界(有意保留):直播自身的 release(切台/换解码器)路径不动;因此"点播→直播→点播"回点播会重建一次内核(同改造前);"内核实例不增长"的准确含义 = 直播与点播共用同一个 `PlayerKernelView`/播放器对象 + **点播↔点播多次进出不重建**。
 
 ### 3.7 预载(下一集)
 
@@ -177,13 +177,13 @@ PlaybackService(前台服务,托管生命周期)
 
 ### 3.8 渲染宿主与画面效果
 
-- 双模式宿主(`EngineSurfaceRenderView` / `EngineTextureRenderView`),由 `HawkConfig.PLAY_RENDER` 选(1 = Surface,0 = Texture;默认 1);契约 = `PlayerRenderView`,测量算法 = app 侧 `RenderMeasure`。
+- 双模式宿主(`EngineSurfaceRenderView` / `EngineTextureRenderView`),由 `KVKeys.PLAY_RENDER` 选(1 = Surface,0 = Texture;默认 1);契约 = `PlayerRenderView`,测量算法 = app 侧 `RenderMeasure`。
 - **引擎无页面起播必须自带渲染宿主**:`PlaybackEngine.createPlayerView()` 显式按设置建工厂 —— 无页面桥不会注入播放器配置,否则落到默认 Texture 工厂,新宿主的交面/输出尺寸钩子静默失效(历史上开调色黑屏的根因面)。
 - 输出分辨率信令:Surface 路径靠内核 `setDisplay` 补发;Texture 路径没有 SurfaceHolder,靠 `TextureRenderHost.setOnSurfaceReadyListener` + 视频尺寸就绪**当帧**补发,且**只推视频原生尺寸**(推视图尺寸会被管线等比适应进画布 = 丢「铺满/裁剪」)。两条路径都必须保证「消息晚于输出面设置」(2026-10-09,见 §3.8 末条)。三条不变量详见 `avbox-mobile-ui-spec.md` §6.17。
 - 音频焦点:`PlayerAudioFocus`(纯逻辑 `AudioFocusActions` 可单测 + Android 壳),语义照抄旧 `AudioFocusHelper`(GAIN 恢复 / LOSS 暂停待恢复 / DUCK 降音量 / 静音不请求不恢复 / 同值去重 / 主线程派发)。
 - **输出面解绑与渲染器开关必须解耦(2026-10-08)**:换 Surface(换渲染视图 / 挂摘容器 / SurfaceView 重建)只走 `PlayerEngine.detachVideoSurface()` —— 只 `clearVideoSurface()`、**不置** `videoOutputInvalid`;`clearVideoDisplay()` 那条会经不变量顺手 `setRendererDisabled(video, true)`,换好面再放开 ⇒ track selection 变化 ⇒ media period 重配 ⇒ **codec 重建 + 约 460ms 重缓冲**。切页路径已改走前者,实测 attach→PLAYING 7~8ms、全程 `echo-exo-codec-init` 仅 1 次。`EngineSurfaceRenderView.surfaceDestroyed` 也已统一到 `detachVideoSurface()`;`addDisplay()` 仍用 `clearDisplay()`(换渲染视图时确实需要压住渲染器)。**音乐页例外已取消(2026-10-09,用户拍板)**:`setMusicAudioOnly` 不再调 `setAudioOnlyMode`(不再停视频解码;该内核模式长年零调用,已于 2026-10-24 UDF 重构第一组整体删除,宿主侧只剩 `player/state/AudioOnlyState` 一个状态概念),`PlaybackEngine.attach` 对音乐页也不再搬容器 —— 音乐页的 `renderSlot` 是 `addContentView(·, 1, 1)` 的 1x1 隐藏槽位,搬进去才会把 SurfaceView 挤成 1x1;不搬 + 不停解码 ⇒ 音乐页期间容器/视图/解码器原地保留、退出零重建。纯音频内容仍按 `ensureAudioOnlyRender` 切 TextureView(洞穿修复保留)。**代价**:解绑后渲染器保持启用,换面期间解码器会在 null surface 上继续解码(浪费但不崩)。
 - **`videoOutputInvalid` 一旦置真,必须有确定的复位路径(2026-10-08)**:SurfaceView 侧 `surfaceCreated` / `surfaceChanged` 必然重绑;TextureView 侧的 `onSurfaceTextureAvailable`「复用已有 texture」分支原先只 `setSurfaceTexture(existing)` 就 `return`(而 `onSurfaceTextureDestroyed` 返回 `false`、框架不释放 ⇒ 容器重挂后必然走该分支),会造成渲染器永久关闭 = **黑屏有声**。现该分支改走 `refreshSurface()`。新增任何"清输出面"的调用点前,先确认对应渲染视图有一条确定的重新绑定路径。
-- **输出面尺寸信令必须晚于输出面设置(2026-10-09)**:media3 处理 `MSG_SET_VIDEO_OUTPUT_RESOLUTION` 时对空输出面 `checkNotNull`(`MediaCodecVideoRenderer.handleMessage`),抢跑即抛 NPE → `Unexpected runtime error` → 播放报错重播(surface / texture 两条路径都踩过:布局期补发、`detachVideoSurface()` 之后补发)。载体:`PlayerEngine.outputSurfacePresent`(与 `videoOutputInvalid` **分开**维护 —— 后者语义是"渲染器禁用",而 `detachVideoSurface()` 刻意不置它)+ 面未就绪时记账、`setVideoSurface(有效)` 后补发;`ReplayableCacheVideoRenderer.handleMessage` 对空面消息兜底丢弃;`MyVideoView.onLayout` 里的补发已删(布局期早于 surface 建立)。
+- **输出面尺寸信令必须晚于输出面设置(2026-10-09)**:media3 处理 `MSG_SET_VIDEO_OUTPUT_RESOLUTION` 时对空输出面 `checkNotNull`(`MediaCodecVideoRenderer.handleMessage`),抢跑即抛 NPE → `Unexpected runtime error` → 播放报错重播(surface / texture 两条路径都踩过:布局期补发、`detachVideoSurface()` 之后补发)。载体:`PlayerEngine.outputSurfacePresent`(与 `videoOutputInvalid` **分开**维护 —— 后者语义是"渲染器禁用",而 `detachVideoSurface()` 刻意不置它)+ 面未就绪时记账、`setVideoSurface(有效)` 后补发;`ReplayableCacheVideoRenderer.handleMessage` 对空面消息兜底丢弃;`PlayerKernelView.onLayout` 里的补发已删(布局期早于 surface 建立)。
 
 ### 3.9 投屏「只解析」与收摊作废(2026-10-09)
 
@@ -192,7 +192,7 @@ PlaybackService(前台服务,托管生命周期)
 - 拦截面:① `goPlayUrl` 丢弃迟到地址(入口 + UI Runnable 内各一次,后者堵"入口判定通过后收摊"的竞态),两处都取消定时器;② `PlaybackRetryDelegate` 五个自动重试入口(`handleResolvePlayUrlTimeout` / `handleResolvePlayUrlFailed` / `handleSwitchLinePlayTimeout` / `autoRetry` / `retryAfterStartedError`,末者也被音乐页 `MusicSessionDelegate` 与错误浮层自动调用)**统一不重试**,提示由调用方决定(错误浮层给提示,音乐页直接掉会话);`tryNextLine` / `retryWithFreshResolve` / `tryDecodeFallback` 在 `autoRetry` 下游自然覆盖。自动路径里能到达 `PlaybackController.play()` 的**只有这五处的下游** ⇒ `play()` 可安全地当作"用户起播"入口清标记;经 `goPlayUrl` 的自动地址(取流结果、预载交付、有页面时的净化交付)一律被拦。**不在拦截面、当前不可达但属脆弱点**:净化**启动**分支(`PlaybackStarter.playUrl` 的 `view.playM3u8`)与无页面 `PlaybackEngine.HeadlessView` / 音乐页桥的交付不经 `goPlayUrl` —— 投屏窗口内页面必然在挂(容器桥),故不可达;新增不经 `clearCastAbort` 的解析入口时必须同时补这两处判定。
 - 清除点:`beginSession()`(每轮 `setData` 必经,放状态类里保证不漏)+ **所有用户显式起播入口**——`PlaybackController.play()`(上一集/下一集、通知栏 NEXT/PREV、音乐页切集/重播)、`PlaybackController.selectQuality()`(详情页画质胶囊/全屏画质;**先清再转调**——净化关时它会同步走到 `goPlayUrl`)、`PlaybackController.doParse()`(换解析接口)、`PlayContainer.replayCurrentAddress()`(控制栏「刷新/换内核/换软解/画面效果」都经 `replay(false)` 到这里;它直调 `goPlayUrl` 不经 `play()`)、`DetailActivity.playCurrent()`、`PlayContainer.ensurePlaybackActive()`。**漏一个 = 该入口在投屏收摊后静默不播**(2026-10-09 审查就是这样逮到画质胶囊/全屏刷新/上下集/换解析四个漏点的)。
 - `beginNewPlay()` / `stoppedForSourceSwitch()` / `userSelfRescue()` 等同会话内的复位**刻意不清**:自动重试与用户重试会走这些路径,清了等于开门。**不要**改回 gen 值比对:每轮 `startSession()` 会 `resetGen()`,某一轮涨到同值即误丢正常起播。
-- 走查通道(前缀均在 `LOG.FILE_LOG_PREFIXES` 白名单内):投屏解析入口 `echo-cast prepare: resolve only, no playback side effects`、收摊 `echo-cast prepare end`、置位 `echo-cast abort set: drop in-flight resolve results`、**用户起播入口清除** `echo-cast abort clear`(`beginSession` 那次带 `: new playback session`;不存在"异常清除"这一路径)、丢弃 `echo-cast abort: drop late play url` 与 `echo-cast abort: drop retry (<reason>)`(`reason` ∈ `retryAfterStartedError` / `autoRetry` / `resolveTimeout` / `resolveFailed` / `switchLineTimeout`)、投屏准备期解析失败 `echo-cast prepare aborted: <err>`;归因侧的 `echo-goPlayUrl` / `echo-autoRetry` / `echo-resolvePlayUrl` / `echo-playM3u8` 也在白名单内(`echo-loadFoundVideoUrl` 只在 logcat,不在文件日志白名单)。注意两点:① `abort set` 在"投屏成功拿到地址"时**同样**会打 ⇒ 判"放弃"要看有没有 `echo-cast prepare: url resolved, keep playback off`;② `echo-goPlayUrl:` 是**入口判定之前**打的,故它只说明"走到门口"——竞态下(入口判定通过、UI Runnable 内被二次判定丢弃)它会与 `drop late play url` 同时出现,判"没起播"要看其后**没有** `echo-setDataSource` / `codec-init`。
+- 走查通道(前缀均在 `AppLog.FILE_LOG_PREFIXES` 白名单内):投屏解析入口 `echo-cast prepare: resolve only, no playback side effects`、收摊 `echo-cast prepare end`、置位 `echo-cast abort set: drop in-flight resolve results`、**用户起播入口清除** `echo-cast abort clear`(`beginSession` 那次带 `: new playback session`;不存在"异常清除"这一路径)、丢弃 `echo-cast abort: drop late play url` 与 `echo-cast abort: drop retry (<reason>)`(`reason` ∈ `retryAfterStartedError` / `autoRetry` / `resolveTimeout` / `resolveFailed` / `switchLineTimeout`)、投屏准备期解析失败 `echo-cast prepare aborted: <err>`;归因侧的 `echo-goPlayUrl` / `echo-autoRetry` / `echo-resolvePlayUrl` / `echo-playM3u8` 也在白名单内(`echo-loadFoundVideoUrl` 只在 logcat,不在文件日志白名单)。注意两点:① `abort set` 在"投屏成功拿到地址"时**同样**会打 ⇒ 判"放弃"要看有没有 `echo-cast prepare: url resolved, keep playback off`;② `echo-goPlayUrl:` 是**入口判定之前**打的,故它只说明"走到门口"——竞态下(入口判定通过、UI Runnable 内被二次判定丢弃)它会与 `drop late play url` 同时出现,判"没起播"要看其后**没有** `echo-setDataSource` / `codec-init`。
 
 ## 4. 真机验收清单
 
@@ -209,7 +209,7 @@ PlaybackService(前台服务,托管生命周期)
 
 **跨页复用(本 Spec 的核心收益)**
 6. 计数**引擎创建次数**:`PlaybackEngine` 的 `echo-p2 engine create` / `engine release` 已落 App 文件日志(`files/preload_debug.log`,白名单前缀含 `echo-p2`)。「详情A → 相关推荐 → 详情B → 返回 A → 返回首页」这一串里,**引擎创建次数应 ≤ 1**。
-7. 连续 12 次详情页进出后:`dumpsys activity exit-info` 无异常退出;hprof 里 `DetailActivity/PlayContainer/MyVideoView/ExoPlayer` 实例数与线程数明显低于改造前基线(改造前:各 ×12、ExoPlayer×36、249 线程)。
+7. 连续 12 次详情页进出后:`dumpsys activity exit-info` 无异常退出;hprof 里 `DetailActivity/PlayContainer/PlayerKernelView/ExoPlayer` 实例数与线程数明显低于改造前基线(改造前:各 ×12、ExoPlayer×36、249 线程)。
 8. 空窗期行为:服务在无页面时(音乐播放中)旋转/回前台/进其他页面,无黑屏闪烁、无白块(`SurfaceView` 洞穿问题不得回归;纯音频仍走 Texture 热切)。
 
 **稳定性**
@@ -251,7 +251,7 @@ PlaybackService(前台服务,托管生命周期)
 
 | 风险 | 说明 | 缓解 |
 |---|---|---|
-| R1 跨窗口 View 搬运 | `mPlayerContainer` 在页面/引擎间搬运会触发 Surface 销毁重建 | fork 时代已有全屏搬运先例(自证可行);内核 `setDisplay(null)` 安全性有二进制级结论;attach/detach 幂等;真机压测 §4-10 |
+| R1 跨窗口 View 搬运 | `playerFrame` 在页面/引擎间搬运会触发 Surface 销毁重建 | fork 时代已有全屏搬运先例(自证可行);内核 `setDisplay(null)` 安全性有二进制级结论;attach/detach 幂等;真机压测 §4-10 |
 | R2 Compose 控制器上下文 | 控制器依赖页面 owners/主题 | 控制器留页面(D2);detach 强制 `releaseController()`,防引擎持页面 View |
 | R3 泄漏 | 引擎持有页面 View(弹幕/控制器)、页面持有引擎 | `releaseController()`/`setDanmuView(null)` 必做;`PageHost`/`playbackHost` 弱引用或短生命周期;`onServiceStopped()` 让页面放弃视图引用 |
 | R4 谁在播(A/B 叠加) | 旧语义"每页一套、各播各的",新语义共享一个播放器 | D6 `playbackKey` 归属判定 + `handedOver` + `ownsEngineContent()`;`reattachIfOwnedByOther()` 兜回前台时的接管 |
@@ -280,7 +280,7 @@ fongmi 的关键实现点(仍具参考价值):服务侧建/释放内核、`bindP
 | P2 服务持有引擎 | `PlaybackEngine`(引擎持有播放器)+ `PlaybackService`(宿主托管)+ 容器挂摘 API + 页面 `surfaceSlot` | ✅ **偏差(有意)**:落地为"引擎持有 + 服务托管"而非"服务直接持有",理由见 §2.1 |
 | P3 音频/通知/后台 | 通知/媒体会话/锁/通知栏动作并入 `PlaybackService`(FGS `mediaPlayback`;会话结束不 stopSelf、`ACTION_UPDATE` 按需重建会话)+ D6 同片接管 | ✅ |
 | P4 直播页接入 | 直播与点播共用同一引擎播放器(`enterLive/exitLive`),直播期点播侧状态监听短路 | ✅ 边界见 §3.6 |
-| P5 清理固化 | 删 `PlaybackNotification` 门面与 `MusicPlaybackService`、删 `HawkConfig.PLAYBACK_SERVICE` 开关与全部双路径;控制器直连 `PlaybackService` | ✅ `PlayContainer` 1551 行 |
+| P5 清理固化 | 删 `PlaybackNotification` 门面与 `MusicPlaybackService`、删 `KVKeys.PLAYBACK_SERVICE` 开关与全部双路径;控制器直连 `PlaybackService` | ✅ `PlayContainer` 1551 行 |
 
 **P5 后四轮静态审查**共修 16+ 处回归/加固(D6 判定改 `startedPlaybackKey`、空闲 TTL 释放引擎、页面所有权收口 `releasePlayer()`、迟到回调防线、`exitLive` 归属守卫前置等),过程与逐条理由见 `history/features.md` 2026-09-14 各节。
 
@@ -304,8 +304,8 @@ fongmi 的关键实现点(仍具参考价值):服务侧建/释放内核、`bindP
 | 2026-10-08 | 全屏侧滑退出闪中央 ▶ 暂停浮层 | `stopForExitFullscreen()` 的 `pause()` 触发 `applyPlayState(PAUSED)` → `hideBottom()` 收掉 `controlsVisible` ⇒ `pauseOverlayVisible` 立刻成立。修法 = 新增 `PlayerUiState.exitPaused`,在 `pause()` **之前**置真(`lifecyclePaused` 不可复用,那是"退后台保任务快照"语义) |
 | 2026-10-08 | 播放中切页 `obsolete surface` + 播放错误 toast | 容器跨页重挂 ⇒ SurfaceView 换父、旧面销毁重建而 codec 仍在渲染旧面。修法 = `attachContainerTo()` / `detachContainerFromHost()` 在 `removeView` 前先解绑输出面 |
 | 2026-10-08 | Texture 渲染下切页黑屏有声 | `onSurfaceTextureAvailable` 的复用分支从不重绑播放器 surface ⇒ `videoOutputInvalid` 永真 ⇒ 渲染器永久关闭。修法 = 该分支改走 `refreshSurface()`(见 §3.8) |
-| 2026-10-08 | 切页后进度条卡 0、不可拖动 | `contentUrl` 是 per-page 控制器字段而 `MyVideoView` 引擎共享;接管同一播放不重下 url ⇒ `onContentUrlSet` 从不调用 ⇒ `staleContent` 恒真 ⇒ `state.position/duration` 不写。修法 = 在 `PlayContainer.setData` 的 `isSamePlaybackOwned` 分支播种 `contentUrl`(该判定要求内容 key 相同,**只在同一内容时为真**,故换片时不会误放行;初版播在 `setKernelProvider` 会让换片时进度条闪回上一部,已作废) |
-| 2026-10-24 | **进度门身份判定 gen 化(§8.1 #4,UDF 计划;承重口径迁移)**:`ProgressUiGate.accept` 由「`contentUrl` == `currentUrl` 字符串比对」迁为「`armedGen == kernelGen` 会话代际」——内核 `AppPlayerView.setUrl` 每次自增 `mContentGen`(@Volatile,setUrl 可达解析线程),控制器武装值只在两个协议点从内核原子拷贝(`PlayContainerViewBridge.startVideoPlayback` 每次起播含同内容重播、`PlayContainer.setData` 接管分支);`PlayerControlApi.onContentUrlSet(url)` 改名 `adoptCurrentContent()`(url 参数成死载荷),`PlaybackViewBridge.onContentUrlSet` + HeadlessView 空桩 + 页面桥转发实现三件死面删除(全仓零调用方);progressPhase 相位机不动;`echo-progress-tick` 增 `armed=/kernelGen=` 两值。§6.22(mobile-ui-spec)与 `ProgressUiGateTest` 5 例已重锁新口径;九场景时序等价推演(含同内容重播放行、接管放行、闪回保护、直播插曲、解析窗口)见计划文档 #4 执行记录 |
+| 2026-10-08 | 切页后进度条卡 0、不可拖动 | `contentUrl` 是 per-page 控制器字段而 `PlayerKernelView` 引擎共享;接管同一播放不重下 url ⇒ `onContentUrlSet` 从不调用 ⇒ `staleContent` 恒真 ⇒ `state.position/duration` 不写。修法 = 在 `PlayContainer.setData` 的 `isSamePlaybackOwned` 分支播种 `contentUrl`(该判定要求内容 key 相同,**只在同一内容时为真**,故换片时不会误放行;初版播在 `setKernelProvider` 会让换片时进度条闪回上一部,已作废) |
+| 2026-10-24 | **进度门身份判定 gen 化(§8.1 #4,UDF 计划;承重口径迁移)**:`ProgressUiGate.accept` 由「`contentUrl` == `currentUrl` 字符串比对」迁为「`armedGen == kernelGen` 会话代际」——内核 `BasePlayerView.setUrl` 每次自增 `contentGeneration`(@Volatile,setUrl 可达解析线程),控制器武装值只在两个协议点从内核原子拷贝(`PlayContainerViewBridge.startVideoPlayback` 每次起播含同内容重播、`PlayContainer.setData` 接管分支);`PlayerControlApi.onContentUrlSet(url)` 改名 `adoptCurrentContent()`(url 参数成死载荷),`PlaybackViewBridge.onContentUrlSet` + HeadlessView 空桩 + 页面桥转发实现三件死面删除(全仓零调用方);progressPhase 相位机不动;`echo-progress-tick` 增 `armed=/kernelGen=` 两值。§6.22(mobile-ui-spec)与 `ProgressUiGateTest` 5 例已重锁新口径;九场景时序等价推演(含同内容重播放行、接管放行、闪回保护、直播插曲、解析窗口)见计划文档 #4 执行记录 |
 | 2026-10-24 | **VodInfo bean 本体不可变化(§8.1 #6,UDF 计划收官项)**:`VodInfo` 改 data class 全字段 val(字段名不变,Gson 字段反射契约不变——`BeanSerializationRegressionTest` 15 例 roundtrip 绿);`setVideo` → companion `fromVideo`;会话位置写点 = `PlaybackController.updateSelection`/`publishPersistedPlayerCfg` 的**实例替换**(`vod = vod?.copy(...)`),`PlaybackSession.vod` 改私有 var + `adoptVod`(保持"会话键活跟随选集"的原语义);DetailViewModel 全部事件写点(点集/换线/倒序/换源回退/同步/preview)改 copy + `commitVodInfo`(rev 递增发布);`HistoryRepository.parseRecord` 回填 copy;音乐页 vod 改起播后同步刷新 + playNote 写删除(updateSelection 已派生同值);`VodSeries/VodSeriesFlag.selected` 冗余状态整体删除(全仓无渲染消费者,高亮均由 flag.name==playFlag / index==playIndex 推导);previewVodInfo 缓存退役(preview 每次新建,携带全字段=历史 JSON 字段子集变超集,兼容);`PlaybackViewBridge.onSessionVodUpdated` 新增(选集变更推 `syncSessionVod`,保 episodeBtnVisible 新鲜);`VodUiSnapshot(rev, info)` 字段序换位(防 data class 深比较每次发布 O(n)) |
 | 2026-10-09 | 音乐页往返后画面卡/黑 4~10s(surface + 开画质时必现) | 音乐页停视频解码 ⇒ 退出时渲染器重建、解码器从当前位置继续但未对齐关键帧,只能干等下一个 I 帧(实测 4~10s;空洞期系统 GL 层 `EglImage` 零活动为证)。修法 = 音乐页不再停解码、容器不搬进 1x1 槽位(用户拍板),退出零重建;旧"改切 TextureView"分支同步删除 |
 | 2026-10-09 | surface / texture 两模式下音乐页往返触发 `Unexpected runtime error`(NPE) | 输出面尺寸信令抢跑:media3 `MediaCodecVideoRenderer.handleMessage` 对空输出面 `checkNotNull`。修法 = `outputSurfacePresent` 独立标志 + 面未就绪时记账延后补发 + renderer 侧丢弃空面消息(见 §3.8 末条) |
@@ -317,7 +317,7 @@ fongmi 的关键实现点(仍具参考价值):服务侧建/释放内核、`bindP
 |---|---|
 | 2026-09-14 | 初稿:依据 fongmi 读码 + hprof 取证(`memory/2026-09-14.md`)起草;未动代码 |
 | 2026-09-14 | P0 ✅ / P1 ✅(六批调度层搬迁,`PlayContainer` 3074 → 1553 行);编译/单测通过,未装机 |
-| 2026-09-14 | P2 ✅ 代码层:`PlaybackEngine`(引擎持有)+ `PlaybackService`(宿主托管)+ 容器挂摘 API + 页面 `surfaceSlot` 双路径 + 开关 `HawkConfig.PLAYBACK_SERVICE` |
+| 2026-09-14 | P2 ✅ 代码层:`PlaybackEngine`(引擎持有)+ `PlaybackService`(宿主托管)+ 容器挂摘 API + 页面 `surfaceSlot` 双路径 + 开关 `KVKeys.PLAYBACK_SERVICE` |
 | 2026-09-14 | P3 ✅ 代码层:通知/媒体会话/锁/通知栏动作并入 `PlaybackService` + D6 同片接管落地 |
 | 2026-09-14 | P4 ✅ 代码层:直播与点播共用同一引擎播放器;直播自身 release 路径按 R9 不动 |
 | 2026-09-14 | P5 ✅ 代码层:删门面与 `MusicPlaybackService`、删开关与全部双路径(`PlayContainer` 1551 行) |
@@ -336,5 +336,5 @@ fongmi 的关键实现点(仍具参考价值):服务侧建/释放内核、`bindP
 | 2026-10-09 | **投屏「只解析」加固(预防性,用户报告"投屏有概率出声"当日未复现)**:新增会话级 `castAborted`(置位点唯一 = `closeCastPrepare()`)—— 收摊后迟到地址与自动重试一律拒绝,直到新一轮 `setData`(`beginSession()`)或用户起播入口清除;`endCastPrepare()` 补 `cancelPlayTimeout()`(此前只有 `abortIfCastPrepare` 那条有)。§3.9 新增,§4-20 走查项;800 例单测绿,未装机 |
 | 2026-10-09 | 上条的**第二轮审查**(独立只读 + 文档对账):代码侧无阻断/高/中(修复轮的 5 个清除点经逐条调用方追溯,无自动路径能清标记;上一轮中级四条入口全部闭合);修文档判据 3 处 —— 净化**启动**/无页面交付不在拦截面(收窄 + 登记脆弱点)、§4-20 删除"不可能出现的伴随日志"(`echo-resolvePlayUrl timeout` / `echo-autoRetry` 被 `cancelPlayTimeout` 与 drop 闸门挡在之前)、`echo-goPlayUrl:` 改为"其后不得出现起播证据"(它打在入口判定之前,竞态下会与 `drop late play url` 同时出现);另补 `castAborted` 加 `@Volatile`(goPlayUrl 入口可在解析线程池读它)、单测补 `userSelfRescue()` 不入复位清单、`SKILL.md` 文档地图 §4 编号补 19/20、`avbox-mobile-ui-spec.md` §4.4 补 §3.9 交叉引用 |
 | 2026-10-11 | **进度统计收敛为引擎级单写入者(步 1+步 2,用户拍板)**:新增 `PlaybackProgressSampler`(引擎持有),播放中每 5s 采样、暂停/停止 flush、完成 `markFinished`;`VideoPlayerController` 的 `PlaybackProgress` 调用与 `savePlaybackProgress` 整体删除(`PlayerActionsDelegate`/`VideoGestureActionsImpl` 连带清理);`PlaybackProgress` 写入口改显式 `VodInfo` 入参(不再经 `PlaybackPorts.currentVod` 归属)、KV 值升级为 `{p,d,t}`(兼容旧 int、按 `t` 淘汰)、无痕模式不再清数据;`PlaybackEngine.HeadlessView.startVideoPlayback` 补齐 `setProgressKey` 并与页面桥同序(修"无页面起播无续播点"与同义反复的 `isSameStartedContent` 判定);门禁 `ProgressSampling.shouldWrite`/`switchInFlight`(切换在途拒写,防跨内容串写)。§1 组件表 / §3.4 / §4-21 已同步;915 例单测绿,未装机 |
-| 2026-10-09 | 上条的**审查修复轮**(两轮只读审查 + 复核):补 4 个"用户起播"清除点 —— `PlaybackController.play()` / `selectQuality()`(先清再转调,净化关时同步交付) / `doParse()` + `PlayContainer.replayCurrentAddress()`(画质胶囊、全屏刷新、上一集/下一集含通知栏、换解析此前会被静默丢弃,属中级本次引入);§3.9 同步改写(清除点清单 + "五个入口统一不重试"措辞改正 + 日志前缀写全),§4-20 补清除点必走清单;`LOG.FILE_LOG_PREFIXES` 再补 `echo-resolvePlayUrl` / `echo-playM3u8`(归因侧证据)。登记不修:drop 分支附带的提示/会话收摊、`castAborted` 非 volatile、clear 不作废在途交付、`PlaybackFetch.handlePlayResult` 副作用面、缺静态判据 |
+| 2026-10-09 | 上条的**审查修复轮**(两轮只读审查 + 复核):补 4 个"用户起播"清除点 —— `PlaybackController.play()` / `selectQuality()`(先清再转调,净化关时同步交付) / `doParse()` + `PlayContainer.replayCurrentAddress()`(画质胶囊、全屏刷新、上一集/下一集含通知栏、换解析此前会被静默丢弃,属中级本次引入);§3.9 同步改写(清除点清单 + "五个入口统一不重试"措辞改正 + 日志前缀写全),§4-20 补清除点必走清单;`AppLog.FILE_LOG_PREFIXES` 再补 `echo-resolvePlayUrl` / `echo-playM3u8`(归因侧证据)。登记不修:drop 分支附带的提示/会话收摊、`castAborted` 非 volatile、clear 不作废在途交付、`PlaybackFetch.handlePlayResult` 副作用面、缺静态判据 |
 | 2026-10-24 | **指令面收敛(#5,UDF 计划)+ 三条断线链路恢复**:①页面直写 scheduler 的 20 处 set*/mark* 全部收编为意图方法族(`beginSourceSwitch`/`onSessionTakenOver`/`onNewPlayArmed`/`playAdjacentEpisode`/`prepareUserReplay`/`requestParse`/`beginCastPrepare`/`onM3u8ProxyResolved`/`onDanmuChecked`;allow 双守卫折入 `commitPlayerCfg` 新参数;`setAutoSwitchLineEnabled` 死链整删),`udf_gate` r7 升阻断后归零;②**恢复 HEAD 有而中间批丢失的接线**——内核 COMPLETED→`onPlaybackCompleted()`(自动连播)、ERROR→`onKernelPlayError()`、片尾 et 跳过(经 `onNearEndProgress` 上抛 + `NearEndRules` 纯函数 + `skipEndPending` 闩锁,复位点由 VPC `resetSpeed` 迁至 `startVideoPlayback`),三条此前在引擎侧已备好方法但未接线、UI 侧分支已删 = 静默断线;③`PlaybackController.ensurePlaybackActive(kernelView)` 死副本、`VodControlListener.errReplay`、`PlayerUiState.skipEnd` 等死代码清除;§2.3 已改写,§3.9 口径不变 | 

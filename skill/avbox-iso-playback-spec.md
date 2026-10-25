@@ -65,7 +65,7 @@ MediaSources.createIsoMediaSource(uri, headers, seekMs)
 
 ## 3. 模块地图(as-built)
 
-包 `app/src/main/java/com/github/tvbox/osc/player/engine/iso/`:
+包 `app/src/main/java/com/github/avbox/osc/player/engine/iso/`:
 
 | 文件 | 职责 | 维护要点 |
 |---|---|---|
@@ -94,10 +94,10 @@ MediaSources.createIsoMediaSource(uri, headers, seekMs)
 
 接线点(ISO 相关):
 
-- `player/engine/MediaSources.kt`:`createIsoMediaSource`(多段时 `ConcatenatingMediaSource` 追加)、`getBdavMediaSource`、`isIsoUri`/`isoHeaders`/`inferContentType`;
+- `player/engine/MediaSources.kt`:`createIsoMediaSource`(多段时 `ConcatenatingMediaSource` 追加)、`bdavMediaSource`、`isIsoUri`/`isoHeaders`/`inferContentType`;
 - `player/engine/PlayerEngine.kt`:`isoSession` 标记、`prepare()` 里的 RAP 起播、`seekTo` 三态(`ALLOW`/`BLOCK`/`REBUILD`)、`retryAsBdav`;
 - `player/PlaybackRetryDelegate.kt`:带宽三处入口(中段/耗尽/超时探测)+ 45s 窗口续期;
-- `ui/activity/DetailActivity.kt` / `MusicPlayerActivity.kt`:ISO 内容禁进音乐页(判定必须限定"引擎装的就是本页内容")。
+- `ui/DetailActivity.kt` / `MusicPlayerActivity.kt`:ISO 内容禁进音乐页(判定必须限定"引擎装的就是本页内容")。
 
 ## 4. 不变量(违反即回归)
 
@@ -144,8 +144,8 @@ DV 双层盘的 PMT 同时有主层(3840×2160)和增强层(1920×1088),`Primary
 **C11 — 一个 m2ts 可以有多个物理 run。**
 `long_ad`/`short_ad` 拼出的 extent 首尾相接要合并成一个 run;跨 run 读取不能假设物理连续。
 
-**C12 — 新增日志前缀必须进 `LOG.FILE_LOG_PREFIXES`。**
-现有 `echo-iso` 前缀已覆盖全部 ISO 日志(`LOG.kt:20`)。代码**零注释**;说明写进本文或档案。
+**C12 — 新增日志前缀必须进 `AppLog.FILE_LOG_PREFIXES`。**
+现有 `echo-iso` 前缀已覆盖全部 ISO 日志(`AppLog.kt:20`)。代码**零注释**;说明写进本文或档案。
 
 **C13 — 解码失败必须分清是音频轨还是视频轨。**
 `ERROR_CODE_DECOD…` 只说明"某个渲染器解码失败",不含轨类型。把它一律当"视频硬解失败"会:①弹错误的提示(`player_decode_fallback_tip`);②把**视频**切成软解(4K 反而更糟);③掩盖真正问题(2026-10-20 的实例是**音频** `FfmpegAudioRenderer` 解不了 `audio/vnd.dts.hd`)。判据:失败音频轨→只换音轨(`echo-autoRetry audio track fallback:<pid>` + `echo-iso-audio-skip:<pid>`),视频解码设置一个字节都不动。
@@ -198,9 +198,9 @@ ADB="/c/Users/Administrator/AppData/Local/Android/Sdk/platform-tools/adb.exe"
 "$ADB" -s 127.0.0.1:16384 forward tcp:15266 tcp:5266
 ```
 
-- 应用日志是**前缀白名单**(`LOG.FILE_LOG_PREFIXES`),不在此列的一律丢弃;长 URL 用 `awk 'length($0)>200'` 截断再看。
+- 应用日志是**前缀白名单**(`AppLog.FILE_LOG_PREFIXES`),不在此列的一律丢弃;长 URL 用 `awk 'length($0)>200'` 截断再看。
 - 日志文件名 `files/preload_debug.log`,单线程追加,不丢行;**8MB 轮转**:超过就改名成 `preload_debug.log.1`(旧的 `.1` 覆盖),要完整历史两个文件都得拉。
-- 落盘只在 debug(`LOG.FILE_LOG = BuildConfig.DEBUG`);release 只走 `Log.i`,不碰磁盘。
+- 落盘只在 debug(`AppLog.FILE_LOG = BuildConfig.DEBUG`);release 只走 `Log.i`,不碰磁盘。
 - 频次基线(实测):整份日志平均 **4.9 行/秒**;`echo-progress-tick` / `echo-bar-draw` 各 **1/s**(后者仅在进度变化时打);ISO 相关最密的是 `echo-iso-seek`(每次 DataSource 重开一条)与每 10s 一条的 `echo-iso-bps`。**没有 per-sample / per-frame 日志**,不要往热路径加。
 - 离线复现:把真实盘切片交给 `IsoSliceHarnessTest`(环境变量 `ISO_SLICE=<192B 切片文件>`),它只做诊断、不断言;`PgsParseProbeTest` 用 `PGS_SETS`。
 - 取证顺序:**先 `Range` 直读盘头**(sector 16 起的卷识别序列 / PMT / STN),再与应用日志对照。应用日志单独看会把"我们的解析 bug"误判成"盘有问题"(档案 §14.6/§14.7)。
@@ -316,10 +316,10 @@ ADB="/c/Users/Administrator/AppData/Local/Android/Sdk/platform-tools/adb.exe"
 | 2026-10-20 | 五台超大盘 + 三台 4K 暴露出 `§5` 的 #4–#13:碎片 run、`stream_type` 撞号、STN 语言、字幕命名与矩形、FID 跨块、快照版本、DV EL、诱饵播放列表、混合盘 VRS |
 | 2026-10-20 | **本文重写为 as-built 活规范**,并从 `文档/` 迁入 `skill/`:结论/约束/判据留本文,案例与取证迁 `history/iso-playback-chronicle.md`;文档地图登记 |
 | 2026-10-20 | 盘 J 的"4 秒卡死"修复:`PrimaryVideoExtractor` 延迟声明门 + 有数据即落地 + 按 stream type 的临时 Format(`ProvisionalFormatReader`);新增 `§4-C1..C3` 与 `§5` 的 #1–#3 |
-| 2026-10-20 | 诊断日志复核:确认无 per-sample 日志、落盘仅 debug;顺带修掉 `echo-progress-tick` 暴露的**进度回调自旋**(纯判定 `ProgressTickDelay`,下限 200ms)与 debug 日志**8MB 轮转**(`LOG.shouldRotateLog`);全量 **1287 通过 / 0 失败 / 3 跳过** |
+| 2026-10-20 | 诊断日志复核:确认无 per-sample 日志、落盘仅 debug;顺带修掉 `echo-progress-tick` 暴露的**进度回调自旋**(纯判定 `ProgressTickDelay`,下限 200ms)与 debug 日志**8MB 轮转**(`AppLog.shouldRotateLog`);全量 **1287 通过 / 0 失败 / 3 跳过** |
 | 2026-10-20 | §9 对账(只改文档,不动代码):seek 两个疑点按真机复验(档案 §11.10)结案并删除;`#5`/`#6` 补 as-built 现状 —— 「有数据即落地」已覆盖大部分丢轨场景(缺的只是按载荷而非时长判死)、临时 Format 仍硬编码 `48k/6ch/2ch` 且 STN 只解 `pid+language`,避免被读成"完全空白" |
 | 2026-10-20 | **修复"字幕菜单只有 字幕1/2/3、没有语言"**:`pid→语言`表原先只在 `IsoLocator.locateSelection()` 发布,而 `IsoVolumeCache`(进程内 LRU,TTL 10 分钟)命中时跳过 locate ⇒ `reset()` 清空后不重建,音/字轨全部失去语言。改为把语言表挂进 `IsoVolumeInfo`,在 `IsoResolver.resolve()` 里每次(含缓存命中)重新发布(`§8-D11`、`§9-12`);新增 `echo-iso-stream-lang` / `echo-setTrack subtitle-list` 两条判据日志(`echo-iso-pgs-format` 原有行补 `pid/lang`)与 `IsoResolverTest` 回归用例;全量 **1318 通过 / 0 失败 / 3 跳过**。**真机复验(23:37)**:同一张盘 10 分钟内第二次 prepare 命中 `IsoVolumeCache` 后 `echo-iso-stream-lang:count=25` 照常发布,25 条轨语言齐全,字幕列表 `字幕1 - 英语 … 字幕15 - 日语` |
-| 2026-10-20 | **收掉临时诊断日志**:诊断期加的 per-track `echo-iso-lang:<pid>:<type>:<lang>`(每次重建 25 行)按用户决定删除 —— 判据由 `echo-iso-stream-lang`(有没有发布)+ `echo-setTrack subtitle-list`(最终名字)覆盖;`LOG.i` 的写盘本就在单线程 executor 上异步、且 release 不落盘,但这行是全轮唯一随重建次数增长的日志,删掉后常驻零新增噪声 |
+| 2026-10-20 | **收掉临时诊断日志**:诊断期加的 per-track `echo-iso-lang:<pid>:<type>:<lang>`(每次重建 25 行)按用户决定删除 —— 判据由 `echo-iso-stream-lang`(有没有发布)+ `echo-setTrack subtitle-list`(最终名字)覆盖;`AppLog.i` 的写盘本就在单线程 executor 上异步、且 release 不落盘,但这行是全轮唯一随重建次数增长的日志,删掉后常驻零新增噪声 |
 | 2026-10-20 | **目录快照迁到 `filesDir/iso-volume`**(原 `cacheDir` 会被系统低存储回收、系统设置/应用信息里的"清除缓存"清掉 = 白丢 3.09s 起播收益)。策略见 `§8-D9`:**应用内「清除缓存」改为显式清它**(`SettingsViewModel.clearCache()` → `IsoDiskCache.clear()`)并把 ≤8MB 计入显示的大小(`bytesOnDisk()`);旧位置首次访问整目录删除(`echo-iso-cache-legacy-drop`)。顺带修正 §3 对该文件的错误描述(它不碰 clpi),并把"前 4KB 实测全零 ⇒ 键只剩总长"记入 `§9-10`;全量 **1302 通过 / 0 失败 / 3 跳过** |
 | 2026-10-20 | **音频解码失败不再冒充"硬解失败"**(`§4-C13`、`§8-D10`、`§5` #16):`PlayerEngine` 记录失败轨类型(`classifyTrackKind`),音频失败只换音轨 —— 新增 `IsoAudioFallback`(按内容拉黑 PID)+ `PrimaryVideoExtractor` 的 `suppressedAudio` 出口 + `echo-iso-audio-format` / `echo-iso-audio-skip` 两条日志 + 文案 `player_audio_track_fallback_tip`;`audio/vnd.dts.hd` 本身仍解不了,记入 `§9-11`;全量 **1313 通过 / 0 失败 / 3 跳过** |
 | 2026-10-23 | **「多段大盘在网盘源上能解析但播不动」根因锁定为连接风暴**(档案 §14.16、`§5` #19–#21、`§7` #13、`§9-14`):`probePlaylists()` 读 202 个 mpls、4 线程并发、每请求一短连接 ⇒ 起播两秒 402 个连接,被上游限速到 1MB/s(`bandwidth-mid` 实测≈1048576)。同日落地并保留:probe 单次往返(`Range: bytes=0-4095`,总长走 `Content-Range → Content-Length → 回落探测`)、metadata 预取上限 1MB→64KB、`M2tsStream` 跨窗口续读 + `read()` 抛 IOException 时 `recover`(最多 4 次)、`IsoDataSource.openWindow` 改开放结尾 `bytes=X-`、窗口 4MB。**推翻并记录两条弯路**:cap `open()` 返回值会让 media3 认为整段只有那么大(`§5-20`);`unexpected end of stream` 是抛 IOException 而非返回 -1,只挂 `read <= 0` 的容错等于没接(`§5-21`)。全量 **1391 通过 / 0 失败 / 3 跳过**;根本解 P0(202 → 1 个 mpls)未开工 |

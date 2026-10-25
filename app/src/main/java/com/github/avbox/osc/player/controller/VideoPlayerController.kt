@@ -1,0 +1,609 @@
+package com.github.avbox.osc.player.controller
+
+import android.app.Activity
+import android.content.Context
+import android.content.res.Configuration
+import android.content.res.Resources
+import android.graphics.Typeface
+import android.os.Handler
+import android.os.Looper
+import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup
+import android.webkit.WebView
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.platform.ComposeView
+import androidx.media3.ui.SubtitleView
+import com.github.avbox.osc.R
+import com.github.avbox.osc.api.ApiConfig
+import com.github.avbox.osc.bean.SourceBean
+import com.github.avbox.osc.player.BasePlayerView
+import com.github.avbox.osc.player.PlayerKernelView
+import com.github.avbox.osc.player.core.VideoCodecInfo
+import com.github.avbox.osc.player.gesture.VideoGestureHandler
+import com.github.avbox.osc.player.state.LockVisibility
+import com.github.avbox.osc.player.state.PlayerUiState
+import com.github.avbox.osc.player.core.PlayState
+import com.github.avbox.osc.player.state.VideoRect
+import com.github.avbox.osc.player.state.VideoSizeGate
+import com.github.avbox.osc.player.usecase.M3u8PurifyUseCase
+import com.github.avbox.osc.player.usecase.PlayerSwitchUseCase
+import com.github.avbox.osc.player.usecase.WebParseUseCase
+import com.github.avbox.osc.sourcedata.Thunder
+import com.github.avbox.osc.subtitle.widget.SimpleSubtitleView
+import com.github.avbox.osc.util.DanmuSettingsState
+import com.github.avbox.osc.util.AppLog
+import com.github.avbox.osc.util.PlayerUtils
+import com.github.avbox.osc.util.SubtitleHelper
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import org.json.JSONObject
+import java.util.HashMap
+
+/**
+ * 播放器控制器：纯 Kotlin 实现，不再继承 View。
+ *
+ * 整个 UI 树由 [composeHost] 这一个 ComposeView 承载；字幕 / 歌词 / media3 字幕这三个
+ * 必须保留的原生 View 改由 Compose 的 AndroidView 桥接，见 [PlayerSurfaceHost]。
+ * 因此控制器不再参与 View 树的 addView，挂载交给 [BasePlayerView.setVideoController]。
+ */
+@Suppress("MemberVisibilityCanBePrivate")
+class VideoPlayerController(
+    val context: Context,
+) : BasePlayerView.VideoControllerHost,
+    PlayerControlApi {
+
+    companion object {
+
+        private const val LOCK_HIDE_DELAY_MS = 3000L
+    }
+
+    internal val state: PlayerUiState = PlayerUiState()
+
+    val playerView: PlayerKernelView?
+        get() = videoView
+
+    val resources: Resources
+        get() = context.resources
+
+    /**
+     * 由 Compose 宿主回填的尺寸。
+     * 手势层用它把滑动位移换算成进度 / 亮度 / 音量，替代原先 View.width / View.height。
+     */
+    internal var width: Int = 0
+
+    internal var height: Int = 0
+
+    private var activityCache: Activity? = null
+
+    val isLocked: Boolean
+        get() = state.locked
+
+    fun playerActivity(): Activity? =
+        activityCache ?: PlayerUtils.scanForActivity(context)?.also { activityCache = it }
+            ?: videoView?.hostActivity()
+
+    internal fun gestureCanChangePosition(): Boolean = state.canChangePosition
+
+    internal fun gestureEnableInNormal(): Boolean = state.enableInNormal
+
+    internal fun gestureEnabled(): Boolean = state.gestureSwitch
+
+    internal fun currentSpeed(): Float = playerView?.speed ?: 1f
+
+    internal fun enterGestureSeek() {
+        if (!state.dragging) {
+            state.updateDragging(true)
+            if (!state.controlsVisible) actions.applyShowBottom()
+            stopProgress()
+        }
+    }
+
+    internal fun exitGestureSeek() {
+        state.updateDragging(false)
+        startProgress()
+        actions.keepControlsAlive()
+    }
+
+    internal fun saveProgressFromView() {
+        videoView?.saveCurrentProgress()
+    }
+
+    internal fun showSlideHint(text: String, brightness: Boolean) {
+        state.updateSlideHintText(text)
+        state.updateSlideHintBrightness(brightness)
+        state.updateSlideHintVisible(true)
+    }
+
+    private val tapConfirmRunnable = Runnable { confirmGestureTap() }
+
+    internal fun onGestureTapPending() {
+        uiHandler.removeCallbacks(tapConfirmRunnable)
+        uiHandler.postDelayed(tapConfirmRunnable, gestureHandler.doubleTapTimeoutMs)
+    }
+
+    private fun confirmGestureTap() {
+        gestureHandler.markSingleTapConfirmed()
+    }
+
+    fun togglePlayFromGesture() {
+        videoView?.togglePlay()
+    }
+
+    fun seekToFromGesture(positionMs: Long) {
+        videoView?.seekTo(positionMs)
+    }
+
+    fun setSpeedFromGesture(speed: Float) {
+        videoView?.setSpeed(speed)
+    }
+
+    internal var videoView: PlayerKernelView? = null
+
+    override fun setKernelProvider(view: PlayerKernelView?) {
+        videoView = view
+        view?.setVideoController(this)
+    }
+
+    internal lateinit var gestureActions: VideoGestureActionsImpl
+
+    internal lateinit var gestureHandler: VideoGestureHandler
+
+    internal lateinit var actions: PlayerActionsDelegate
+
+    internal lateinit var config: PlayerConfigDelegate
+
+
+    internal lateinit var subtitleView: SimpleSubtitleView
+        private set
+    internal lateinit var lyricView: SimpleSubtitleView
+        private set
+    internal lateinit var exoSubtitleView: SubtitleView
+        private set
+
+    /**
+     * 唯一的原生 View 宿主：内部 setContent 出整棵 Compose UI 树。
+     * 由 [controllerView] 交给 BasePlayerView 挂到播放器容器上。
+     */
+    internal lateinit var composeHost: ComposeView
+        private set
+
+    private val playerContentState = mutableStateOf<(@Composable () -> Unit)?>(null)
+
+    internal fun setPlayerContent(content: @Composable () -> Unit) {
+        playerContentState.value = content
+    }
+
+    internal val videoSizeGate = VideoSizeGate()
+
+    private val playerConfigState = mutableStateOf<JSONObject?>(null)
+
+    private val videoCodecFlowState =
+        mutableStateOf<StateFlow<VideoCodecInfo>>(MutableStateFlow(VideoCodecInfo()))
+
+    internal val videoCodecFlow: StateFlow<VideoCodecInfo>
+        get() = videoCodecFlowState.value
+
+    internal fun bindVideoCodecFlow(flow: StateFlow<VideoCodecInfo>) {
+        videoCodecFlowState.value = flow
+    }
+
+    internal var playerConfig: JSONObject?
+        get() = playerConfigState.value
+        set(value) {
+            playerConfigState.value = value
+        }
+
+    internal var listener: VodControlListener? = null
+
+    internal val uiHandler by lazy { Handler(Looper.getMainLooper()) }
+
+    private var progressTicking = false
+    private val progressRunnable by lazy { Runnable { onProgressTick() } }
+
+    private var armedContentGen = -1
+
+    private var progressPhase = ProgressPhase.IDLE
+
+    override fun adoptCurrentContent() {
+        val view = videoView ?: return
+        if (view.currentUrl == null) return
+        armedContentGen = view.contentGen
+        progressPhase = ProgressPhase.ACTIVE
+    }
+    internal val idleHideRunnable by lazy {
+        Runnable {
+            if (state.overlayPanelOpen) actions.keepControlsAlive() else actions.hideBottom()
+        }
+    }
+    internal val lockHideRunnable by lazy { Runnable { state.updateLockState(LockVisibility.HIDDEN) } }
+
+    private val m3u8PurifyUseCase by lazy {
+        M3u8PurifyUseCase(context, object : M3u8PurifyUseCase.Callback {
+            override fun startPlayUrl(url: String?, headers: HashMap<String, String>?) {
+                listener?.startPlayUrl(url ?: return, headers)
+            }
+
+            override fun onM3u8ProxyUrl(proxyUrl: String?, sourceUrl: String?) {
+                listener?.onM3u8ProxyUrl(proxyUrl ?: return, sourceUrl ?: return)
+            }
+        })
+    }
+    private val webParseUseCase by lazy { WebParseUseCase() }
+
+    init {
+        gestureActions = VideoGestureActionsImpl(this)
+        gestureHandler = VideoGestureHandler(gestureActions)
+        actions = PlayerActionsDelegate(this)
+        config = PlayerConfigDelegate(this)
+
+        initNativeSubtitleViews()
+        initComposeHost()
+
+        state.updateSysTimeVisible(false)
+        state.updateIsPortrait(
+            resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT,
+        )
+        updateDanmuBtnState()
+        updateDanmuSearchBtnState()
+        initSubtitleInfo()
+    }
+
+    /**
+     * 字幕 / 歌词 / media3 字幕只创建实例，不再 addView。
+     * 它们由 [PlayerSurfaceHost] 里的 AndroidView 负责挂载与摆放。
+     *
+     * 注意：layoutParams 必须在这里声明。AndroidView 的宿主是按子 View 自身的
+     * layoutParams 摆放的，若不声明则退化为 WRAP_CONTENT，单行字幕会贴左而不是居中、
+     * media3 字幕的底距定位也会失准。
+     */
+    private fun initNativeSubtitleViews() {
+        val vs5 = resources.getDimensionPixelSize(R.dimen.vs_5)
+        val vs15 = resources.getDimensionPixelSize(R.dimen.vs_15)
+        val vs20 = resources.getDimensionPixelSize(R.dimen.vs_20)
+
+        subtitleView = SimpleSubtitleView(context).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            )
+            gravity = Gravity.CENTER
+            setTextColor(0xFFFFFFFF.toInt())
+            setTypeface(typeface, Typeface.BOLD)
+            setPadding(vs20, vs15, vs20, vs15)
+            visibility = View.VISIBLE
+        }
+
+        exoSubtitleView = SubtitleView(context).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            )
+            visibility = View.GONE
+        }
+
+        lyricView = SimpleSubtitleView(context).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            )
+            gravity = Gravity.CENTER
+            setTextColor(0xFF00FF00.toInt())
+            setTypeface(typeface, Typeface.BOLD)
+            textScaleX = 1.1f
+            setPadding(vs5, vs20, vs5, vs20)
+            visibility = View.GONE
+        }
+    }
+
+    private fun initComposeHost() {
+        composeHost = ComposeView(context).apply {
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            )
+            // 替代原先 View.onDetachedFromWindow 的清理时机：宿主摘除即停掉所有 Handler 任务。
+            addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+                override fun onViewAttachedToWindow(v: View) = Unit
+
+                override fun onViewDetachedFromWindow(v: View) = onHostDetached()
+            })
+            setContent {
+                playerContentState.value?.invoke()
+            }
+        }
+    }
+
+    override fun controllerView(): View = composeHost
+
+    /** Compose 宿主尺寸变化时回填，并同步横竖屏状态。 */
+    internal fun onHostSizeChanged(w: Int, h: Int) {
+        width = w
+        height = h
+        initOrientationState()
+    }
+
+    override fun onVideoRectChanged(left: Int, top: Int, width: Int, height: Int) {
+        val rect = VideoRect(left, top, width, height)
+        if (rect.empty) return
+        if (rect == state.videoRect) return
+        state.updateVideoRect(rect)
+    }
+
+    /** 对应原 View.onDetachedFromWindow：宿主被摘除时清理挂起的回调。 */
+    internal fun onHostDetached() {
+        uiHandler.removeCallbacks(progressRunnable)
+        progressTicking = false
+        uiHandler.removeCallbacks(idleHideRunnable)
+        uiHandler.removeCallbacks(lockHideRunnable)
+        actions.cancelKeySeekCommit()
+        config.cancelSpeedRetry()
+        uiHandler.removeCallbacks(tapConfirmRunnable)
+    }
+
+    private fun initSubtitleInfo() {
+        subtitleView.setTextSize(SubtitleHelper.getTextSize(playerActivity()).toFloat())
+    }
+
+    override fun setPlayState(playState: PlayState) {
+        state.updatePlayState(playState)
+        if (playState != PlayState.IDLE && playState != PlayState.ERROR &&
+            playState != PlayState.PREPARING
+        ) {
+            updateLiveButtonsState()
+        }
+        applyPlayState(playState)
+    }
+
+    private fun applyPlayState(playState: PlayState) = when (playState) {
+        PlayState.IDLE -> {
+            state.updateLocked(false)
+            progressPhase = ProgressPhase.IDLE
+        }
+        PlayState.PLAYING -> {
+            state.updateExitPaused(false)
+            initOrientationState()
+            startProgress()
+        }
+        PlayState.PREPARED -> listener?.prepared()
+        PlayState.COMPLETED -> {
+            state.updateLocked(false)
+        }
+        PlayState.PREPARING, PlayState.BUFFERING, PlayState.BUFFERED,
+        PlayState.START_ABORT, PlayState.PAUSED, PlayState.ERROR,
+        -> Unit
+    }
+
+    override fun setPlayerState(playerState: Int) {
+        state.updatePlayerState(playerState)
+    }
+
+    override fun onVideoSizeChanged(width: Int, height: Int) {
+        state.updateVideoSize(videoSizeGate.textFor(width, height))
+        onVideoSizeReady?.invoke(width, height)
+    }
+
+    internal var onVideoSizeReady: ((Int, Int) -> Unit)? = null
+
+    override fun onVideoSizeCleared() {
+        videoSizeGate.onKernelContentReplaced()
+    }
+
+    internal fun progressSnapshot(): ProgressSnapshot? {
+        val view = videoView ?: return null
+        if (!ProgressUiGate.accept(progressPhase, armedContentGen, view.contentGen)) return null
+        return ProgressSnapshot(
+            durationMs = PlayerUtils.safeTimeMs(view.duration),
+            positionMs = PlayerUtils.safeTimeMs(view.currentPosition),
+            bufferedPercent = runCatching { view.bufferedPercentage }.getOrDefault(0),
+        )
+    }
+
+    private fun onProgressTick() {
+        progressTicking = false
+        val view = videoView
+        val snapshot = if (view != null && !state.dragging) progressSnapshot() else null
+        AppLog.i(
+            "echo-progress-tick: accepted=${snapshot != null} phase=$progressPhase"
+                + " armed=$armedContentGen kernelGen=${view?.contentGen}"
+                + " uiPosition=${state.position} uiDuration=${state.duration}"
+                + " rawDuration=${snapshot?.durationMs} rawPosition=${snapshot?.positionMs}"
+                + " playing=${view?.isPlaying} state=${view?.playState}",
+        )
+        if (snapshot != null) {
+            if (snapshot.durationMs > 0) state.updateDuration(snapshot.durationMs)
+            if (snapshot.positionMs > 0 || snapshot.durationMs > 0) state.updatePosition(snapshot.positionMs)
+            state.updateBufferedPercent(snapshot.bufferedPercent)
+            if (view?.isPlaying == true) listener?.onNearEndProgress(snapshot.positionMs.toLong(), snapshot.durationMs.toLong())
+        }
+        if (state.dragging) return
+        if (view?.isPlaying != true) return
+        progressTicking = true
+        uiHandler.postDelayed(progressRunnable, ProgressTickDelay.next(state.position, view.speed))
+    }
+
+    override fun startProgress() {
+        if (progressTicking) return
+        progressTicking = true
+        uiHandler.post(progressRunnable)
+    }
+
+    internal fun stopProgress() {
+        if (!progressTicking) return
+        uiHandler.removeCallbacks(progressRunnable)
+        progressTicking = false
+    }
+
+    internal fun updateSeekUiHint(curr: Int, seekTo: Int) {
+        state.updateSeekHintForward(seekTo > curr)
+        state.updateSeekHintText(PlayerUtils.stringForTime(seekTo))
+        state.updateSeekHintVisible(true)
+    }
+
+    internal fun isInPlaybackState(): Boolean {
+        if (videoView == null) return false
+        return when (state.playState) {
+            PlayState.PLAYING, PlayState.PAUSED, PlayState.BUFFERING, PlayState.BUFFERED -> true
+            else -> false
+        }
+    }
+
+    override fun toggleControlBar() {
+        actions.toggleControls()
+    }
+
+    internal fun showLockView() {
+        if (state.previewMode) {
+            state.updateLocked(false)
+            uiHandler.removeCallbacks(lockHideRunnable)
+            state.updateLockState(LockVisibility.GONE)
+            return
+        }
+        state.updateLockState(LockVisibility.SHOWN)
+        uiHandler.removeCallbacks(lockHideRunnable)
+        if (state.locked) {
+            uiHandler.postDelayed(lockHideRunnable, LOCK_HIDE_DELAY_MS)
+        }
+    }
+
+    private fun initOrientationState() {
+        val isPortrait = resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+        state.updateIsPortrait(isPortrait)
+        if (isPortrait) {
+            state.updateBackVisible(false)
+        }
+    }
+
+    private fun updateDanmuBtnState() {
+        state.updateDanmuOpen(DanmuSettingsState.config.open)
+    }
+
+    internal fun updateDanmuSearchBtnState() {
+        state.updateDanmuSearchAvailable(ApiConfig.get().hasDanmuSearchUi())
+    }
+
+    private fun updateLiveButtonsState() {
+        state.updateLiveButtonsVisible(runCatching { videoView?.duration ?: 0L != 0L }.getOrDefault(true))
+    }
+
+    override fun getUiState(): PlayerUiState = state
+
+    override fun getSubtitleView(): SimpleSubtitleView = subtitleView
+
+    override fun getLyricView(): SimpleSubtitleView = lyricView
+
+    override fun getExoSubtitleView(): SubtitleView = exoSubtitleView
+
+    override fun setListener(l: VodControlListener?) {
+        listener = l
+    }
+
+    override fun setPlayerConfig(playerCfg: JSONObject) {
+        playerConfig = playerCfg
+        config.updatePlayerCfgState()
+    }
+
+    override fun showParse(userJxList: Boolean) {
+        state.updateShowParseRow(userJxList)
+    }
+
+    override fun setPreviewMode(previewMode: Boolean) {
+        state.updatePreviewMode(previewMode)
+        if (previewMode && state.controlsVisible) actions.hideBottom()
+        uiHandler.removeCallbacks(lockHideRunnable)
+        state.updateLockState(LockVisibility.GONE)
+    }
+
+    override fun setTitle(playTitleInfo: String) {
+        state.updateTitle(playTitleInfo)
+    }
+
+    override fun setUrlTitle(playTitleInfo: String) = Unit
+
+    override fun setHasDanmu(hasDanmu: Boolean) {
+        updateDanmuBtnState()
+    }
+
+    override fun setCanChangePosition(canChangePosition: Boolean) {
+        state.updateCanChangePosition(canChangePosition)
+    }
+
+    override fun setEnableInNormal(enableInNormal: Boolean) {
+        state.updateEnableInNormal(enableInNormal)
+    }
+
+    override fun setGestureEnabled(gestureEnabled: Boolean) {
+        state.updateGestureSwitch(gestureEnabled)
+    }
+
+    override fun hidePauseRoot() = Unit
+
+    override fun onNewPlayStarted(sameContent: Boolean) {
+        state.updateExitPaused(false)
+        if (sameContent) {
+            AppLog.i(
+                "echo-progress-reset: same content restart, keep uiPosition=${state.position}"
+                    + " uiDuration=${state.duration}",
+            )
+            return
+        }
+        progressPhase = ProgressPhase.LOADING
+        val size = runCatching { videoView?.videoSize }.getOrNull() ?: intArrayOf(0, 0)
+        AppLog.i(
+            "echo-progress-reset: onNewPlayStarted cleared uiPosition=${state.position}"
+                + " uiDuration=${state.duration}",
+        )
+        state.updateVideoSize(videoSizeGate.onNewSession(size[0], size[1]))
+        state.updatePosition(0)
+        state.updateDuration(0)
+    }
+    override fun setLifecyclePaused(paused: Boolean) {
+        state.updateLifecyclePaused(paused)
+        if (paused) uiHandler.removeCallbacks(idleHideRunnable) else actions.keepControlsAlive()
+    }
+
+    override fun setExitPaused(paused: Boolean) {
+        state.updateExitPaused(paused)
+    }
+
+    override fun resetSpeed() {
+        config.applySpeedWhenReady()
+    }
+
+    override fun onBackPressed(): Boolean {
+        if (state.isClickBackBtn) {
+            state.updateIsClickBackBtn(false)
+            if (state.controlsVisible) actions.hideBottom()
+            return false
+        }
+        if (state.controlsVisible) {
+            actions.hideBottom()
+            return true
+        }
+        return false
+    }
+
+    override fun switchPlayer(): Boolean = PlayerSwitchUseCase.switchPlayer()
+
+    override fun stopOther() {
+        Thunder.stop(false)
+        PlayerSwitchUseCase.stopOther()
+    }
+
+    override fun playM3u8(url: String?, headers: HashMap<String, String>?) {
+        m3u8PurifyUseCase.playM3u8(url ?: return, headers)
+    }
+
+    override fun encodeUrl(url: String?): String = PlayerSwitchUseCase.encodeUrl(url)
+
+    override fun firstUrlByArray(url: String?): String = PlayerSwitchUseCase.firstUrlByArray(url)
+
+    override fun evaluateScript(sourceBean: SourceBean?, url: String?, view: WebView?) {
+        webParseUseCase.evaluateScript(sourceBean, url, view)
+    }
+
+    override fun getWebPlayUrlIfNeeded(webPlayUrl: String?): String {
+        return webParseUseCase.getWebPlayUrlIfNeeded(webPlayUrl) ?: ""
+    }
+}

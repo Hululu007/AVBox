@@ -2,8 +2,8 @@ package com.github.catvod.crawler.js
 
 import android.util.Base64
 
-import com.github.tvbox.osc.net.OkGoHelper
-import com.github.tvbox.osc.util.LOG
+import com.github.avbox.osc.net.HttpClients
+import com.github.avbox.osc.util.AppLog
 import com.google.common.net.HttpHeaders
 import com.google.gson.JsonElement
 import com.whl.quickjs.wrapper.JSObject
@@ -47,8 +47,8 @@ class Connect {
             val base = when {
                 session != null -> session.client(req.isRedirect())
                 req.isCookie() -> WebViewCookies.client(req.isRedirect())
-                req.isRedirect() -> requireNotNull(OkGoHelper.getDefaultClient()) { "okhttp client not ready" }
-                else -> requireNotNull(OkGoHelper.getNoRedirectClient()) { "okhttp client not ready" }
+                req.isRedirect() -> requireNotNull(HttpClients.defaultClient) { "okhttp client not ready" }
+                else -> requireNotNull(HttpClients.noRedirectClient) { "okhttp client not ready" }
             }
             val okHttpClient = withTimeout(req, base)
             client = okHttpClient
@@ -58,11 +58,11 @@ class Connect {
         @JvmStatic
         fun withTimeout(req: Req, base: OkHttpClient): OkHttpClient {
             var timeout = requireNotNull(req.getTimeout()) { "timeout is null" }.toLong()
-            if (timeout <= 0) timeout = OkGoHelper.DEFAULT_MILLISECONDS
+            if (timeout <= 0) timeout = HttpClients.DEFAULT_MILLISECONDS
             val callTimeout = req.getCallTimeout().toLong()
-            if (timeout == OkGoHelper.DEFAULT_MILLISECONDS && callTimeout <= 0) return base
+            if (timeout == HttpClients.DEFAULT_MILLISECONDS && callTimeout <= 0) return base
             val builder = base.newBuilder()
-            if (timeout != OkGoHelper.DEFAULT_MILLISECONDS) {
+            if (timeout != HttpClients.DEFAULT_MILLISECONDS) {
                 builder.connectTimeout(timeout, TimeUnit.MILLISECONDS).readTimeout(timeout, TimeUnit.MILLISECONDS).writeTimeout(timeout, TimeUnit.MILLISECONDS)
             }
             if (callTimeout > 0) builder.callTimeout(callTimeout, TimeUnit.MILLISECONDS)
@@ -215,10 +215,10 @@ class Connect {
             try {
                 val target = requireNotNull(tag) { "tag is null" }
                 cancelCalls(client, target)
-                cancelCalls(OkGoHelper.getDefaultClient(), target)
-                cancelCalls(OkGoHelper.getNoRedirectClient(), target)
+                cancelCalls(HttpClients.defaultClient, target)
+                cancelCalls(HttpClients.noRedirectClient, target)
             } catch (e: Exception) {
-                LOG.d("Connect", "cancel tag failed")
+                AppLog.d("Connect", "cancel tag failed")
             }
         }
 

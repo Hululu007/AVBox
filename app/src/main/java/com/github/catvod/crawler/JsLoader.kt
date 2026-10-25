@@ -3,12 +3,12 @@ package com.github.catvod.crawler
 import android.util.Log
 
 import com.github.catvod.crawler.js.JsSpider
-import com.github.tvbox.osc.io.FileUtils
-import com.github.tvbox.osc.util.AppContextHolder
-import com.github.tvbox.osc.util.LOG
-import com.github.tvbox.osc.util.MD5
-import com.github.tvbox.osc.util.RegexUtils
-import com.github.tvbox.osc.util.net.Http
+import com.github.avbox.osc.io.FileUtils
+import com.github.avbox.osc.util.AppContextHolder
+import com.github.avbox.osc.util.AppLog
+import com.github.avbox.osc.util.MD5
+import com.github.avbox.osc.util.RegexUtils
+import com.github.avbox.osc.util.net.Http
 
 import java.io.File
 import java.io.FileOutputStream
@@ -38,7 +38,7 @@ class JsLoader {
             try {
                 spider.cancelByTag()
             } catch (ignored: Throwable) {
-                LOG.d("JsLoader", "cancel spider failed")
+                AppLog.d("JsLoader", "cancel spider failed")
             }
             SpiderReaper.retire(spider)
         }
@@ -72,7 +72,7 @@ class JsLoader {
                     }
                     Thread.sleep(200)
                 } catch (th: Throwable) {
-                    LOG.e("JsLoader", th)
+                    AppLog.e("JsLoader", th)
                 }
                 count++
             } while (count < 5)
@@ -81,7 +81,7 @@ class JsLoader {
                 classes[key] = requireNotNull(classInit) { "class init is null" }
             }
         } catch (th: Throwable) {
-            LOG.e("JsLoader", th)
+            AppLog.e("JsLoader", th)
         }
         return success
     }
@@ -96,10 +96,10 @@ class JsLoader {
             val parent = cache.parentFile
             if (parent != null && !parent.exists()) parent.mkdirs()
         } catch (ignored: Throwable) {
-            LOG.d("JsLoader", "create csp dir failed")
+            AppLog.d("JsLoader", "create csp dir failed")
         }
         if (!md5.isEmpty()) {
-            if (cache.exists() && MD5.getFileMd5(cache).equals(md5, ignoreCase = true)) {
+            if (cache.exists() && MD5.fileMd5(cache).equals(md5, ignoreCase = true)) {
                 loadClassLoader(cache.absolutePath, key)
                 return classes[key]
             }
@@ -125,13 +125,13 @@ class JsLoader {
                     inputStream.close()
                     outputStream.close()
                 } catch (e: Exception) {
-                    LOG.e("JsLoader", e)
+                    AppLog.e("JsLoader", e)
                 }
             }
             loadClassLoader(cache.absolutePath, key)
             return classes[key]
         } catch (e: Throwable) {
-            LOG.e("JsLoader", e)
+            AppLog.e("JsLoader", e)
         }
         return null
     }
@@ -171,7 +171,7 @@ class JsLoader {
                 destroyLater(created)
                 return SpiderNull()
             } catch (th: Throwable) {
-                LOG.i("echo-getSpider-error " + th.message)
+                AppLog.i("echo-getSpider-error " + th.message)
                 sp?.let { destroyLater(it) }
             }
             return SpiderNull()
@@ -184,7 +184,7 @@ class JsLoader {
                 spider.cancelByTag()
                 spider.destroy()
             } catch (ignored: Throwable) {
-                LOG.d("JsLoader", "destroy spider failed")
+                AppLog.d("JsLoader", "destroy spider failed")
             }
         }
     }
@@ -196,7 +196,7 @@ class JsLoader {
                 return SpiderReaper.track(proxyFun) { proxyFun.proxyLocal(params) }
             }
         } catch (th: Throwable) {
-            LOG.e("JsLoader", "proxy invoke failed", th)
+            AppLog.e("JsLoader", "proxy invoke failed", th)
         }
         return null
     }

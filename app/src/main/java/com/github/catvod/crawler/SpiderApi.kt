@@ -7,10 +7,10 @@ import android.util.Base64
 import android.view.Surface
 import android.view.WindowManager
 
-import com.github.tvbox.osc.server.ControlManager
-import com.github.tvbox.osc.util.AppContextHolder
-import com.github.tvbox.osc.util.AppManager
-import com.github.tvbox.osc.util.LOG
+import com.github.avbox.osc.server.ControlManager
+import com.github.avbox.osc.util.AppContextHolder
+import com.github.avbox.osc.util.ActivityStack
+import com.github.avbox.osc.util.AppLog
 import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
@@ -59,7 +59,7 @@ class SpiderApi {
 
     fun getScreenOrientation(): Int {
         try {
-            val activity = AppManager.getInstance().currentActivity()
+            val activity = ActivityStack.getInstance().currentActivity()
             val context: Context = if (activity == null) requireNotNull(AppContextHolder.context()) { "app context not ready" } else activity
             val orientation = context.resources.configuration.orientation
             var rotation = Surface.ROTATION_0
@@ -139,7 +139,7 @@ class SpiderApi {
                     return JsonParser.parseString(trim)
                 }
             } catch (ignored: Throwable) {
-                LOG.d("SpiderApi", "result json invalid, keep as string")
+                AppLog.d("SpiderApi", "result json invalid, keep as string")
             }
             return JsonPrimitive(text)
         }

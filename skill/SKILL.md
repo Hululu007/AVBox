@@ -7,7 +7,6 @@ description: 项目规则、通用原则、通用代码规范、交付验证与�
 
 - 禁止未经允许就将代码提交到远程仓库
 - 禁止排除项目根目录下的 .key 文件夹（密钥入库）
-- 文档与代码注释中禁止硬编码本机绝对路径（盘符开头的路径、用户主目录路径、SDK/工具安装路径等）：仓库所在目录的**路径与名字都不固定**，一律用相对仓库根目录的路径或环境变量表达
 
 # 通用原则
 
@@ -15,7 +14,7 @@ description: 项目规则、通用原则、通用代码规范、交付验证与�
 - 可维护性优先于开发速度，简洁性优先于不必要的复杂设计
 - 禁止编造 API、文档内容、版本信息、性能数据、项目事实；不确定就查官方文档或明确说明
 - 保持架构模块化、单一职责、低耦合高内聚、避免循环依赖、集中管理共享功能、不重复已有实现；除非明确要求，否则不改变项目架构
-- 默认最小化修改：不改无关文件/代码，不做未经请求的重构
+- 不要在已经错误的架构设计上持续打补丁，优先给出根治方案，哪怕是需要重构
 - 新增代码必须与现有项目风格一致，统一为新写法，禁止新旧写法混用
 - 优先渐进式改进，而非大规模重写
 - 优先使用项目已有技术，没有充分理由不要引入新框架
@@ -65,7 +64,7 @@ description: 项目规则、通用原则、通用代码规范、交付验证与�
 | `skill/history/preload-toast-deadlock.md` | **排查归档(根因已证;2026-09-27 已按方案 A 改磁盘预缓存,待真机验证)**：拖动进度条后预载 toast 概率不出现 = media3 1.11.1 预载完成死锁(时长目标 vs 32MB 字节闸门互不收敛,静默无回调);含源码证据链、撞顶码率阈值、修复选项 A/B/C、A 的实施方案(headers/cache key/mimeType 三处桥接)与真机验证判据 | 改动**预载/`PreloadManagerHolder`/`PreloadCoordinator`/预载读盘链路** 前必读;验证预载"完成/命中"类问题先读 |
 | `skill/avbox-code-review-spec.md` | **代码审查 Spec**：把本文件整份当提示词喂给 AI 做**只读**审查。含角色定义与技术栈实况、既定约定(报了即误报)、高危约束、快速/深度(三批)模式与分批策略、审查清单与硬阈值(文件 >500 行 / 方法 >100 行 / 重复 ≥3 次 / 门面被 ≥20 文件依赖；含**空安全与非空断言**小节)、输出格式(第 0–6 节 + **附录 A 度量盘点** + **附录 B 上轮对账**)、审查者禁止事项、**审查收敛终止线** | 要做代码审查、或判断"本轮审查能否收尾"时**必读**；判断标准以文末「审查收敛」为准 |
 | `skill/avbox-kotlin-migration-spec.md` | **活规范**：Java→Kotlin 迁移转换规范——M0 实测基线、每切片流程与卡口、Kotlin 静态/字段/构造器转换细则、契约层（`catvod`）逐条清单、Gson×data class 规范、并发不变量、`skill/scripts/verify-migration.ps1` 用法 | 改动 `com.github.catvod.**`、或改动被动态 jar / 第三方 AAR 按名字访问的宿主静态面前**必读** |
-| `skill/avbox-okgo-removal-spec.md` | **活规范(已完成:N0–N5 全部实施,2026-10-06;待真机走查)**：OkGo → OkHttp + 协程迁移 —— 现状盘点(19 文件)与 okgo 源码取证(E1-E10)、await 层与全 Job 化取消设计(§4)、P1-P11 决策、N0-N5 分片计划与实测登记、验收口径与风险(R1-R14) | 改动 `util/net` 请求层 / `OkGoHelper` / 涉及 `cancelTag` 取消链 / 删 okgo 依赖前**必读**;§5 为分片实测登记(终态) |
+| `skill/avbox-okgo-removal-spec.md` | **活规范(已完成:N0–N5 全部实施,2026-10-06;待真机走查)**：OkGo → OkHttp + 协程迁移 —— 现状盘点(19 文件)与 okgo 源码取证(E1-E10)、await 层与全 Job 化取消设计(§4)、P1-P11 决策、N0-N5 分片计划与实测登记、验收口径与风险(R1-R14) | 改动 `util/net` 请求层 / `HttpClients` / 涉及 `cancelTag` 取消链 / 删 okgo 依赖前**必读**;§5 为分片实测登记(终态) |
 | `skill/review/` | **审查报告存档**：`review-<YYYYMMDD>-batch<N>.md`(分批审查报告)与 `refactor-plan-*.md`(重构计划)；同批修复轮记录追加在同一文件(内容 = 改了哪些条目 / 构建与单测结果 / 回归面清单) | 接手上一轮审查结论、需要出「附录 B 上轮对账」时**必读** |
 | 本地参考代码（只读） | 上游 TVBox 与 fongmi/OK影视 的本地副本 | 需要对照上游实现时（**只读参考，不改**） |
 
@@ -91,6 +90,6 @@ Select-String -Path skill\history\features.md -Pattern '配置管理页' -Contex
 - **KV(MMKV)复杂键必须在 `util/kv/KVKeySpec` 登记显式类型**，且禁止用匿名 `TypeToken` 捕获类型变量推元素类型（spec §6.7）；另注意 `KV.contains` 才是判存在性、`KV.get(key, def)` 分不清"键不存在"与"值就是 def"。
 - **配置驱动的 header 必须过字符集过滤**（`ConfigParser.isHeaderNameSendable`/`isHeaderValueSendable`）：OkHttp 在构造请求时校验，越界抛 `IllegalArgumentException`，而站点请求分支没有 try/catch ⇒ 一份带中文 header 的配置会把 App 带崩（spec §6.12）。
 - **规则表只能在 `parseJson` 入口清**（`VideoParseRuler.clearRule()`）：放进 `resetConfigData()` 会让换源失败时规则真空（在播内容广告回归/click 失效）；只在 `has("rules")` 时清则跨源残留（spec §6.12）。
-- **崩溃标记只由"可能与源有关"的崩溃写入**（`BootGuard.looksSourceRelated` 的白名单 `IGNORABLE_FRAME_PREFIXES` 是唯一旋钮；无帧/判不出按"有关"）：平台层 + 宿主全包（`com.github.tvbox.osc.`）算无关，`com.github.catvod.` 一律算有关；放宽到 catvod 等于让坏源重新把应用锁进启动崩溃。**标记为空时不再清零 `BOOT_LOADING_COUNT`**（2026-10-21 推翻旧口径），改为保留计数 + 读 `ApplicationExitInfo` 的 `REASON_CRASH_NATIVE`（8 秒窗口，只认 native，Java 崩溃仍走白名单）；停用粒度是 jar 不是订阅（spec §6.13）。
+- **崩溃标记只由"可能与源有关"的崩溃写入**（`BootGuard.looksSourceRelated` 的白名单 `IGNORABLE_FRAME_PREFIXES` 是唯一旋钮；无帧/判不出按"有关"）：平台层 + 宿主全包（`com.github.avbox.osc.`）算无关，`com.github.catvod.` 一律算有关；放宽到 catvod 等于让坏源重新把应用锁进启动崩溃。**标记为空时不再清零 `BOOT_LOADING_COUNT`**（2026-10-21 推翻旧口径），改为保留计数 + 读 `ApplicationExitInfo` 的 `REASON_CRASH_NATIVE`（8 秒窗口，只认 native，Java 崩溃仍走白名单）；停用粒度是 jar 不是订阅（spec §6.13）。
 - **契约层（`com.github.catvod.**`）迁移后签名必须逐成员不变**：`open`/`@JvmStatic`/`@JvmField`/`@JvmOverloads` 只是手段，判据是 `javap -p -s` 输出等价；漏一处表现为"启动正常、点开该类源才崩"（细则见 `skill/avbox-kotlin-migration-spec.md` §3.2）。
 - **交给爬虫的 proxy 参数值必须全 ASCII**（`JarLoader.proxyInvoke` 调 jar 前从副本剔除客户端专用参数 `siteKey`）：`/proxy` 的 params 会把播放器请求头并进来，第三方 jar 会把它**当 header 原样透传给上游**，值里有中文（如中文站点 key）即被 OkHttp 以 `Unexpected char` 拒绝、最终兜底成 HTTP 500，表现为"网盘源播放出错"且 logcat 无任何 App 日志（spec §6.12）。

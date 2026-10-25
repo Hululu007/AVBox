@@ -2,15 +2,15 @@
 
 > 项目:AVBox(TVBox OSC fork;仓库根目录 = 本文件所在目录的上一级)
 > 配套:先读 `SKILL.md`(通用规范 + 文档地图);涉及订阅源字段对照 `avbox-mobile-ui-spec.md` §6.12;涉及契约层(`com.github.catvod.**`)对照 `avbox-kotlin-migration-spec.md` §3.2(签名守恒)。
-> 状态:**已完成(2026-10-06 起草;同日三次修订 + N0–N5 实施回填,均见 §8)**:N0(await 层 + 协程依赖显式化 + 单测)、N1(`sourcedata` 簇 detail/search 链闭环)、N2(`player` 簇 + `PlayLoader` play/json_jx/m3u8 链闭环)、N3(UI / 杂项簇 suggest 链闭环 + 同步路径 2 处 suspend 化)、N4(`catvod` 契约层内部换血、签名守恒)、N5(`OkGoHelper` 去 okgo 化 + 删依赖 + §6.2 全量验收)**全部完成并过收尾审查**;剩真机走查(§6.2 第 6 项)。
-> 触发背景:2026-10-06 依赖梳理(okhttp / okio / okgo 三件套清点 + 19 文件调用面普查)。结论:OkGo 在本项目只扮演"回调式外观",底层 OkHttpClient 由 `OkGoHelper` 自建并注入 —— 调用面封闭、可渐进替换。同日决策:借迁移同步完成传输层协程化 + 取消机制全 Job 化(§3)。
+> 状态:**已完成(2026-10-06 起草;同日三次修订 + N0–N5 实施回填,均见 §8)**:N0(await 层 + 协程依赖显式化 + 单测)、N1(`sourcedata` 簇 detail/search 链闭环)、N2(`player` 簇 + `PlayLoader` play/json_jx/m3u8 链闭环)、N3(UI / 杂项簇 suggest 链闭环 + 同步路径 2 处 suspend 化)、N4(`catvod` 契约层内部换血、签名守恒)、N5(`HttpClients` 去 okgo 化 + 删依赖 + §6.2 全量验收)**全部完成并过收尾审查**;剩真机走查(§6.2 第 6 项)。
+> 触发背景:2026-10-06 依赖梳理(okhttp / okio / okgo 三件套清点 + 19 文件调用面普查)。结论:OkGo 在本项目只扮演"回调式外观",底层 OkHttpClient 由 `HttpClients` 自建并注入 —— 调用面封闭、可渐进替换。同日决策:借迁移同步完成传输层协程化 + 取消机制全 Job 化(§3)。
 
 ## 0. 摘要
 
 OkGo(`com.lzy.net:okgo:3.0.4`,2018 年停更、按 okhttp3 3.x 编译)本身不提供网络能力,只提供调用形状。依赖形态:**项目在 `gradle/libs.versions.toml` 显式声明 okhttp 5.5.0(`app/build.gradle.kts:122`),okgo 传递的 okhttp 3.x 被版本仲裁压制**,okgo 实际运行在 5.5.0 之上:
 
 ```kotlin
-// app/src/main/java/com/github/tvbox/osc/net/OkGoHelper.kt
+// app/src/main/java/com/github/avbox/osc/net/HttpClients.kt
 val okHttpClient = builder.build()
 okHttpClient.dispatcher.maxRequestsPerHost = 10
 OkGo.getInstance().setOkHttpClient(okHttpClient)
@@ -38,7 +38,7 @@ OkGo.getInstance().setOkHttpClient(okHttpClient)
 
 | # | 文件 | OkGo 用法 | 片 |
 |---|---|---|---|
-| 1 | `net/OkGoHelper.kt` | 初始化:`setOkHttpClient`×2(init/reloadDns)、`HttpHeaders.setUserAgent`×2(init/reloadDns)、`HttpsUtils.UnSafeHostnameVerifier`×1、okgo 版 `HttpLoggingInterceptor`**×4**(:87/:255 挂在 `initExoOkHttpClient()` 的 ExoPlayer client 上、:376/:417 挂在 default/reloadDns 上;均 `Level.NONE`/`ColorLevel.OFF`) | N5 |
+| 1 | `net/HttpClients.kt` | 初始化:`setOkHttpClient`×2(init/reloadDns)、`HttpHeaders.setUserAgent`×2(init/reloadDns)、`HttpsUtils.UnSafeHostnameVerifier`×1、okgo 版 `HttpLoggingInterceptor`**×4**(:87/:255 挂在 `initExoOkHttpClient()` 的 ExoPlayer client 上、:376/:417 挂在 default/reloadDns 上;均 `Level.NONE`/`ColorLevel.OFF`) | N5 |
 | 2 | `sourcedata/SourceHelper.kt` | `siteGet()` 枢纽:`OkGo.get<String>(api)` + 合并站点 header,返回 `GetRequest<String>` | N1 |
 | 3 | `sourcedata/ListLoader.kt` | `siteGet`×3 + `AbsCallback`×3;`.tag(api)`×2(无消费者)+ `.tag("detail")`×1;`onError` 读 `code()`/`exception` | N1 |
 | 4 | `sourcedata/DetailLoader.kt` | `siteGet`×1 + `AbsCallback`×1;`.tag("detail")`×1 | N1 |
@@ -49,9 +49,9 @@ OkGo.getInstance().setOkHttpClient(okHttpClient)
 | 9 | `sourcedata/PlayLoader.kt` | `siteGet`×1 + `AbsCallback`×1;`.tag(requestTag)`×1;既有实例级取消 `cancelPlayRequest()`(:234,seq 失效法) | N2 |
 | 10 | `player/PlayUrlResolver.kt` | `OkGo.get<String>`×1(`.tag("json_jx")`);`cancelTag`×4(`play`/`json_jx`/`m3u8-1`/`m3u8-2`,集中在 `stopParse()`:196-199) | N2 |
 | 11 | `player/usecase/M3u8PurifyUseCase.kt` | `OkGo.get<String>`×2(`.tag("m3u8-1"/"m3u8-2")` + `.headers(HttpHeaders 实例)`)+ `AbsCallback`×2;`cancelTag`×2(新一轮前取消旧轮) | N2 |
-| 12 | `ui/activity/SearchViewModel.kt` | `OkGo.get<String>`×2(fetchHotSearch 无 tag / fetchSuggest `.tag("suggest")`)+ `AbsCallback`×2;`cancelTag`×2(onCleared 取消 suggest / 新搜索前取消 search) | N3 |
-| 13 | `ui/activity/DetailViewModel.kt` | 仅 `cancelTag`×3(:612 超时 fallback 流程 / :675-676 `destroyEngine()`,值 `detail`×2 + `search`×1) | N1 |
-| 14 | `ui/activity/LiveProxyLoader.kt` | `OkGo.get<String>`×1 + `AbsCallback`×1 | N3 |
+| 12 | `ui/SearchViewModel.kt` | `OkGo.get<String>`×2(fetchHotSearch 无 tag / fetchSuggest `.tag("suggest")`)+ `AbsCallback`×2;`cancelTag`×2(onCleared 取消 suggest / 新搜索前取消 search) | N3 |
+| 13 | `ui/DetailViewModel.kt` | 仅 `cancelTag`×3(:612 超时 fallback 流程 / :675-676 `destroyEngine()`,值 `detail`×2 + `search`×1) | N1 |
+| 14 | `ui/LiveProxyLoader.kt` | `OkGo.get<String>`×1 + `AbsCallback`×1 | N3 |
 | 15 | `subtitle/SubtitleLoader.kt` | 同步 `execute()`×1(`.headers(Referer/UA)` → `okhttp3.Response`) | N3 |
 | 16 | `ui/music/MusicLrc.kt` | 同步 `execute()`×1(`.headers(UA)` → `okhttp3.Response`;调用方已是 `suspend + withContext(IO)` 形态) | N3 |
 | 17 | `catvod/crawler/JsLoader.kt` | 同步 `OkGo.get<File>(jar).execute()` → `okhttp3.Response` | N4 |
@@ -104,7 +104,7 @@ OkGo.getInstance().setOkHttpClient(okHttpClient)
 | 已有 suspend 包装 okgo 回调的先例 | `AppBootstrap.kt:131,147`、`HomeViewModel.kt:372`、`PartitionListViewModel.kt:146`(`suspendCancellableCoroutine` 包 Loader 回调) | Loader 直接 suspend 化后这些包装层可简化 |
 | `kotlinx.coroutines` 已全面使用但**未显式声明依赖** | 全库 `import kotlinx.coroutines` 实测 **36** 文件(`app/src/main` 34 + `app/src/test` 2),坐标靠 lifecycle/compose 传递带入 | N0 显式声明 `kotlinx-coroutines-android` |
 
-迁移动因汇总:① 依赖形态错配(§0);② 三套请求入口并存(okgo 链式 / `catvod.net.OkHttp` 直连 / `OkGoHelper` 配置中心);③ 混合范式与三套 homemade 取消实现(本节);④ 主线程解析(§1.3 E5 衍生)。
+迁移动因汇总:① 依赖形态错配(§0);② 三套请求入口并存(okgo 链式 / `catvod.net.OkHttp` 直连 / `HttpClients` 配置中心);③ 混合范式与三套 homemade 取消实现(本节);④ 主线程解析(§1.3 E5 衍生)。
 
 ### 1.5 tag 生产/消费图谱(全 Job 化的迁移底册)
 
@@ -132,7 +132,7 @@ okgo 链式 `.tag()` 打点 14 处(上述 9 文件)/ `cancelTag` 消费 12 处,�
 | NanoHTTPD(`RemoteServer`) | 本地 HTTP **服务端**,不是客户端出口 |
 | librtmp(本地 rtmp AAR) | 自有协议栈,非 HTTP |
 
-附:Android 系统 `HttpURLConnection` 本身就是 okhttp 实现(4.4+),但本项目代码零处使用(`HttpURLConnection`/`openConnection` 全库 0 命中);media3 播放数据源是自研 `player/engine/OkHttpDataSource.kt`(底层 okhttp),Coil 走 `coil-network-okhttp` —— 迁移后"自建请求 100% okhttp"成立。
+附:Android 系统 `HttpURLConnection` 本身就是 okhttp 实现(4.4+),但本项目代码零处使用(`HttpURLConnection`/`openConnection` 全库 0 命中);media3 播放数据源是自研 `player/core/OkHttpDataSource.kt`(底层 okhttp),Coil 走 `coil-network-okhttp` —— 迁移后"自建请求 100% okhttp"成立。
 
 ## 2. 目标与非目标
 
@@ -147,7 +147,7 @@ okgo 链式 `.tag()` 打点 14 处(上述 9 文件)/ `cancelTag` 消费 12 处,�
 **非目标**
 
 - N1 不做业务层范式重构:`LiveData`/`Flow` 形态、`SourceChannel`、`BoundedCall`、`SourceHelper.SPIDER_POOL`/`PREPARE_POOL` 线程池一律不动(仅删除其中通往 okgo 的路径);`suspendCancellableCoroutine` 包装层(`HomeViewModel:372` 等)的简化属可选顺手项,不强制。
-- N2 不引入新网络库、不改 `OkGoHelper` 的 client 配置内容(仅去 okgo 化)。
+- N2 不引入新网络库、不改 `HttpClients` 的 client 配置内容(仅去 okgo 化)。
 - N3 不动 §1.6 三个例外;不动 `catvod.net.OkHttp` 的既有公开面。
 - N4 **JS 契约层不进协程世界**:`com.github.catvod.**` 全部公开签名保持阻塞式、签名逐成员不变(判据 `javap -p -s`,见 `avbox-kotlin-migration-spec.md` §3.2);协程化只发生在方法体内部(内部换血,§4.5)。理由:`suspend` 编译会追加 `Continuation` 参数,外部 jar 插件(DexClassLoader)与 QuickJS 反射调用按"方法名+参数类型"匹配,签名一变即 `NoSuchMethodError`;外部插件不由本项目控制编译节奏。
 
@@ -178,13 +178,13 @@ okgo 链式 `.tag()` 打点 14 处(上述 9 文件)/ `cancelTag` 消费 12 处,�
 | N2 | `player` 簇 + `PlayLoader`(自 N1 挪入) | 3 | `play` / `json_jx` / `m3u8-1/2` |
 | N3 | UI / 杂项簇 | 4 | `suggest`;同步路径 2 处 suspend 化 |
 | N4 | `catvod` 契约层(内部换血,签名守恒) | 3 | JS tag 取消通道 |
-| N5 | 收尾:`OkGoHelper` + 删依赖 | 1 + 构建脚本 | §6.2 全量验收 |
+| N5 | 收尾:`HttpClients` + 删依赖 | 1 + 构建脚本 | §6.2 全量验收 |
 
 ## 4. 详细设计
 
 ### 4.1 await 层形态(已定:见 P4)
 
-建议放 `app/src/main/java/com/github/tvbox/osc/util/net/`(与既有 `OkProxySelector`/`ProxyAuthenticator` 同包),形态示意:
+建议放 `app/src/main/java/com/github/avbox/osc/util/net/`(与既有 `OkProxySelector`/`ProxyAuthenticator` 同包),形态示意:
 
 ```kotlin
 object Http {
@@ -248,9 +248,9 @@ requestScope.launch {                                   // 归属见 §4.4
 
 ### 4.3 client 取用(reloadDns 兼容)
 
-- **每请求现取** `OkGoHelper.getDefaultClient()`(或注入的等价入口),**禁止静态缓存 client 引用** —— `reloadDns()` 会重建 client 并 `setOkHttpClient(new)`;若 await 层缓存旧引用,重载后 DNS/代理不生效。
+- **每请求现取** `HttpClients.getDefaultClient()`(或注入的等价入口),**禁止静态缓存 client 引用** —— `reloadDns()` 会重建 client 并 `setOkHttpClient(new)`;若 await 层缓存旧引用,重载后 DNS/代理不生效。
 - 分片期安全性:await 层与未迁移的 okgo 调用使用**同一个 client 实例与 dispatcher**;okgo 侧请求仍走 `Request.tag()`,已迁移侧走 Job —— 两套取消在分片期互不干扰的前提是**同一取消链的生产与消费同片退役**(§5 分片即按此排布)。
-- 不静态持有 `noRedirectClient` 等次要形态:await 层无调用点需要它;**N4 的 `Connect.kt:43` 与 `catvod/net/OkHttp.kt:69` 仍在直取 `OkGoHelper.getNoRedirectClient()`**(不经 await 层),保持现状。
+- 不静态持有 `noRedirectClient` 等次要形态:await 层无调用点需要它;**N4 的 `Connect.kt:43` 与 `catvod/net/OkHttp.kt:69` 仍在直取 `HttpClients.getNoRedirectClient()`**(不经 await 层),保持现状。
 
 ### 4.4 取消架构:全 Job 化(核心设计)
 
@@ -275,7 +275,7 @@ requestScope.launch {                                   // 归属见 §4.4
 **三套 homemade 序号失效法的收敛**(口径必须统一:**Job 管"请求要不要继续跑",序号/token 管"结果属于哪一轮",两者不可互替**):
 
 - `suggestSeq`(`SearchViewModel.kt:52,170-176`)—— 整链在 `viewModelScope` 内、无线程池跳转 ⇒ 结构化取消可完整覆盖,**随 #8 删除**。
-- `playRequestSeq`(`PlayLoader.kt:29,234`)—— ⚠️ **不可整体删除**。`getPlayInternal`(:51)在 main 上会先跳 `PREPARE_POOL`,而 `postPlayResult` 的 3 个前置出口(:76 pushFallback / :81 source==null / :92 type 未知)**不经网络、不可取消**;删掉序号门会让过期请求的 null 结果覆盖新一轮的好结果。Job 取消只覆盖"网络阶段",序号门必须保留给"池阶段"。
+- `playRequestSeq`(`PlayLoader.kt:29,234`)—— ⚠️ **不可整体删除**。`playInternal`(:51)在 main 上会先跳 `PREPARE_POOL`,而 `postPlayResult` 的 3 个前置出口(:76 pushFallback / :81 source==null / :92 type 未知)**不经网络、不可取消**;删掉序号门会让过期请求的 null 结果覆盖新一轮的好结果。Job 取消只覆盖"网络阶段",序号门必须保留给"池阶段"。
 - `preloadRequestSeq`(`PlayLoader.kt:30`)—— 与 play 链**各自独立**,`cancelPlayRequest()` 今天不影响 preload;Job 化后必须保持这条边界(两链共享单 Job 会连带取消预载)。
 - `requestToken`(`DetailViewModel.kt:95`,结果归属判定)保留,不强行 Job 化。
 
@@ -290,7 +290,7 @@ requestScope.launch {                                   // 归属见 §4.4
   - `JsLoader` 自身下载 jar 的调用若在协程上下文(如 AppBootstrap 链),可加 suspend 伴生重载,**公开阻塞方法保留并委托之**。
 - 边界翻译是标准姿势(先例:JNI 边界、OkHttp 自身 execute/enqueue 双出口):协程停在契约边界,不是能力不足。
 
-### 4.6 `OkGoHelper` 收尾项(N5)
+### 4.6 `HttpClients` 收尾项(N5)
 
 | 项 | 处置 |
 |---|---|
@@ -318,7 +318,7 @@ requestScope.launch {                                   // 归属见 §4.4
 
 - 范围:新增 await 层(§4.1,位置与命名见 P4;重试口径见 P5;桥接自持见 P11)+ 纯函数决策层 + 单测;`libs.versions.toml` 显式声明 `kotlinx-coroutines-android`(§1.4);不改任何调用点。
 - 卡口:构建绿 + await 层单测绿(基线:现有 536+ 用例不回退)。
-- 实测登记:_已回填(2026-10-06)_:新增 `app/src/main/java/com/github/tvbox/osc/util/net/Http.kt`(`Http`/`HttpRequest`/`HttpException`)与 `HttpPolicy.kt`(URL 拼接 / E2 判定 / E6 判定 / E10 取值);重试·状态码·取消静默经 `internal Http.executeWithRetry(request, client)` 注入 fake client 覆盖;单测新增 3 类 22 例(`HttpPolicyTest` 7 / `HttpRequestTest` 9 / `HttpTest` 6);`libs.versions.toml` 显式声明 `kotlinx-coroutines-android` = **1.10.2**(与既有解析版本一致,依赖图零变化);`.\gradlew :app:assembleDebug` + `.\gradlew :app:testDebugUnitTest` 绿,总计 **677 用例 0 失败**(含新增 22 例)。**N1 收尾审查修复(`9e66e73`)**:响应体读取从挂起点恢复线程(Main)移入 `executeWithRetry` 内层 `withContext(Dispatchers.IO)`,`HttpTest` +1 例锁定(总 678)。
+- 实测登记:_已回填(2026-10-06)_:新增 `app/src/main/java/com/github/avbox/osc/util/net/Http.kt`(`Http`/`HttpRequest`/`HttpException`)与 `HttpPolicy.kt`(URL 拼接 / E2 判定 / E6 判定 / E10 取值);重试·状态码·取消静默经 `internal Http.executeWithRetry(request, client)` 注入 fake client 覆盖;单测新增 3 类 22 例(`HttpPolicyTest` 7 / `HttpRequestTest` 9 / `HttpTest` 6);`libs.versions.toml` 显式声明 `kotlinx-coroutines-android` = **1.10.2**(与既有解析版本一致,依赖图零变化);`.\gradlew :app:assembleDebug` + `.\gradlew :app:testDebugUnitTest` 绿,总计 **677 用例 0 失败**(含新增 22 例)。**N1 收尾审查修复(`9e66e73`)**:响应体读取从挂起点恢复线程(Main)移入 `executeWithRetry` 内层 `withContext(Dispatchers.IO)`,`HttpTest` +1 例锁定(总 678)。
 
 ### N1 `sourcedata` 簇(7 文件)+ 接线 2 文件 —— detail/search 链闭环
 
@@ -336,7 +336,7 @@ requestScope.launch {                                   // 归属见 §4.4
   - 低(已修,`81999ce`):重试范围宽于 okgo —— `body.string()` 原在重试 try 内,读体超时会重发整包(okgo 的读体失败属 E4 转换失败、不重试)。修复:重试只围绕 `execute`(请求阶段),读体在重试之外;单测 +1 例 `get_doesNotRetryBodyReadTimeout`。
   - 低(已修,`b675a09`):`SortLoader` 的 `RemoteTVBox` 桥 `cont.resume` 写在 `response.use` 内,`close()` 抛 `IOException` 时二次 resume(okhttp 线程 `IllegalStateException`);改为先读出 body 再 resume。
   - 低(已修,`b675a09`):`SubtitleViewModel.pagesTotal` 在 IO 块内写、Main 读(非 volatile);改为解析出的页数带回 caller(Main)再赋值。
-  - 既有低危登记(非本次引入、不修):`RemoteTVBox.post` 固定 1s 超时(与站点级 15s 口径不同,迁移前即如此);`SubtitleViewModel.getSubtitleUrlFromAssrt` 的裸 okhttp 请求无取消挂钩(VM 清除后仍回调)。
+  - 既有低危登记(非本次引入、不修):`RemoteTVBox.post` 固定 1s 超时(与站点级 15s 口径不同,迁移前即如此);`SubtitleViewModel.subtitleUrlFromAssrt` 的裸 okhttp 请求无取消挂钩(VM 清除后仍回调)。
   - 复跑绿,**679 用例 0 失败**。**两轮审查收敛:最新一轮无阻断/高/中、剩余全为既有低危 ⇒ 本片可收尾**。
 
 ### N2 `player` 簇 + `PlayLoader` —— play/json_jx/m3u8 链闭环
@@ -344,7 +344,7 @@ requestScope.launch {                                   // 归属见 §4.4
 - 范围:`PlayUrlResolver`(`json_jx` Job 化 + `stopParse()` 4 连取消改显式取消)、`M3u8PurifyUseCase`(两跳并一协程 + 进程级取消槽)、`PlayLoader`(回调体改协程,`cancelPlayRequest()` seq 失效法升级 Job)。
 - 留意:`PlayLoader` 从 sourcedata 挪入本片(与 stopParse 的 `play` 消费同片闭环);PlaybackFetch/PlaybackRetryDelegate/PlaybackController 的 `cancelPlayRequest()` 调用链接口不变,仅内部实现变化。
 - 实测登记:_已回填(2026-10-06)_:① `M3u8PurifyUseCase`:取 m3u8 与取 forward URL 两跳并为**单协程**(`requestScope` = `SupervisorJob + Dispatchers.Main.immediate` 且 **lazy 构造**;取消槽 = companion `activeJob`,入口 `cancelActive()` 后重启,`url.contains("url=")` 早退路径保持同步且**不置空取消槽**);两跳共用私有 `suspend fun request(url, headers)`(`Http.get` + 逐头透传);`M3u8.purify` 按 P10 挪 `withContext(Dispatchers.IO)`(其余 `RemoteServer.putM3u8Content` / 回调 / Toast 仍在 Main,与原 okgo 主线程回调逐点一致);`purify + 读 currentAdCount` 同处 companion 级 `Mutex` 临界区,读数随 `deliver` 分支带出(不在 Main 读静态)。② `PlayUrlResolver`:`json_jx` 自持 `jsonJob`(lazy `requestScope`,Main.immediate),`stopParse()` 的 4 连 `cancelTag` → `host.cancelPlayRequest()`(play)+ `jsonJob?.cancel()`(json_jx)+ `host.cancelM3u8Purify()`(m3u8-1/2);`jsonParse` 按 P10 挪 IO,`host.*` 交互仍在 Main(E5 恢复线程 = 原主线程回调);网络/解析两段 catch 各自放行 `CancellationException`(R12)。③ **m3u8 取消接线**(未迁文件面):`PlayUrlResolver.Host` 新增 `cancelPlayRequest()`/`cancelM3u8Purify()` → PlaybackController 侧实现为 `fetch.cancelPlayRequest()` 与 `M3u8PurifyUseCase.cancelActive()`(进程级;收尾审查轮由"经 view bridge"改此,见下「收尾审查轮」第 3 条,两个接口成员及其实现已回退,接口面回到原状)。④ `PlayLoader`:`playFromExtendedApi` 回调体改 `requestScope.launch(chain)` + `SourceHelper.siteGet`(`params("play"/"flag"/"extend")`;okgo `HttpParams.put` 源码级核对=null 值跳过、空串保留,`HttpRequest.params(key, String?)` 同形);归一化/合并/主线程投递语义不变,解析段按 P10 挪 IO;`cancelPlayRequest()` = **seq 自增(池阶段门保留)+ play 链 `SupervisorJob` cancel 后重建**(cancel-all 对齐原 tag 广播),`preloadChain` 独立且无取消入口(迁移前 `playPreload` tag 本就无消费者);`rootJob` + lazy `requestScope`(JVM 单测直接 `SourceViewModel()` 构造 → 不触碰 `Dispatchers.Main`,同 N1 口径)。⑤ 桥删除:`SourceHelper.siteGetRequest` 删除,连带删掉唯一消费者已消失的 `SourceHelper.ERR_NETWORK` 常量。⑥ 卡口:片内 `com.lzy` 归零(余 8 文件全属 N3/N4/N5);`cancelTag` 全库余 **2**(SearchViewModel `suggest` → N3、Connect → N4);`runBlocking`/`GlobalScope` 全库 0;改动 10 文件行尾全 LF;`.\gradlew :app:assembleDebug` + `:app:testDebugUnitTest` 绿,**679 用例 0 失败**(-0,`PlayLoaderSeqTest` 3 例未动仍绿)。
-- **行为差异登记(E9/R14 的 N2 面貌)**:`stopParse()` 的 play 取消现在走 `PlayLoader.cancelPlayRequest()`(seq 自增 + Job 取消),比 okgo 的 `cancelTag("play")` 多两处作用面 —— ① `PREPARE_POOL` 派发后、请求入队前(含 `getFixUrl` 阻塞段,最长可达源级 `getPlayTimeoutSeconds`)的请求不再继续(chain 已取消 ⇒ `launch(chain)` 直接取消);② 已 `mainHandler.post` 但尚未执行的 play 结果会被序号门作废。方向与既有 `cancelInFlight()`/两条 resolve 恢复路径一致(它们本就在 stopParse 前调 `cancelPlayRequest()`),最坏后果 = 该轮解析被放弃、由既有 resolve 超时链路换线/重试,列入真机走查(起播/换源/弱网)。**未动**:`playRequestSeq`/`preloadRequestSeq` 两门、`getFixUrl` 的 `SPIDER_POOL` 阻塞段、`PlaybackFetch`/`PlaybackRetryDelegate`/`PlaybackController.cancelInFlight` 调用链。
+- **行为差异登记(E9/R14 的 N2 面貌)**:`stopParse()` 的 play 取消现在走 `PlayLoader.cancelPlayRequest()`(seq 自增 + Job 取消),比 okgo 的 `cancelTag("play")` 多两处作用面 —— ① `PREPARE_POOL` 派发后、请求入队前(含 `getFixUrl` 阻塞段,最长可达源级 `playTimeoutSeconds`)的请求不再继续(chain 已取消 ⇒ `launch(chain)` 直接取消);② 已 `mainHandler.post` 但尚未执行的 play 结果会被序号门作废。方向与既有 `cancelInFlight()`/两条 resolve 恢复路径一致(它们本就在 stopParse 前调 `cancelPlayRequest()`),最坏后果 = 该轮解析被放弃、由既有 resolve 超时链路换线/重试,列入真机走查(起播/换源/弱网)。**未动**:`playRequestSeq`/`preloadRequestSeq` 两门、`getFixUrl` 的 `SPIDER_POOL` 阻塞段、`PlaybackFetch`/`PlaybackRetryDelegate`/`PlaybackController.cancelInFlight` 调用链。
 - **收尾审查轮(2026-10-06,两轮独立只读复核 + 作者复核)** —— 第一轮 4 条(2 中 2 低)、第二轮换角度 2 中(同一根因)+ 3 低,全部当场处置:
   - 中(已修):**m3u8 净化协程自己取消自己** —— 回调链 `processM3u8Content → callback.startPlayUrl` → `PlayContainerControlListener:126 goPlayUrl` → `PlaybackController:788 stopParse()` → `cancelM3u8Purify`,而 `PlayContainerViewBridge.runOnUi` 在主线程同步内联 ⇒ 取消对象 = 正在执行该语句的协程(当时恰好无功能后果,但此后任何新增挂起点都会被静默掐断)。修复:`deliver { }` 在**发回调前**把本轮从取消面摘下(`activeJob === coroutineContext[Job]` 身份判等),即「取消只作用于网络段,不作用于已产出结果的轮次」,与 okgo `cancelTag` 只取消网络 call 同形。
   - 中(已修,与上同一根因):`M3u8.currentAdCount` 是**进程级静态**,`M3u8.purify` 挪 IO 后从"主线程天然串行"变"跨轮并发写单槽"(可致"净化静默失效");且锁若留在实例上,两个页面实例并发时锁不生效。修复:锁与取消槽**上收为 use case 的 companion(进程级)**,`purify + 读数`同临界区并把读数带出。
@@ -362,38 +362,38 @@ requestScope.launch {                                   // 归属见 §4.4
 - 留意:依赖 N1 已提供 `SourceViewModel.cancelSearch()`;`HomeViewModel:372`/`PartitionListViewModel:146` 的 `suspendCancellableCoroutine` 包装层此时可顺手简化为直接 suspend 调用(可选,不强制)。
 - 实测登记:_已回填(2026-10-06)_:① 范围实为 4+1 文件:`MusicPlayerActivity.syncLyric` 的 `runCatching { MusicLrc.load }` 随 MusicLrc 取消面变化一并改 try/catch(CancellationException 放行,R12;否则取消被吞且打"parse failed"误导日志);② `SearchViewModel`:`fetchSuggest` 挂 `viewModelScope`(Main.immediate),`suggestSeq` 删除 → `suggestJob`(新输入 cancel 旧请求,取消精度升级;`clearSuggest` 同改);`fetchHotSearch` 保留 IO 形态(缓存 KV 读写 + 解析均在 IO,与迁移前同),`Http.get` + `headers("User-Agent", UA.random())`,catch 顺序 CancellationException → Exception(原 onError 兜底);`onCleared` 删 `cancelTag("suggest")`,补 `searchCaller.cancelSearch()`(收 N1 遗留);`search` 的取消 N1 已提前收口,本片无改动;③ `LiveProxyLoader`:实例级 `loadScope`(`SupervisorJob + Dispatchers.Main.immediate`,**lazy** 构造),else 分支 `Http.get` + `TxtSubscribe.parseToJsonArray` 挪 IO;`loadLives` / `channelGroupList` / `ArrayList` 拷回保持 Main(R3 关注点,与迁移前逐点一致);`cancelAll()` 在清 handler 之外补 `cancelChildren()`(首次获得真正取消面,见行为差异);`.py/.js` 分支(BoundedCall + 单线程 executor)未动;④ `SubtitleLoader`:`loadFromRemote` 转 suspend、内芯换 `Http.getRaw`(原始字节与 `content-disposition` 头两处用途都保留);`loadFromRemoteAsync` 改 object 级 lazy `ioScope`(`SupervisorJob + Dispatchers.IO`)协程,回调投递仍走 `AppTaskExecutor.mainThread()`;`loadFromDataAsync`/`loadFromLocalAsync`(纯本地,无 okgo)未动;**删除无调用者的同步重载 `loadSubtitle(path): SubtitleLoadSuccessResult?`**(app/src 全量 grep 0 引用,含 test);⑤ `MusicLrc`:`read`/`fetch` 转 suspend、`runCatching` 改 try/catch(CancellationException 放行)、`fetch` 换 `Http.getRaw`(保留原始字节路径 ⇒ `UniversalDetector` 编码检测不变);⑥ 卡口:片内 `com.lzy` 归零(全库余 4 文件全属 N4/N5),`cancelTag` 全库余 **1**(Connect → N4),`runBlocking`/`GlobalScope` 0,`suggestSeq` 全库 0,改动 7 文件行尾全 LF;`.\gradlew :app:assembleDebug` + `:app:testDebugUnitTest` 绿,**683 用例 0 失败**(+3,`HttpTest` 新增 `getRaw` 3 例)。
 - **await 层扩展(片内偏差登记)**:新增 `Http.getRaw(url, init): HttpRawResponse`(`body: ByteArray` + `headers: Headers`;E2/E6/取消/读体 IO 与 `get` 同策略,内部 `executeWithRetry`/`executeRawWithRetry` 共享 `executeChecked` 泛型实现)。原因:`SubtitleLoader` 需原始字节(编码检测)+ `content-disposition` 头、`MusicLrc` 需原始字节,`get` 的 String 路径在无 charset 声明的 GBK 内容上会乱码 ⇒ §4.1 原口径"仅 String suspend 路径"不足,补第二 suspend 出口;§4.1 约束 2 与 §4.2 E1 行已同步改写。
-- **行为差异登记(E9/R14 的 N3 面貌)**:① `SubtitleLoader`/`MusicLrc` 由"同步 execute(不判定 / 不重试 / 不可取消)"变为"suspend 路径(E2 404·≥500 判定 + E6 超时重试)";**取消联动只对 `MusicLrc` 成立**(`MusicPlayerActivity.lyricJob` 可取消),`SubtitleLoader` 无取消入口(全库唯一入口是回调版 `loadSubtitle`;与迁移前"不可取消、跑完由 `DefaultSubtitleEngine.mLoadSeq` 丢弃"同形,但重试面使被放弃的下载最坏跑满 4 次尝试 ≈40s 才丢);② `LiveProxyLoader.cancelAll()` 首次真正取消在飞请求(原仅清 handler 消息;修复方向:Activity destroy 后不再有 `loadLives` 全局写入 / `onGroupsLoaded` 回调);③ `fetchSuggest` 取消由"结果 seq 丢弃"升级为"请求级取消",`clearSuggest` 同步取消在飞请求;④ 线程面:SubtitleLoader 解析/回调链仍为 IO → Main,`LiveProxyLoader.loadLives` 保持 Main,`fetchHotSearch` 回调体由 Main 变 IO(写入对象为 `MutableStateFlow`/MMKV,线程安全);⑤ 两条同步路径改 suspend 后由"阻塞 `execute` 直发"变"`enqueue` 进 dispatcher 队列",新增 per-host 限额(`maxRequestsPerHost=10`)与排队面(反向收益:不再占用等待线程);⑥ N0 桥接既有细节本片首次常态化:"已 `onResponse`、任务未执行"窗口内取消 ⇒ 结果被替换为 `CancellationException`,`Response` 不被 `use{}` close(连接被 `call.cancel()` 强制打断,官方 `okhttp-coroutines` 同形;不改码)。
+- **行为差异登记(E9/R14 的 N3 面貌)**:① `SubtitleLoader`/`MusicLrc` 由"同步 execute(不判定 / 不重试 / 不可取消)"变为"suspend 路径(E2 404·≥500 判定 + E6 超时重试)";**取消联动只对 `MusicLrc` 成立**(`MusicPlayerActivity.lyricJob` 可取消),`SubtitleLoader` 无取消入口(全库唯一入口是回调版 `loadSubtitle`;与迁移前"不可取消、跑完由 `DefaultSubtitleEngine.loadGeneration` 丢弃"同形,但重试面使被放弃的下载最坏跑满 4 次尝试 ≈40s 才丢);② `LiveProxyLoader.cancelAll()` 首次真正取消在飞请求(原仅清 handler 消息;修复方向:Activity destroy 后不再有 `loadLives` 全局写入 / `onGroupsLoaded` 回调);③ `fetchSuggest` 取消由"结果 seq 丢弃"升级为"请求级取消",`clearSuggest` 同步取消在飞请求;④ 线程面:SubtitleLoader 解析/回调链仍为 IO → Main,`LiveProxyLoader.loadLives` 保持 Main,`fetchHotSearch` 回调体由 Main 变 IO(写入对象为 `MutableStateFlow`/MMKV,线程安全);⑤ 两条同步路径改 suspend 后由"阻塞 `execute` 直发"变"`enqueue` 进 dispatcher 队列",新增 per-host 限额(`maxRequestsPerHost=10`)与排队面(反向收益:不再占用等待线程);⑥ N0 桥接既有细节本片首次常态化:"已 `onResponse`、任务未执行"窗口内取消 ⇒ 结果被替换为 `CancellationException`,`Response` 不被 `use{}` close(连接被 `call.cancel()` 强制打断,官方 `okhttp-coroutines` 同形;不改码)。
 - **可选简化未做(登记)**:`HomeViewModel:372`/`PartitionListViewModel:146` 的 `suspendCancellableCoroutine` 包装的是 `PartitionLoader.request`(fire-and-forget + `SourceChannel.flow.collect` 收结果 + pending 取消语义),非一行可换,留待后续;`DetailViewModel` 的 `requestToken` 保留不强行 Job 化。
 - **收尾审查轮(2026-10-06,独立只读复核 + 作者复核)** —— 独立复核结论:**未发现阻断/高/中**;5 条低危(2 条登记口径/补登记、1 条判定不成立、1 条既有边界登记、1 条测试缺口),处置如下:
-  - 登记口径更正(N3-①):"`SubtitleLoader` 取消联动"不成立(该条已改写)——object 级 `ioScope` 无取消入口(全库唯一入口是回调版 `loadSubtitle`),被放弃的字幕下载跑满至多 4 次尝试(约 40s)后由 `DefaultSubtitleEngine.mLoadSeq` 丢弃;与迁移前"不可取消、跑完丢弃"同形,仅耗时上限由 1×10s 变 4 次尝试。
+  - 登记口径更正(N3-①):"`SubtitleLoader` 取消联动"不成立(该条已改写)——object 级 `ioScope` 无取消入口(全库唯一入口是回调版 `loadSubtitle`),被放弃的字幕下载跑满至多 4 次尝试(约 40s)后由 `DefaultSubtitleEngine.loadGeneration` 丢弃;与迁移前"不可取消、跑完丢弃"同形,仅耗时上限由 1×10s 变 4 次尝试。
   - 补登记(N3-⑤):两条同步路径改 suspend 后由"阻塞 `execute` 直发"变"`enqueue` 进 dispatcher 队列",新增 per-host 限额(`maxRequestsPerHost=10`)与排队面。
   - 补登记(N3-⑥):"已 `onResponse`、任务未执行"窗口内取消 ⇒ 结果被替换为 `CancellationException`,`Response` 不被 `use{}` close;属 N0 桥接既有细节(官方 `okhttp-coroutines` 同形),本片首次把取消面接上这两处,登记不改码。
-  - 判定不成立(不改码):"`LiveProxyLoader` UI 回调由内联变 `mHandler.post`,与 `loadLives` 不再同帧" —— 经 `git show 56be128^` 核证,迁移前 `onSuccess`/`onError` 本就 `mHandler.post`,`loadLives` 与 `host.on*` 的投递边界逐字未变。
+  - 判定不成立(不改码):"`LiveProxyLoader` UI 回调由内联变 `handler.post`,与 `loadLives` 不再同帧" —— 经 `git show 56be128^` 核证,迁移前 `onSuccess`/`onError` 本就 `handler.post`,`loadLives` 与 `host.on*` 的投递边界逐字未变。
   - 测试补齐:`HttpTest` 新增 `getRaw_throwsHttpExceptionForServerError`(≥500)/`getRaw_retriesSocketTimeoutUpToFourAttempts`(总 4 次)/`getRaw_returnsEmptyBody`(空 body 直达 `UniversalDetector` 的真实分支)3 例。
-  - 复核通过项(逐条核过、非问题):6 处新/改 catch 的 `CancellationException` 放行全在(R12);`cancelAll()` 只 `cancelChildren` 不打死亡 scope(取消后仍可再 load),`.py/.js` 分支可见产出仍受 `mHandler` 清空覆盖(与迁移前同);`loadLives`/`channelGroupList`/`ArrayList` 快照全在 Main(`Main.immediate` 保证,`load()` 从非主线程调用亦成立);`fetchSuggest` 无旧值覆盖新值(cancel 后在飞恢复被替换为取消异常,赋值语句到不了);`SubtitleLoader` 并发无共享可变状态;lazy scope 到真正 load 才触碰 Main(JVM 单测不受影响);`Http` 重构后 N1 的两条修复(读体离主线程/重试不收窄到读体)对 `getRaw` 同构成立;响应头/fragment/编码/返回形态与迁移前一致,`HttpException` 安全落既有 catch(`DefaultSubtitleEngine` 的 `exception!!` 不会 NPE)。
+  - 复核通过项(逐条核过、非问题):6 处新/改 catch 的 `CancellationException` 放行全在(R12);`cancelAll()` 只 `cancelChildren` 不打死亡 scope(取消后仍可再 load),`.py/.js` 分支可见产出仍受 `handler` 清空覆盖(与迁移前同);`loadLives`/`channelGroupList`/`ArrayList` 快照全在 Main(`Main.immediate` 保证,`load()` 从非主线程调用亦成立);`fetchSuggest` 无旧值覆盖新值(cancel 后在飞恢复被替换为取消异常,赋值语句到不了);`SubtitleLoader` 并发无共享可变状态;lazy scope 到真正 load 才触碰 Main(JVM 单测不受影响);`Http` 重构后 N1 的两条修复(读体离主线程/重试不收窄到读体)对 `getRaw` 同构成立;响应头/fragment/编码/返回形态与迁移前一致,`HttpException` 安全落既有 catch(`DefaultSubtitleEngine` 的 `exception!!` 不会 NPE)。
   - 复跑 `:app:assembleDebug` + `:app:testDebugUnitTest` 绿,**686 用例 0 失败**(+3)。**独立复核 + 作者复核后收敛:无阻断/高/中 ⇒ 本片可收尾**。
 
 ### N4 `catvod` 契约层(3 文件)—— 内部换血,签名守恒
 
 - 范围:`JsLoader`、`JarLoader`(同步下载 → `getSync()` 直连)、`Connect.kt`(取消通道收敛为自持引用)。
 - 留意:**只改方法内部实现、签名逐成员不变**(判据 `javap -p -s`,见 `avbox-kotlin-migration-spec.md` §3.2);`Connect.kt` 的 client 取用(`getDefaultClient`/`getNoRedirectClient`)保持不变;禁 runBlocking(R10)。
-- 实测登记:_已回填(2026-10-06)_:① `JsLoader.loadJarInternal`:`OkGo.get<File>(jar).execute()` → `Http.getSync(jar)`(E1 阻塞直连;`response.body.byteStream()` + 手动 close 的流语义逐字保留,不判定/不重试/不取消);② `JarLoader.download`:`OkGo.get<File>(url).execute()` → `Http.getSync(url)`(同上;下载循环内的 `Thread.interrupted()` 中断检查保留);③ `Connect.cancelByTag`:删 `OkGo.getInstance().cancelTag(tag)`,`client` 遍历与 `cancelDefaultClient(tag)` 保留 —— 经 okgo 3.0.4 源码核证,`OkGo.cancelTag` 的实现 = 遍历 `getOkHttpClient().dispatcher()` 按 `tag.equals(call.request().tag())` 取消,而 `OkGoHelper` 的 `setOkHttpClient(defaultClient)` 所设 client 与 `getDefaultClient()` 为同一实例 ⇒ 该通道与既有 `cancelDefaultClient(tag)` 覆盖**完全同面**,删除是纯去重(覆盖面不变);`to()` 的 client 取用(`getDefaultClient`/`getNoRedirectClient`)与 `withTimeout` 均未动;④ 签名守恒(P8):`javap -p -s` 前后对比 `JsLoader`/`JarLoader`/`Connect`(+三 Companion)共 6 个类,**219 行输出逐行一致**;⑤ `Http.getSync` 补 internal 注入重载 `getSync(request, client)`(与 `executeWithRetry(request, client)` 同模式,public 形态行为不变)+ `HttpTest` 新增 2 例锁定 E1 语义(`getSync_returnsRawResponseForFailCodes`:404 原样返回、不抛 `HttpException`;`getSync_doesNotRetryOnTimeout`:超时仅 1 次尝试);⑥ 卡口:`com.lzy` 全库余 **1** 文件(`OkGoHelper` → N5)、`cancelTag` 全库 **0**、`runBlocking`/`GlobalScope`(main)0、改动 5 文件行尾全 LF;`.\gradlew :app:assembleDebug` + `:app:testDebugUnitTest` 绿,**688 用例 0 失败**(+2)。
+- 实测登记:_已回填(2026-10-06)_:① `JsLoader.loadJarInternal`:`OkGo.get<File>(jar).execute()` → `Http.getSync(jar)`(E1 阻塞直连;`response.body.byteStream()` + 手动 close 的流语义逐字保留,不判定/不重试/不取消);② `JarLoader.download`:`OkGo.get<File>(url).execute()` → `Http.getSync(url)`(同上;下载循环内的 `Thread.interrupted()` 中断检查保留);③ `Connect.cancelByTag`:删 `OkGo.getInstance().cancelTag(tag)`,`client` 遍历与 `cancelDefaultClient(tag)` 保留 —— 经 okgo 3.0.4 源码核证,`OkGo.cancelTag` 的实现 = 遍历 `getOkHttpClient().dispatcher()` 按 `tag.equals(call.request().tag())` 取消,而 `HttpClients` 的 `setOkHttpClient(defaultClient)` 所设 client 与 `getDefaultClient()` 为同一实例 ⇒ 该通道与既有 `cancelDefaultClient(tag)` 覆盖**完全同面**,删除是纯去重(覆盖面不变);`to()` 的 client 取用(`getDefaultClient`/`getNoRedirectClient`)与 `withTimeout` 均未动;④ 签名守恒(P8):`javap -p -s` 前后对比 `JsLoader`/`JarLoader`/`Connect`(+三 Companion)共 6 个类,**219 行输出逐行一致**;⑤ `Http.getSync` 补 internal 注入重载 `getSync(request, client)`(与 `executeWithRetry(request, client)` 同模式,public 形态行为不变)+ `HttpTest` 新增 2 例锁定 E1 语义(`getSync_returnsRawResponseForFailCodes`:404 原样返回、不抛 `HttpException`;`getSync_doesNotRetryOnTimeout`:超时仅 1 次尝试);⑥ 卡口:`com.lzy` 全库余 **1** 文件(`HttpClients` → N5)、`cancelTag` 全库 **0**、`runBlocking`/`GlobalScope`(main)0、改动 5 文件行尾全 LF;`.\gradlew :app:assembleDebug` + `:app:testDebugUnitTest` 绿,**688 用例 0 失败**(+2)。
 - **行为差异登记(E9/R14 的 N4 面貌)**:本片**零业务行为差异** —— 两处同步下载为 E1 等价替换(同为"直连 okhttp、绕过 cache policy、不判定/不重试",请求头 UA/Accept-Language 由 `HttpRequest.build()` 同形注入,§1.3 E7/E10),`getSync` 的消费形态与 okgo `execute()` 的"调用方自管流关闭"逐点一致;`Connect.cancelByTag` 的 okgo 通道删除系纯去重(覆盖面见上③)。既有边界(未动、非本次引入):`cancelByTag` 在 `client != null && tag == null` 时 `tag!!` 抛 NPE 被整体 catch 吞掉(迁移前同样到不了 okgo 通道,行为一致);`Http.getSync` 在 client 未初始化时抛 `IllegalStateException`(okgo `getOkHttpClient()` 同抛),两处调用点均由既有 `catch (e: Throwable)` 覆盖;R10 复核:两处 `getSync` 调用点均为契约层阻塞签名内部,**未引入 runBlocking**。
 - **收尾审查轮(2026-10-06,独立只读复核 + 作者复核)** —— 独立复核结论:**未发现阻断/高/中**;6 条低危(1 覆盖缺口 + 5 既有/口味),全部登记不改(无需本片修复):
-  - 覆盖缺口(登记):`Http.getSync(url)` public 形态"取 `OkGoHelper.getDefaultClient()` = okgo 同 client"这条等价前提无 JVM 单测锁定 —— `defaultClient` 为 private 无注入面(`OkGoHelper.kt:351,357`),补测须为测试改产品码;等价性由 `OkGoHelper.kt:398-402`(`setOkHttpClient` 与 `defaultClient` 赋值相邻、同实例)与既有 `ConnectTimeoutTest`(`derivedClientKeepsSharedDispatcherSoTagCancelStillWorks`/`twoBuildsFromOneBuilderShareDispatcher`)间接支撑;新增 2 例锁的是 internal 注入重载(与 `executeWithRetry(request, client)` 同模式的既有先例)。
+  - 覆盖缺口(登记):`Http.getSync(url)` public 形态"取 `HttpClients.getDefaultClient()` = okgo 同 client"这条等价前提无 JVM 单测锁定 —— `defaultClient` 为 private 无注入面(`HttpClients.kt:351,357`),补测须为测试改产品码;等价性由 `HttpClients.kt:398-402`(`setOkHttpClient` 与 `defaultClient` 赋值相邻、同实例)与既有 `ConnectTimeoutTest`(`derivedClientKeepsSharedDispatcherSoTagCancelStillWorks`/`twoBuildsFromOneBuilderShareDispatcher`)间接支撑;新增 2 例锁的是 internal 注入重载(与 `executeWithRetry(request, client)` 同模式的既有先例)。
   - 既有边界(登记不改):`Connect.cancelByTag` 第一段遍历要求 `tag != null`(`tag!!`),null 时 NPE 被整体 catch 吞掉、其后遍历不可达 —— 迁移前 okgo 通道同样在 `tag!!` 之后,行为一致;生产 tag 恒非空(`Global.kt:42` 的 `js_okhttp_tag_<key>`、`JsSpider.kt:76`)。
   - 既有边界(登记不改):`Connect.client` 为 companion 静态、last-writer-wins,`reloadDns()` 重建 client 后该静态可能指向旧实例 —— 取消覆盖面 = {上次 `to()` 的 client} ∪ {当前 default}(`cancelDefaultClient`) 两个 dispatcher 遍历且 in-flight call 必在其发起时所用 client 的 dispatcher 上,集合与原三通道(okgo 通道与 `cancelDefaultClient` 同实例)**一致**;`withTimeout` 派生 client 共享 dispatcher(既有 `ConnectTimeoutTest` 锁定)。
   - 既有休眠路径(登记不改):2 元 `to(url, req)` 默认 tag `"js_okhttp_tag"` 与实际 tag `"js_okhttp_tag_<key>"` 不匹配 ⇒ 该重载发起的请求不可被按 tag 取消;全库无调用者(生产走三参 `Global.kt:269/282`),当前休眠。
   - 既有语义(登记不改):不判定状态码 ⇒ 404/5xx 内容会被写进 `.jar`(失败兜底靠 md5 校验 / 一周新鲜度)、失败留部分写文件、只关 body 流不关 response —— 与迁移前同面(E1 等价)。
   - 口味差异(登记不改):`Accept-Language` okgo 侧首次计算后静态缓存、await 层每请求现算(值同形,`HttpPolicy.acceptLanguage`;缺省 UA 兜底同串) —— 属 N0 await 层口径,线上不可观测。
   - 作者侧补齐独立复核的验证边界(其只读工具无法解 okgo zip / 执行 javap):okgo 3.0.4 源码 `Request.getRawCall()`(:340-352)= `generateRequestBody()`(GET 为 null)→ `generateRequest(null)` → `client == null` 时取 `OkGo.getInstance().getOkHttpClient()`(= `defaultClient` 同实例)→ `newCall`;`execute()`(:382-383)= `getRawCall().execute()` ⇒ 与 `Http.getSync` 逐点同形(无 cache policy、无判定、无重试);`NoBodyRequest.generateRequestBuilder` 仅 URL 拼接 + `appendHeaders`(空 headers 不动 builder);全库 grep `addCommonHeaders`/`commonParams`/`setBaseUrl`/`setRetryCount`/`setCacheMode` = 0(okgo 无额外全局加工);`javap -p -s` 219 行前后逐行一致为本实施轮实测,未纳入独立复核工具链,由作者侧签署。
-  - 复核通过项(逐条核过、非问题):三文件 diff 仅 import/调用行替换(无成员面改动)、`JsLoader`/`JarLoader` 的 catch/finally/流关闭结构逐字保留、`JarLoader.download` 的 `Thread.interrupted()` 保留、Js tag 取消链(生产 `Connect.getRequest` → 消费 `JsSpider.cancelByTag` → `Connect.cancelByTag`)闭环、`com.lzy` 全库余 1 文件(OkGoHelper,属 N5)、`.execute()` 全库其余调用点均为 okhttp 直连、`Http.kt` 新增 internal 重载不扩外部可见面(`internal` mangling,非契约层)。
+  - 复核通过项(逐条核过、非问题):三文件 diff 仅 import/调用行替换(无成员面改动)、`JsLoader`/`JarLoader` 的 catch/finally/流关闭结构逐字保留、`JarLoader.download` 的 `Thread.interrupted()` 保留、Js tag 取消链(生产 `Connect.getRequest` → 消费 `JsSpider.cancelByTag` → `Connect.cancelByTag`)闭环、`com.lzy` 全库余 1 文件(HttpClients,属 N5)、`.execute()` 全库其余调用点均为 okhttp 直连、`Http.kt` 新增 internal 重载不扩外部可见面(`internal` mangling,非契约层)。
   - **收敛:首轮即无阻断/高/中,剩余全为既有/口味差异/覆盖缺口 ⇒ 本片可收尾。**
 
 ### N5 收尾
 
-- 范围:`OkGoHelper` 去 okgo 化(§4.6);删 `gradle/libs.versions.toml` 的 `okgo` 条目与 `app/build.gradle.kts:151` 的依赖;全量验收(§6.2)。
-- 实测登记:_已回填(2026-10-06)_:① `OkGoHelper` 去 okgo 化、§4.6 五项逐条落地:删 `OkGo.getInstance().setOkHttpClient(...)` ×2(init/reloadDns)、删 `HttpHeaders.setUserAgent(...)` ×2(全局 UA 的等价实现 N0 已落于 `HttpRequest.build()` 的**替换语义**注入,值同串 `"okhttp/" + OkHttp.VERSION`)、`HttpsUtils.UnSafeHostnameVerifier` → `builder.hostnameVerifier { _, _ -> true }`(经 okgo 3.0.4 源码核证 `verify(hostname, session) { return true; }` 完全等价;先例 `catvod/net/OkHttp.kt:214`)、删 okgo 版 `HttpLoggingInterceptor` **×4**(`initExoOkHttpClient`/`initDnsOverHttps`/`init`/`reloadDns` 各一,全部 `Level.NONE` + `ColorLevel.OFF` 零功能,按 P7 不引入官方 logging-interceptor);`reloadDns()` 联动(`Parser.resetHttpClient()` / `com.github.catvod.net.OkHttp.resetClient()`)原样保留;连带清 6 条失效 import(`com.lzy.*` ×4、`okhttp3.OkHttp`、`java.util.logging.Level`);② 依赖坐标:`gradle/libs.versions.toml` 删 `okgo = "3.0.4"` 与 `okgo = { group = "com.lzy.net", … }` 两条 + `app/build.gradle.kts` 删 `implementation(libs.okgo)`(实测位置 :152,范围行原记 :151 系行号偏差,以实测为准);③ §6.2 全量验收:1) `app/src` 内 `com.lzy`/`cancelTag`/`runBlocking`/`GlobalScope` **全 0**(全库唯一残留为 `.codebuddy/tools/_*_baseline_*.java` 历史快照,非构建面);2) `:app:assembleDebug` + `:app:testDebugUnitTest` 绿,**688 用例 0 失败**(与基线持平);3) `:app:dependencies --configuration debugRuntimeClasspath` 无 `com.lzy.net`(okhttp 5.5.0 仍在);4) `AVBox_debug.apk` 内 **29 个 dex 全量字节扫描 `com/lzy`/`com.lzy` 0 命中**;5) main 无 `runBlocking`/`GlobalScope`;6) 真机走查待用户执行(§6.2 第 6 项清单);改动 3 文件行尾全 LF。
+- 范围:`HttpClients` 去 okgo 化(§4.6);删 `gradle/libs.versions.toml` 的 `okgo` 条目与 `app/build.gradle.kts:151` 的依赖;全量验收(§6.2)。
+- 实测登记:_已回填(2026-10-06)_:① `HttpClients` 去 okgo 化、§4.6 五项逐条落地:删 `OkGo.getInstance().setOkHttpClient(...)` ×2(init/reloadDns)、删 `HttpHeaders.setUserAgent(...)` ×2(全局 UA 的等价实现 N0 已落于 `HttpRequest.build()` 的**替换语义**注入,值同串 `"okhttp/" + OkHttp.VERSION`)、`HttpsUtils.UnSafeHostnameVerifier` → `builder.hostnameVerifier { _, _ -> true }`(经 okgo 3.0.4 源码核证 `verify(hostname, session) { return true; }` 完全等价;先例 `catvod/net/OkHttp.kt:214`)、删 okgo 版 `HttpLoggingInterceptor` **×4**(`initExoOkHttpClient`/`initDnsOverHttps`/`init`/`reloadDns` 各一,全部 `Level.NONE` + `ColorLevel.OFF` 零功能,按 P7 不引入官方 logging-interceptor);`reloadDns()` 联动(`Parser.resetHttpClient()` / `com.github.catvod.net.OkHttp.resetClient()`)原样保留;连带清 6 条失效 import(`com.lzy.*` ×4、`okhttp3.OkHttp`、`java.util.logging.Level`);② 依赖坐标:`gradle/libs.versions.toml` 删 `okgo = "3.0.4"` 与 `okgo = { group = "com.lzy.net", … }` 两条 + `app/build.gradle.kts` 删 `implementation(libs.okgo)`(实测位置 :152,范围行原记 :151 系行号偏差,以实测为准);③ §6.2 全量验收:1) `app/src` 内 `com.lzy`/`cancelTag`/`runBlocking`/`GlobalScope` **全 0**(全库唯一残留为 `.codebuddy/tools/_*_baseline_*.java` 历史快照,非构建面);2) `:app:assembleDebug` + `:app:testDebugUnitTest` 绿,**688 用例 0 失败**(与基线持平);3) `:app:dependencies --configuration debugRuntimeClasspath` 无 `com.lzy.net`(okhttp 5.5.0 仍在);4) `AVBox_debug.apk` 内 **29 个 dex 全量字节扫描 `com/lzy`/`com.lzy` 0 命中**;5) main 无 `runBlocking`/`GlobalScope`;6) 真机走查待用户执行(§6.2 第 6 项清单);改动 3 文件行尾全 LF。
 - **依赖裁剪风险评估(新增登记)**:动态 jar 的可见依赖面核查:① `app/libs/thunder.jar`(迅雷下载库,宿主 `PlaybackController` 编译期引用)字节扫描 `com/lzy` **0 命中**;② 生态证据:fongmi(`示例文件/TV-fongmi`)全仓 **0 处** okgo/com.lzy,jar 爬虫依赖的是 `com.github.catvod.net.OkHttp` 门面(双生态同名同包,jar 普遍要求 TVBox ∪ fongmi 双端可用)⇒ 生态 jar 引用 okgo 的动机与兼容前提均不存在;③ 上游 TVBox(`示例文件/上游项目`)50 处 okgo 命中均为**宿主代码**(与本次迁移面同形)。残余风险 = 仅面向 TVBox 的野路子 jar 理论上可直接 `import com.lzy.*`(宿主恰好提供),无法穷举;缓解:真机走查覆盖 csp/clan 类 jar 源的加载与请求,回滚按 §6.3(N5 逆序 revert 即恢复依赖)。
 - **终态口径核验(§0)**:① `grep -r "com\.lzy" app/src` = 0;② `:app:dependencies` 无 `com.lzy.net:okgo`;③ 自建网络请求 100% okhttp(await 层 / `catvod.net.OkHttp` / 原生 client)、`cancelTag` 全库 0(12 处 tag 取消全 Job/实例级化)—— **N0–N5 六片闭环,迁移完成(待真机走查)**。
 
@@ -405,7 +405,7 @@ requestScope.launch {                                   // 归属见 §4.4
 |---|---|---|---|
 | R1 | 漏实现 404/≥500 → 失败(E2):网络错误进成功路径,下游解析报错 | 高 | await 层判定 + 单测锁定 |
 | R2 | GET params 拼错位置(E8) | 高 | 单测锁定 URL 形态 |
-| R3 | E5 语义反转:恢复线程跟随 caller,带主线程假设的回调体(直接改 UI / 非线程安全 sink)在新线程跑崩或竞态 | 中(已下调) | §4.2 逐点审查清单。**实测缓解**:本项目的 sink 是线程安全的 —— `SearchViewModel.hotSearch`/`suggest` 是 `MutableStateFlow`;`SourceChannel` 是 `MutableSharedFlow` 包装且 `postValue`/`setValue` 实现相同(都是 `tryEmit`)、无 main 断言;`PlayLoader.postPlayResult` 已包 `mainHandler.post`;`LiveProxyLoader` 已用 `mHandler.post` 回 UI。**仍需单独审的点**:`LiveProxyLoader.onSuccess` 的 `ApiConfig.get().loadLives(livesArray)` 是**全局状态写入** —— N3 已核定:协程恢复到 Main 再执行,与迁移前一致(§5 N3);`SortLoader` 的 3 处 `HomeRecCallback.done` 消费方 |
+| R3 | E5 语义反转:恢复线程跟随 caller,带主线程假设的回调体(直接改 UI / 非线程安全 sink)在新线程跑崩或竞态 | 中(已下调) | §4.2 逐点审查清单。**实测缓解**:本项目的 sink 是线程安全的 —— `SearchViewModel.hotSearch`/`suggest` 是 `MutableStateFlow`;`SourceChannel` 是 `MutableSharedFlow` 包装且 `postValue`/`setValue` 实现相同(都是 `tryEmit`)、无 main 断言;`PlayLoader.postPlayResult` 已包 `mainHandler.post`;`LiveProxyLoader` 已用 `handler.post` 回 UI。**仍需单独审的点**:`LiveProxyLoader.onSuccess` 的 `ApiConfig.get().loadLives(livesArray)` 是**全局状态写入** —— N3 已核定:协程恢复到 Main 再执行,与迁移前一致(§5 N3);`SortLoader` 的 3 处 `HomeRecCallback.done` 消费方 |
 | R4 | 取消后行为漂移(E3):协程取消静默,但 okgo 的"静默"与 `CancellationException` 传播路径不同,业务 catch 若吞掉会卡 UI | 中 | R12 同防;真机走查快速切页/连点 |
 | R5 | 超时重试丢失或次数错(E6):弱网成功率下降、超时耗时变化;写成"总 3 次"会比现状少一次尝试 | 中 | await 层复刻 **3 次重试 / 4 次尝试**(P5) |
 | R6 | 头语义实现成 add(E7):用 `addHeader` 会把「显式 UA 覆盖全局 UA」变成「两个 UA 头」,凭空引入 okgo 从未有过的行为 | 中 | `header()`(替换)+ 单测锁定单头 |
@@ -440,7 +440,7 @@ requestScope.launch {                                   // 归属见 §4.4
 | P1 | 路线 | 方案"await 层 + 调用点协程化"(原方案 B 解禁);原方案 A(忠实 shim)否决 |
 | P2 | 取消机制 | **全 Job 化**,tag 通道一次性退役(§1.5/§4.4);不采用双通道过渡 |
 | P3 | JS 契约层 | **不进协程世界**:公开签名保持阻塞式 + 签名守恒;协程化只发生在方法体内部(N4) |
-| P4 | await 层命名与位置(原 D1) | `app/src/main/java/com/github/tvbox/osc/util/net/Http.kt`,含 `Http`/`HttpRequest`/`HttpException`,`HttpPolicy`(纯策略)同包。理由:与 `catvod.net.OkHttp` / `okhttp3.OkHttp` / `OkGoHelper`(只管 client 配置)三者职责分离;`OkProxySelector`/`ProxyAuthenticator` 已在该包;同包便于 G5 单测 |
+| P4 | await 层命名与位置(原 D1) | `app/src/main/java/com/github/avbox/osc/util/net/Http.kt`,含 `Http`/`HttpRequest`/`HttpException`,`HttpPolicy`(纯策略)同包。理由:与 `catvod.net.OkHttp` / `okhttp3.OkHttp` / `HttpClients`(只管 client 配置)三者职责分离;`OkProxySelector`/`ProxyAuthenticator` 已在该包;同包便于 G5 单测 |
 | P5 | 超时重试语义(原 D2) | 保留 okgo 现状并显式化:**重试上限 3 次 ⇒ 总尝试最多 4 次**;每轮重建 Call;仅 `java.net.SocketTimeoutException` 触发(`ConnectException`/`UnknownHostException` 不重试);`getSync` 不重试(§4.1 约束 4/5) |
 | P6 | 全局 UA(原 D3) | 等价保留:await 层以**替换**语义注入全局 UA(值仍取 `"okhttp/" + OkHttp.VERSION`),显式 UA 覆盖它 —— 3 处站点请求维持**单** UA 头(§4.6) |
 | P7 | okgo 版 `HttpLoggingInterceptor`(原 D4) | 4 处全删(:87/:255/:376/:417),不引入官方 `logging-interceptor`(§4.6) |
@@ -470,6 +470,6 @@ requestScope.launch {                                   // 归属见 §4.4
 | 2026-10-06 | **N2 收尾审查修复**(两轮独立只读复核 + 作者复核,见 §5 N2「收尾审查轮」):① 中,m3u8 净化协程**自取消**(回调链经 `goPlayUrl → stopParse`)→ `deliver{}` 发回调前摘除本轮取消面;② 中,`M3u8.currentAdCount` 跨轮竞态 + 实例锁不覆盖双页实例 → 净化锁与取消槽上收为 **companion 进程级**,`purify + 读数`同临界区;③ 中,取消通道绑 view bridge 致 handover 孤儿页不可取消 → 取消改**进程级** `M3u8PurifyUseCase.cancelActive()`,`PlaybackViewBridge`/`PlayerControlApi` 的 `cancelM3u8Purify` 及实现**回退**(接口面回原状);④ 低,补 `PlayLoader.cancelPlayRequest` 回归用例(3 种变异必失败);⑤ 低判定不成立:okgo `HttpHeaders.put` 实测只跳 null(§1.3 E10 措辞修正);⑥ 680 用例 0 失败 |
 | 2026-10-06 | **N3 实施回填**:UI / 杂项簇落地(见 §5 N3 实测登记);① `SearchViewModel` suggest 链挂 `viewModelScope`(删 `suggestSeq` → `suggestJob`,新输入取消旧请求),`fetchHotSearch` 协程直发,`onCleared` 补 `searchCaller.cancelSearch()`(收 N1 遗留)、删 `cancelTag("suggest")`;② `LiveProxyLoader` 换协程(实例级 `loadScope` lazy),`cancelAll()` 补 `cancelChildren()`(首次真正取消在飞请求),`loadLives` 保持 Main;③ `SubtitleLoader` `loadFromRemote` 转 suspend + `Http.getRaw`,`loadFromRemoteAsync` 协程化,删无调用者同步重载;④ `MusicLrc` `read`/`fetch` 转 suspend + `Http.getRaw`(保留 `UniversalDetector` 字节检测);⑤ **await 层补 `getRaw`**(原始字节 + headers,§4.1 约束 2 / §4.2 E1 已同步改写);⑥ `MusicPlayerActivity.syncLyric` 的 `runCatching` 改 try/catch 放行取消(R12,范围 4+1 文件);⑦ 卡口:片内 `com.lzy` 归零、全库 `cancelTag` 余 1(N4)、`suggestSeq` 0、行尾全 LF,683 用例 0 失败 |
 | 2026-10-06 | **N3 收尾审查轮**(独立只读复核 + 作者复核,见 §5 N3「收尾审查轮」):无阻断/高/中;① 登记口径更正——`SubtitleLoader` 无取消入口(取消联动仅 `MusicLrc`),重试面使其最坏 4 次尝试后才被丢弃;② 补登记"enqueue 排队面"与"取消后已 deliver 的 `Response` 不 close"(N0 桥接既有细节,官方桥接同形);③ 判定不成立一条(`LiveProxyLoader` 投递边界经 `56be128^` 核证逐字未变);④ `HttpTest` +3 例(≥500 / 重试总 4 次 / 空 body);⑤ 686 用例 0 失败,**本片可收尾** |
-| 2026-10-06 | **N4 实施回填**:`catvod` 契约层三文件内部换血、签名守恒(见 §5 N4 实测登记);① `JsLoader`/`JarLoader` 同步下载 `OkGo.execute()` → `Http.getSync`(E1 直连,流语义/中断检查逐字保留);② `Connect.cancelByTag` 删 `OkGo` 通道(经 3.0.4 源码核证与 `cancelDefaultClient` 完全同面、纯去重),自实现遍历与 client 取用不变;③ P8 落地:`javap -p -s` 6 类 219 行前后逐行一致;④ `Http.getSync` 补 internal 注入重载 + `HttpTest` 2 例锁 E1(404 不判定 / 不重试);⑤ 卡口:`com.lzy` 余 1(OkGoHelper → N5)、`cancelTag` 全库 0;688 用例 0 失败 |
+| 2026-10-06 | **N4 实施回填**:`catvod` 契约层三文件内部换血、签名守恒(见 §5 N4 实测登记);① `JsLoader`/`JarLoader` 同步下载 `OkGo.execute()` → `Http.getSync`(E1 直连,流语义/中断检查逐字保留);② `Connect.cancelByTag` 删 `OkGo` 通道(经 3.0.4 源码核证与 `cancelDefaultClient` 完全同面、纯去重),自实现遍历与 client 取用不变;③ P8 落地:`javap -p -s` 6 类 219 行前后逐行一致;④ `Http.getSync` 补 internal 注入重载 + `HttpTest` 2 例锁 E1(404 不判定 / 不重试);⑤ 卡口:`com.lzy` 余 1(HttpClients → N5)、`cancelTag` 全库 0;688 用例 0 失败 |
 | 2026-10-06 | **N4 收尾审查轮**(独立只读复核 + 作者复核,见 §5 N4「收尾审查轮」):无阻断/高/中;6 条低危(1 覆盖缺口 + 5 既有/口味差异)全部登记不改;作者侧补齐独立复核的验证边界(okgo `Request.getRawCall/execute` 源码逐点同形核证、`NoBodyRequest`/`HttpUtils.appendHeaders` 抽验、全库无 okgo 额外全局加工、javap 219 行实测签署);**首轮即收敛,本片可收尾** |
-| 2026-10-06 | **N5 收尾回填**:OkGo 彻底移除(见 §5 N5 实测登记);① `OkGoHelper` 去 okgo 化五项落地(`setOkHttpClient`×2 / `setUserAgent`×2 删除、`UnSafeHostnameVerifier` → `hostnameVerifier { _, _ -> true }`、`HttpLoggingInterceptor`×4 删除、`reloadDns()` 联动保留),连带清 6 条失效 import;② 删 `libs.versions.toml` 两条目 + `app/build.gradle.kts` 依赖;③ §6.2 验收全过:`app/src` 卡口全 0、依赖图无 `com.lzy.net`、APK 29 dex 0 命中、688 用例 0 失败;④ 新增依赖裁剪风险登记(thunder.jar 扫描 0 命中 / fongmi 生态 0 okgo / 上游 50 处均宿主代码;残余=野路子 jar 直接 import,真机走查兜底);⑤ 终态口径核验通过(§0 三条全满足),**N0–N5 六片全部完成(待真机走查)** |
+| 2026-10-06 | **N5 收尾回填**:OkGo 彻底移除(见 §5 N5 实测登记);① `HttpClients` 去 okgo 化五项落地(`setOkHttpClient`×2 / `setUserAgent`×2 删除、`UnSafeHostnameVerifier` → `hostnameVerifier { _, _ -> true }`、`HttpLoggingInterceptor`×4 删除、`reloadDns()` 联动保留),连带清 6 条失效 import;② 删 `libs.versions.toml` 两条目 + `app/build.gradle.kts` 依赖;③ §6.2 验收全过:`app/src` 卡口全 0、依赖图无 `com.lzy.net`、APK 29 dex 0 命中、688 用例 0 失败;④ 新增依赖裁剪风险登记(thunder.jar 扫描 0 命中 / fongmi 生态 0 okgo / 上游 50 处均宿主代码;残余=野路子 jar 直接 import,真机走查兜底);⑤ 终态口径核验通过(§0 三条全满足),**N0–N5 六片全部完成(待真机走查)** |

@@ -2,8 +2,8 @@ package com.github.catvod.crawler.js
 
 import android.webkit.CookieManager
 
-import com.github.tvbox.osc.net.OkGoHelper
-import com.github.tvbox.osc.util.LOG
+import com.github.avbox.osc.net.HttpClients
+import com.github.avbox.osc.util.AppLog
 
 import okhttp3.Cookie
 import okhttp3.CookieJar
@@ -25,7 +25,7 @@ object WebViewCookies {
         return try {
             CookieManager.getInstance().getCookie(url).orEmpty()
         } catch (th: Throwable) {
-            LOG.e("WebViewCookies", th)
+            AppLog.e("WebViewCookies", th)
             ""
         }
     }
@@ -37,7 +37,7 @@ object WebViewCookies {
             CookieManager.getInstance().setCookie(url, cookie)
             true
         } catch (th: Throwable) {
-            LOG.e("WebViewCookies", th)
+            AppLog.e("WebViewCookies", th)
             false
         }
     }
@@ -48,7 +48,7 @@ object WebViewCookies {
         return synchronized(this) {
             val again = if (redirect) redirectClient else noRedirectClient
             if (again != null) return@synchronized again
-            val base = if (redirect) OkGoHelper.getDefaultClient() else OkGoHelper.getNoRedirectClient()
+            val base = if (redirect) HttpClients.defaultClient else HttpClients.noRedirectClient
             val built = requireNotNull(base) { "okhttp client not ready" }.newBuilder().cookieJar(jar).build()
             if (redirect) redirectClient = built else noRedirectClient = built
             built
@@ -64,7 +64,7 @@ private class WebViewCookieJar : CookieJar {
             val manager = CookieManager.getInstance()
             for (cookie in cookies) manager.setCookie(url.toString(), cookie.toString())
         } catch (th: Throwable) {
-            LOG.e("WebViewCookies", th)
+            AppLog.e("WebViewCookies", th)
         }
     }
 
@@ -72,7 +72,7 @@ private class WebViewCookieJar : CookieJar {
         val raw = try {
             CookieManager.getInstance().getCookie(url.toString())
         } catch (th: Throwable) {
-            LOG.e("WebViewCookies", th)
+            AppLog.e("WebViewCookies", th)
             null
         } ?: return emptyList()
         if (raw.isEmpty()) return emptyList()

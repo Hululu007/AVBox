@@ -8,7 +8,7 @@ plugins {
 }
 
 android {
-    namespace = "com.github.tvbox.osc"
+    namespace = "com.github.avbox.osc"
     compileSdk = libs.versions.compileSdk.get().toInt()
     ndkVersion = libs.versions.ndk.get()
 

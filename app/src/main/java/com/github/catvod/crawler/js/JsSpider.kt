@@ -5,11 +5,11 @@ import android.text.TextUtils
 import android.util.Base64
 
 import com.github.catvod.crawler.Spider
-import com.github.tvbox.osc.io.FileUtils
-import com.github.tvbox.osc.net.ProxyHeaderPolicy
-import com.github.tvbox.osc.util.LOG
-import com.github.tvbox.osc.util.MD5
-import com.github.tvbox.osc.util.RegexUtils
+import com.github.avbox.osc.io.FileUtils
+import com.github.avbox.osc.net.ProxyHeaderPolicy
+import com.github.avbox.osc.util.AppLog
+import com.github.avbox.osc.util.MD5
+import com.github.avbox.osc.util.RegexUtils
 
 import com.whl.quickjs.wrapper.ContextSetter
 import com.whl.quickjs.wrapper.Function
@@ -65,7 +65,7 @@ class JsSpider : Spider {
             try {
                 ctx?.destroy()
             } catch (ignored: Throwable) {
-                LOG.d("JsSpider", "cleanup ctx after init failure failed")
+                AppLog.d("JsSpider", "cleanup ctx after init failure failed")
             }
             executor.shutdownNow()
             throw th
@@ -99,7 +99,7 @@ class JsSpider : Spider {
                 try {
                     method.invoke(receiver, ctx)
                 } catch (ignored: Throwable) {
-                    LOG.d("JsSpider", "context setter invoke failed")
+                    AppLog.d("JsSpider", "context setter invoke failed")
                 }
             }
         }
@@ -141,10 +141,10 @@ class JsSpider : Spider {
             return executor.submit(task).get(CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
-            LOG.i("echo-js-submitAndWait-interrupted")
+            AppLog.i("echo-js-submitAndWait-interrupted")
             return null
         } catch (e: Exception) {
-            LOG.i("echo-js-submitAndWait-failed " + e)
+            AppLog.i("echo-js-submitAndWait-failed " + e)
             return null
         }
     }
@@ -157,7 +157,7 @@ class JsSpider : Spider {
             val result = pending.get(CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             return result.get(CALL_TIMEOUT_MS)
         } catch (e: Exception) {
-            LOG.i("Executor 提交或等待失败 " + e)
+            AppLog.i("Executor 提交或等待失败 " + e)
             return null
         }
     }
@@ -177,7 +177,7 @@ class JsSpider : Spider {
             if (cat) call("init", submitAndWait(Callable { cfg(extend) }))
             else call("init", if (Json.valid(extend)) requireNotNull(ctx) { "js context not ready" }.parse(extend) else extend)
         } catch (e: Exception) {
-            LOG.e("JsSpider", "init js spider failed", e)
+            AppLog.e("JsSpider", "init js spider failed", e)
         }
     }
 
@@ -262,7 +262,7 @@ class JsSpider : Spider {
             if ("catvod" == p.get("from")) return proxy2(p)
             return proxy1(p) ?: arrayOfNulls(0)
         } catch (e: Exception) {
-            LOG.e("JsSpider", e)
+            AppLog.e("JsSpider", e)
             return arrayOfNulls(0)
         }
     }
@@ -282,7 +282,7 @@ class JsSpider : Spider {
             try {
                 globalRef.destroy()
             } catch (ignored: Throwable) {
-                LOG.d("JsSpider", "global destroy failed")
+                AppLog.d("JsSpider", "global destroy failed")
             }
         }
         try {
@@ -291,7 +291,7 @@ class JsSpider : Spider {
                     jsObject = null
                     ctx?.destroy()
                 } catch (th: Throwable) {
-                    LOG.i("echo-js-destroy-error " + th.message)
+                    AppLog.i("echo-js-destroy-error " + th.message)
                 } finally {
                     executor.shutdown()
                 }
@@ -320,7 +320,7 @@ class JsSpider : Spider {
                     requireNotNull(ctx) { "js context not ready" }.execute(byteFF(b))
                     requireNotNull(ctx) { "js context not ready" }.evaluateModule(String.format(SPIDER_STRING_CODE, key + ".js") + "globalThis." + key + " = globalThis.__JS_SPIDER__;", "tv_box_root.js")
                 } catch (th: Throwable) {
-                    LOG.i("echo-bytecode-execute-error " + api + ", msg=" + th.message)
+                    AppLog.i("echo-bytecode-execute-error " + api + ", msg=" + th.message)
                     return@Callable null
                 }
             } else {
@@ -336,7 +336,7 @@ class JsSpider : Spider {
                     requireNotNull(ctx) { "js context not ready" }.evaluateModule(content, api)
                     requireNotNull(ctx) { "js context not ready" }.evaluateModule(String.format(SPIDER_STRING_CODE, api) + "globalThis." + key + " = globalThis.__JS_SPIDER__;", "tv_box_root.js")
                 } catch (th: Throwable) {
-                    LOG.i("echo-evaluateModule-error " + api + ", msg=" + th.message)
+                    AppLog.i("echo-evaluateModule-error " + api + ", msg=" + th.message)
                     return@Callable null
                 }
             }
@@ -351,7 +351,7 @@ class JsSpider : Spider {
             if (cause is Exception) throw cause
             throw Exception(cause)
         } catch (e: TimeoutException) {
-            LOG.i("echo-js-init-timeout " + api)
+            AppLog.i("echo-js-init-timeout " + api)
             init.cancel(true)
         }
     }
@@ -376,7 +376,7 @@ class JsSpider : Spider {
                         val bytes = bytecode(Base64.decode(text.replace("//DRPY", ""), Base64.URL_SAFE))
                         return bytes ?: compileEmptyModule(moduleName)
                     } catch (th: Throwable) {
-                        LOG.i("echo-bytecode-module-error " + moduleName + ", msg=" + th.message)
+                        AppLog.i("echo-bytecode-module-error " + moduleName + ", msg=" + th.message)
                         return compileEmptyModule(moduleName)
                     }
                 } else if (text.startsWith("//bb")) {
@@ -384,7 +384,7 @@ class JsSpider : Spider {
                         val b = Base64.decode(text.replace("//bb", ""), 0)
                         return byteFF(b)
                     } catch (th: Throwable) {
-                        LOG.i("echo-bytecode-module-error " + moduleName + ", msg=" + th.message)
+                        AppLog.i("echo-bytecode-module-error " + moduleName + ", msg=" + th.message)
                         return compileEmptyModule(moduleName)
                     }
                 } else {
@@ -402,19 +402,19 @@ class JsSpider : Spider {
         })
         requireNotNull(ctx) { "js context not ready" }.setConsole(object : QuickJSContext.Console {
             override fun log(s: String?) {
-                LOG.i("echo-QuJs " + s)
+                AppLog.i("echo-QuJs " + s)
             }
 
             override fun info(s: String?) {
-                LOG.i("echo-QuJs " + s)
+                AppLog.i("echo-QuJs " + s)
             }
 
             override fun warn(s: String?) {
-                LOG.i("echo-QuJs " + s)
+                AppLog.i("echo-QuJs " + s)
             }
 
             override fun error(s: String?) {
-                LOG.i("echo-QuJs " + s)
+                AppLog.i("echo-QuJs " + s)
             }
         })
 
@@ -430,14 +430,14 @@ class JsSpider : Spider {
             try {
                 requireNotNull(ctx) { "js context not ready" }.globalObject.context.evaluate(net)
             } catch (th: Throwable) {
-                LOG.e("JsSpider", th)
+                AppLog.e("JsSpider", th)
             }
         }
         preloadTemplate()
     }
 
     private fun compileEmptyModule(moduleName: String?): ByteArray? {
-        LOG.i("echo-getModuleBytecode empty :" + moduleName)
+        AppLog.i("echo-getModuleBytecode empty :" + moduleName)
         return emptyModuleBytecode
     }
 
@@ -454,7 +454,7 @@ class JsSpider : Spider {
             }
             return requireNotNull(ctx) { "js context not ready" }.compileModule(content, moduleName)
         } catch (th: Throwable) {
-            LOG.i("echo-compileModule-error " + moduleName + ", msg=" + th.message)
+            AppLog.i("echo-compileModule-error " + moduleName + ", msg=" + th.message)
             return compileEmptyModule(moduleName)
         }
     }
@@ -478,7 +478,7 @@ class JsSpider : Spider {
                     "globalThis.getMubans = tpl.getMubans;"
             requireNotNull(ctx) { "js context not ready" }.evaluateModule(template, "tv_box_template.js")
         } catch (th: Throwable) {
-            LOG.i("echo-preloadTemplate-error " + th.message)
+            AppLog.i("echo-preloadTemplate-error " + th.message)
         }
     }
 
@@ -491,7 +491,7 @@ class JsSpider : Spider {
             if (classes.isEmpty()) invokeSingle(clz, obj)
             if (classes.size >= 1) invokeMultiple(clz, obj)
         } catch (e: Throwable) {
-            LOG.e("JsSpider", e)
+            AppLog.e("JsSpider", e)
         }
     }
 
@@ -563,14 +563,14 @@ class JsSpider : Spider {
             val result = pending.get(CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             result.get(CALL_TIMEOUT_MS)
         } catch (e: Exception) {
-            LOG.i("echo-js-call-failed " + e)
+            AppLog.i("echo-js-call-failed " + e)
             null
         }
     }
 
     private fun toProxyResult(value: Any?): Array<Any?>? {
         val array = value as? JSArray ?: run {
-            LOG.i("echo-js-proxy-result " + (value?.javaClass?.simpleName ?: "null"))
+            AppLog.i("echo-js-proxy-result " + (value?.javaClass?.simpleName ?: "null"))
             return null
         }
         val size = array.length()
@@ -615,7 +615,7 @@ class JsSpider : Spider {
             if (content.contains("base64,")) content = content.substring(content.indexOf("base64,") + 7)
             ByteArrayInputStream(Base64.decode(content, Base64.DEFAULT))
         } catch (e: Exception) {
-            LOG.e("JsSpider", e)
+            AppLog.e("JsSpider", e)
             proxyBody(raw)
         }
     }
@@ -644,7 +644,7 @@ class JsSpider : Spider {
                     headers[key] = json.optString(key)
                 }
             } catch (e: JSONException) {
-                LOG.i("getHeader: 无法解析 String 为 JSON" + e)
+                AppLog.i("getHeader: 无法解析 String 为 JSON" + e)
             }
         } else if (headerRaw is Map<*, *>) {
             for ((k, v) in headerRaw) {
@@ -723,7 +723,7 @@ class JsSpider : Spider {
         private fun bytecode(bytes: ByteArray?): ByteArray? {
             if (bytes == null || bytes.isEmpty()) return null
             if (bytes[0] == BYTECODE_VERSION) return bytes
-            LOG.i("echo-bytecode-version-mismatch actual=" + bytes[0] + ", expected=" + BYTECODE_VERSION)
+            AppLog.i("echo-bytecode-version-mismatch actual=" + bytes[0] + ", expected=" + BYTECODE_VERSION)
             return null
         }
     }

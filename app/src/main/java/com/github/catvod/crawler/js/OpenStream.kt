@@ -1,6 +1,6 @@
 package com.github.catvod.crawler.js
 
-import com.github.tvbox.osc.util.LOG
+import com.github.avbox.osc.util.AppLog
 import okhttp3.Call
 import okhttp3.Response
 import okio.Buffer
@@ -26,7 +26,7 @@ class OpenStream(private val call: Call, private val response: Response, val ses
                 buffer.readByteArray()
             }
         } catch (th: Throwable) {
-            LOG.e("OpenStream", th)
+            AppLog.e("OpenStream", th)
             release(true)
             null
         }
@@ -41,13 +41,13 @@ class OpenStream(private val call: Call, private val response: Response, val ses
         try {
             response.close()
         } catch (th: Throwable) {
-            LOG.e("OpenStream", th)
+            AppLog.e("OpenStream", th)
         }
         if (abort) {
             try {
                 call.cancel()
             } catch (th: Throwable) {
-                LOG.e("OpenStream", th)
+                AppLog.e("OpenStream", th)
             }
         }
         return true

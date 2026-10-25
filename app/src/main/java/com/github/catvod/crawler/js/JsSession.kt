@@ -1,7 +1,7 @@
 package com.github.catvod.crawler.js
 
-import com.github.tvbox.osc.net.OkGoHelper
-import com.github.tvbox.osc.util.LOG
+import com.github.avbox.osc.net.HttpClients
+import com.github.avbox.osc.util.AppLog
 
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -34,7 +34,7 @@ class JsSession private constructor(val id: Int) {
         return synchronized(this) {
             val again = if (redirect) redirectClient else noRedirectClient
             if (again != null) return@synchronized again
-            val base = if (redirect) OkGoHelper.getDefaultClient() else OkGoHelper.getNoRedirectClient()
+            val base = if (redirect) HttpClients.defaultClient else HttpClients.noRedirectClient
             val built = requireNotNull(base) { "okhttp client not ready" }.newBuilder().cookieJar(jar).build()
             if (redirect) redirectClient = built else noRedirectClient = built
             built
@@ -61,7 +61,7 @@ class JsSession private constructor(val id: Int) {
         try {
             cancelCalls()
         } catch (th: Throwable) {
-            LOG.d("JsSession", "cancel calls failed")
+            AppLog.d("JsSession", "cancel calls failed")
         }
         jar.clear()
     }

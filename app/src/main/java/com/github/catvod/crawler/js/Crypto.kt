@@ -2,7 +2,7 @@ package com.github.catvod.crawler.js
 
 import android.util.Base64
 
-import com.github.tvbox.osc.util.LOG
+import com.github.avbox.osc.util.AppLog
 
 import java.nio.charset.Charset
 import java.security.Key
@@ -37,7 +37,7 @@ class Crypto {
                 val inBuf = if (inBase64) Base64.decode(text.replace("_", "/").replace("-", "+"), Base64.DEFAULT) else text.toByteArray(Charsets.UTF_8)
                 return if (outBase64) Base64.encodeToString(cipher.doFinal(inBuf), Base64.NO_WRAP) else String(cipher.doFinal(inBuf), Charsets.UTF_8)
             } catch (e: Exception) {
-                LOG.e("Crypto", e)
+                AppLog.e("Crypto", e)
                 return ""
             }
         }
@@ -64,7 +64,7 @@ class Crypto {
                 }
                 return if (outBase64) Base64.encodeToString(outBytes, Base64.NO_WRAP) else String(outBytes, Charsets.UTF_8)
             } catch (e: Exception) {
-                LOG.e("Crypto", e)
+                AppLog.e("Crypto", e)
                 return ""
             }
         }

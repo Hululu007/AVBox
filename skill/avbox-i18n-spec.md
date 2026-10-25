@@ -16,7 +16,7 @@
 
 - 全仓 `R.string.` 引用 **0 处**,`res/values/strings.xml` 只有 `app_name` —— i18n 基础设施为零,但也没有"资源/硬编码并存"的历史包袱;
 - 文案主战场在 Compose(`ui/` + `ui/player/` 共 43 文件 435 处);layout XML 只有 2 个文件且无硬编码文本;`player/` fork 模块几乎无 UI 文案;
-- 项目已有一套**数据侧**简繁字符映射(`crawler/js/Trans.java`,供爬虫与弹幕搜索用)。语言设置落地后把它的门控从"系统 Locale"改为"应用语言",源返回的片名/站点名即可跟随转繁体 —— 繁体适配的额外收益(§4.5)。
+- 项目已有一套**数据侧**简繁字符映射(`crawler/js/Trans.kt`,供爬虫与弹幕搜索用)。语言设置落地后把它的门控从"系统 Locale"改为"应用语言",源返回的片名/站点名即可跟随转繁体 —— 繁体适配的额外收益(§4.5)。
 
 ## 1. 现状盘点(2026-09-21 实测)
 
@@ -43,22 +43,22 @@
 
 **实施后(2026-09-22)**:生产 645 处全部归零(外置为资源 或 按 §1.3 红线/日志判据 `// i18n: keep`);落 `values/strings.xml` **424 条**;第 2 步落 `values-en/strings.xml` **424 条**(英语译文,不新增 key);单测 265 处保持不动。
 
-文案密度 Top(生产代码,完整清单见附录 A):
+文案密度 Top(生产代码,完整清单见附录 A;下表为 2026-09-22 盘点值,文案现已全部外置为 0):
 
 | 文件 | 条数 | 备注 |
 |---|---|---|
 | `ui/page/SettingsPage.kt` | 37 | 设置 tab(分组标题 / 开关名 / 弹窗) |
 | `ui/page/ConfigManagePage.kt` | 35 | 配置管理页 |
-| `api/ApiConfig.java` | 33 | 源加载提示(Toast,源 msg 透传除外) |
-| `player/PlaybackController.java` | 25 | 播放链路提示(Toast) |
-| `ui/activity/LiveScreens.kt` | 21 | 直播页 UI |
+| `api/ApiConfig.kt` | 33 | 源加载提示(Toast,源 msg 透传除外) |
+| `player/PlaybackController.kt` | 25 | 播放链路提示(Toast) |
+| `ui/LiveScreens.kt` | 21 | 直播页 UI |
 | `ui/player/DanmuSheets.kt` | 20 | 弹幕设置面板 |
-| `ui/activity/DetailScreens.kt` | 20 | 详情页 UI |
+| `ui/DetailScreen.kt` | 20 | 详情页 UI |
 | `ui/page/PlaySettingsPage.kt` | 20 | 播放设置页 |
 | `ui/player/SubtitleSheets.kt` | 19 | 字幕设置面板 |
-| `player/controller/ComposeVideoController.kt` | 19 | 播放器提示 |
+| `player/controller/InfoOsdText.kt` | 19 | 播放器提示 |
 | `ui/page/ThemeSettingsPage.kt` | 19 | 主题设置页 |
-| `player/PlayerHelper.kt` | 17 | 播放器名/缩放名 + 外链播放器提示 |
+| `player/thirdparty/PlayerCatalog.kt` | 17 | 播放器名 + 外链播放器提示（缩放名同批拆到 `PlayerTextFormat`） |
 
 通用词复用度高(去重收益明显):`返回` 9 / `取消` 6 / `播放` 6 / `默认` 5 / `重试` 5 / `全部` 5 / `直播` 5 …… ⇒ 资源 key 按「通用 / 域」两级拆分(§3.2)。
 
@@ -66,19 +66,19 @@
 
 | # | 位置 | 中文值 | 性质 |
 |---|---|---|---|
-| R1 | `"硬解码"` / `"软解码"` 取值点已收窄(2026-09-29 IJK 内核移除后:KV 只剩 `EXO_DECODE`、播放配置只剩 `exo`),仍集中在 `bean/LivePlayerManager`、`player/PlaybackController`、`player/controller/ComposeVideoController`、`ui/page/PlaySettingsPage` | `硬解码` / `软解码` | **KV 持久化值**(`HawkConfig.EXO_DECODE`)+ 播放配置 JSON 值 + 逻辑判据(`equals("硬解码")` / 切解码写回)。显示可翻译,**值一律不动** |
-| R2 | `sourcedata/SortLoader.java:135` | `name.endsWith("搜")` | 站点命名约定(数据规则),不能翻译 |
-| R3 | `ui/activity/LiveEpgParser.kt:155` | `contains("未提供")` / `contains("暂无")` | EPG 文本内容判据(数据规则) |
+| R1 | `"硬解码"` / `"软解码"` 取值点已收窄(2026-09-29 IJK 内核移除后:KV 只剩 `EXO_DECODE`、播放配置只剩 `exo`),仍集中在 `bean/LivePlayerManager`、`player/PlaybackController`、`player/controller/InfoOsdText`、`ui/page/PlaySettingsPage` | `硬解码` / `软解码` | **KV 持久化值**(`KVKeys.EXO_DECODE`)+ 播放配置 JSON 值 + 逻辑判据(`equals("硬解码")` / 切解码写回)。显示可翻译,**值一律不动** |
+| R2 | `sourcedata/SortLoader.kt:135` | `name.endsWith("搜")` | 站点命名约定(数据规则),不能翻译 |
+| R3 | `ui/LiveEpgParser.kt:155` | `contains("未提供")` / `contains("暂无")` | EPG 文本内容判据(数据规则) |
 | R4 | `io/FileUtils.kt:474` | `contains("模板.js")` | 本地文件名约定 |
-| R5 | `player/PlaybackController.java:1232` | `contains("歌词")` | 媒体文件名约定 |
+| R5 | `player/PlaybackController.kt:1232` | `contains("歌词")` | 媒体文件名约定 |
 | R6 | `crawler/js/Trans` 字表 + `DanmakuApi` 的 `Trans.t2s` | 简繁字表 | 数据转换(§4.5),不是 UI 文案 |
-| R7 | `api/ApiConfig.addSuperParse` | `"超级解析"` | 解析名参与 `HawkConfig.DEFAULT_PARSE` 持久化 + `getName().equals()` 比较 ⇒ 值不动(第 1 步实测发现) |
-| R8 | `sourcedata/DetailLoader.java:174`（`createPushDetail`） | `"推送"` / `"播放$" + url` / `InfoBean("播放")` | 合成 Movie 的结构化数据(type / 线路 flag / `名字$地址` 格式),进历史与播放链路 ⇒ 值不动(第 1 步实测发现) |
-| R9 | `sourcedata/SourceHelper.java:44`（常量定义）+ 5 个 Loader 的 9 处引用（`DetailLoader`1 / `ListLoader`3 / `PlayLoader`1 / `SearchLoader`2 / `SortLoader`2；另 `SearchLoader.java:131` 是仅进日志的变体文案） | `IllegalStateException("网络请求错误")`（9 处引用 + 1 处日志变体；`player/PlayUrlResolver.java:332` 另有 1 处同文案字面量） | 只经 `convertResponse → onError → LOG.i` 进日志,无 UI 出口 ⇒ 不翻 |
+| R7 | `api/ApiConfig.addSuperParse` | `"超级解析"` | 解析名参与 `KVKeys.DEFAULT_PARSE` 持久化 + `getName().equals()` 比较 ⇒ 值不动(第 1 步实测发现) |
+| R8 | `sourcedata/DetailLoader.kt:174`（`createPushDetail`） | `"推送"` / `"播放$" + url` / `InfoBean("播放")` | 合成 Movie 的结构化数据(type / 线路 flag / `名字$地址` 格式),进历史与播放链路 ⇒ 值不动(第 1 步实测发现) |
+| R9 | `sourcedata/SourceHelper.kt:44`（常量定义）+ 5 个 Loader 的 9 处引用（`DetailLoader`1 / `ListLoader`3 / `PlayLoader`1 / `SearchLoader`2 / `SortLoader`2；另 `SearchLoader.java:131` 是仅进日志的变体文案） | `IllegalStateException("网络请求错误")`（9 处引用 + 1 处日志变体；`player/PlayUrlResolver.java:332` 另有 1 处同文案字面量） | 只经 `convertResponse → onError → AppLog.i` 进日志,无 UI 出口 ⇒ 不翻 |
 | R10 | `ui/page/HistoryPage.kt` | `Regex("(\\d+)\\s*[集期]")` | 匹配源数据(片名/备注)里的集数标记,不是 UI 文案 |
 | R11 | ~~`api/ApiConfig.defaultIJKADS`~~(已作废) | ijk 分组的 `"硬解码"` / `"软解码"` | **已作废(2026-09-29:IJK 内核移除,`default_config.json` 的 `ijk` 段、`IJKCode` 与 `getIJKCodec`/`getCurrentIJKCode` 一并删除)** |
-| R12 | `ui/activity/DetailViewModel.kt` | `SOURCE_EMPTY_MSG = "数据列表"` | 源返回 msg 的"非错误"哨兵值(数据规则)⇒ 不翻 |
-| R13 | `ui/activity/DetailViewModel.kt` | `Regex("(?i)(?:ep|第|e|[\\-\\.\\s])\\s?(\\d{1,4})")` | 从源侧标题里抽集数,关键词是数据规则 ⇒ 不翻 |
+| R12 | `ui/DetailViewModel.kt` | `SOURCE_EMPTY_MSG = "数据列表"` | 源返回 msg 的"非错误"哨兵值(数据规则)⇒ 不翻 |
+| R13 | `ui/DetailViewModel.kt` | `Regex("(?i)(?:ep|第|e|[\\-\\.\\s])\\s?(\\d{1,4})")` | 从源侧标题里抽集数,关键词是数据规则 ⇒ 不翻 |
 
 实施要求:改这些文件时只替换 UI 展示点;**R1–R13 的值点保持字面量不动**,行尾(或上一行)加 `// i18n: keep` 标记,由 §7-A 校验脚本白名单化。
 
@@ -86,7 +86,7 @@
 
 ### 1.4 已有资产:`Trans` 简繁映射
 
-- `app/src/main/java/com/github/catvod/crawler/js/Trans.java`:约 2000 对简繁字符映射(单例 `Loader.INSTANCE`),`s2t` / `t2s` 双向;
+- `app/src/main/java/com/github/catvod/crawler/js/Trans.kt`:约 2000 对简繁字符映射(单例 `Loader.INSTANCE`),`s2t` / `t2s` 双向;
 - 出口:① JS 爬虫 `Global.s2t/t2s`;② 弹幕搜索 `api/DanmakuApi` 用 `Trans.t2s` 把片名转简体再查;
 - 启用判据:**第 3 步已改造**为 `LanguageManager.isTraditional()`(按语言签名懒重建,见 §4.5);改造前是构造时 `Locale.getDefault().getCountry().equals("TW")`(一次性固化、与应用内语言无关,港区不生效);
 - 能力边界:**只解决字形,不解决用词**(港"軟件" / 台"軟體"、"網絡" vs "網路")⇒ 繁体 UI 文案仍需人工准备,不能靠字表生成。
@@ -201,11 +201,11 @@ object LanguageManager {
 - ⚠️ 重启实现的三个坑(前两条 **2026-09-22 真机实测**):① **不要用 `AlarmManager` 登记后等触发** —— 进程已死而新进程未起的那段空档没有窗口 ⇒ 可见**黑屏**,且部分 ROM(vivo)在进程被杀后会先自动恢复一次 ⇒ 表现为**黑屏 + 重启两次**;② flags 用 `CLEAR_TOP` **而不是** `CLEAR_TASK`(清任务会让 AMS 失去要恢复的 ActivityRecord,反而起不来);③ **写 KV 必须在弹窗之前(选中时)完成,不要放在确认回调里紧跟 `restartApp`** —— KV(MMKV)写入有落盘窗口(`KV.java` 注释:约 1s),"写"与"kill"之间要靠弹窗交互那段间隔兜底;若确认时才写,就得在 kill 前加延迟,体验会与参考项目不一致;④ **确认后不要"同一帧"就 kill** —— `pending = null` 只是请求重组,弹窗要**下一帧**才从屏幕消失,同帧 `killProcess` 会把弹窗留在最后一帧(2026-09-22 真机现象:"点完确认后弹窗还在")。做法:置 `restarting` 后由 `LaunchedEffect + withFrameNanos`(等 2 帧,~32ms 无感)再调 `restartApp`。
 
 **为什么不用"立刻生效"**(2026-09-22 评估结论):
-- 立刻生效需要一整套运行时规则:三处 `attachBaseContext` 包裹 + 遍历 `AppManager.snapshot()` 逐个 `recreate()` + 长生命周期组件必须走 `LanguageManager.localized()` + 禁进程级文案缓存 —— 规则多、易踩(每条新文案都要选对取法);
+- 立刻生效需要一整套运行时规则:三处 `attachBaseContext` 包裹 + 遍历 `ActivityStack.snapshot()` 逐个 `recreate()` + 长生命周期组件必须走 `LanguageManager.localized()` + 禁进程级文案缓存 —— 规则多、易踩(每条新文案都要选对取法);
 - 且存在确定性缺陷:① **解析期取文案进 bean 的位置**(直播设置面板组名 / `源%d` / 默认线名)切语言后不刷新,需重解析直播配置;② 通知渠道名建后不可改(Android 机制);③ `recreate()` 丢页面临时状态(非 saveable 的 `remember`、`DetailActivity.fullScreen` 等普通字段 ⇒ 播放页可能从全屏退回预览);④ 播放页重建后的重挂路径、AutoSize × 包裹 Configuration 叠加,只有真机才能验(§8)。
 - 重启方案把正确性从"运行时"搬到"启动时":只需 `attachBaseContext` 包裹一次(已实现),确定性更高;代价 = 切语言中断播放 + 回首页(接受)。
 
-`LanguageManager.localized()` **保留**(在重启语义下依然正确且无害,长生命周期组件照旧走它);上一轮为「立刻生效」新增的 `AppManager.snapshot()` **已随该方案一并移除**(避免死代码,历史实现见 git)。
+`LanguageManager.localized()` **保留**(在重启语义下依然正确且无害,长生命周期组件照旧走它);上一轮为「立刻生效」新增的 `ActivityStack.snapshot()` **已随该方案一并移除**(避免死代码,历史实现见 git)。
 
 ### 4.4 文案访问方式
 
@@ -214,7 +214,7 @@ object LanguageManager {
 | Compose | `stringResource(R.string.xxx)`;组合外(VM 回调 / Toast)用 `context.getString(R.string.xxx)` |
 | **无 Context 的 Java/Kotlin(数据层/ViewModel/Service 内的长生命周期对象)** | `LanguageManager.localized(App.getInstance()).getString(R.string.xxx)` —— ⚠️ Application / Service 的 base 只在创建时挂一次,切语言不会重挂,**直接 `App.getInstance().getString(...)` 会停在旧语言**;`localized()` 的结果按 `set()` 失效 |
 | Java(页面/Activity/有 Context) | `getString(R.string.xxx)` / `mContext.getString(...)` |
-| Java(静态工具方法,如 `PlayerHelper.getScaleName`) | 推荐**改为返回资源 id**,由调用点决定文案;备选"接收 Context 参数" |
+| Java(静态工具方法,如 `PlayerTextFormat.scaleName`) | 推荐**改为返回资源 id**,由调用点决定文案;备选"接收 Context 参数" |
 | Service / 通知 | Service 内 `getString`(已包裹,§4.2) |
 | Toast | `Toast.makeText(context, context.getString(R.string.xxx), ...)` |
 
@@ -255,7 +255,7 @@ Android 13+ 的「系统设置 → 应用 → 语言」需要 `res/xml/locales_c
 
 | 步骤 | 语言 | 内容(该步做全) | 出口条件 | 状态 |
 |---|---|---|---|---|
-| 第 1 步 | 简体中文(默认) | ① i18n 框架:`LanguageManager`+KV 键 + 三处 Context 包裹(§4.2)+ `AppManager.snapshot()` + 设置页「语言」入口(此刻只放开"跟随系统 / 简体");② **全部文案外置**:UI 43 文件 435 处 + 非 UI 32 文件 213 处逐条甄别(附录 A);③ §1.3 红线打 `// i18n: keep`;④ `values/` 的值 = 现文案原文 | §7-A 静态扫描全绿(字面量=0、白名单齐);§7-B 红线不变;简体走查零行为回归(与改造前逐页对照);`values/strings.xml` = 实际外置数(**424 条**) | **代码完成**(2026-09-22 收口:全部文案外置完成,`values/strings.xml` **424 条**;§7-A 卡口全绿 = ui 0 处 + 非 ui 0 处;构建 + 230 单测通过;**待真机走查**;语言切换 2026-09-22 改为「重启后生效」,见 §4.3) |
+| 第 1 步 | 简体中文(默认) | ① i18n 框架:`LanguageManager`+KV 键 + 三处 Context 包裹(§4.2)+ `ActivityStack.snapshot()` + 设置页「语言」入口(此刻只放开"跟随系统 / 简体");② **全部文案外置**:UI 43 文件 435 处 + 非 UI 32 文件 213 处逐条甄别(附录 A);③ §1.3 红线打 `// i18n: keep`;④ `values/` 的值 = 现文案原文 | §7-A 静态扫描全绿(字面量=0、白名单齐);§7-B 红线不变;简体走查零行为回归(与改造前逐页对照);`values/strings.xml` = 实际外置数(**424 条**) | **代码完成**(2026-09-22 收口:全部文案外置完成,`values/strings.xml` **424 条**;§7-A 卡口全绿 = ui 0 处 + 非 ui 0 处;构建 + 230 单测通过;**待真机走查**;语言切换 2026-09-22 改为「重启后生效」,见 §4.3) |
 | 第 2 步 | 英语 | ① `values-en/strings.xml`(**424 条**,来源见 §5-D6);② 语言入口放开"英语"(已放开 `delivered`);③ 英语逐页走查并修布局(§7-D) | §7-A key 集合对齐(**已达**:`i18n_align.py en` = key 集合/占位符/空值/空白全 PASS);英语走查无截断/挤压(高风险区逐个过);冷启动英语无中文闪现(§7-C) | **代码完成**(2026-09-22:资源 424 条 + `delivered` 放开 English + `assembleDebug` 绿;**待真机走查** §7-C/D) |
 | 第 3 步 | 繁体中文(台湾) | ① `values-b+zh+Hant/` 繁体基础层(用词取台湾,**424 条**);② **`Trans` 门控改造**(§4.5:跟随应用语言 + 切语言缓存失效,采用"语言签名懒重建");③ 语言入口放开"繁體(台灣)";④ 繁体走查 | §7-A key 对齐(**已达**:`i18n_align.py b+zh+Hant` = 424=424 PASS);`zh-TW` 系统语言命中链路验证(§7-C);源数据(片名/站点名)在繁体档确实转繁体 | **代码完成**(2026-09-22:基础层 424 条 + `Trans` 改造 + 入口放开 + `assembleDebug` 绿;**待真机走查** §7-C/D) |
 | 第 4 步 | 繁体中文(香港) | ① 盘点港台用词差异条目 → `values-zh-rHK/`(只放差异,**66 条**:網絡 / 軟件·互聯網 / 緩存 / 隊列 / 列表 / 導航 / 控件 / 視頻 / 音頻 / 屏幕·全屏 / 點播 / 超時 / 地址 / 獲取·資訊 / 文件夾·數據 / 本地 / 線程 / 記錄·項 / 死機 / 收起 / 訪問·項目);② 语言入口放开"繁體(香港)";③ 香港用词走查 | 差异条目全部落地(**已达**:`i18n_align.py zh-rHK --subset` = 66 条子集 PASS,0 多余/0 冗余(与上级层同值)/0 占位符失配);`zh-HK` 命中链路验证(含"未覆盖条目回落基础层"的行为确认) | **代码完成**(2026-09-22:审查补齐后 66 条;**待真机走查** §7-C/D) |
@@ -285,7 +285,7 @@ Android 13+ 的「系统设置 → 应用 → 语言」需要 `res/xml/locales_c
 - 无"中文片段拼接"(`"共" + n + "集"` 形态);
 - 占位符一致性:各语言条目的 `%1$s` 参数齐全;
 - ⚠️ **扫描盲区 1:`\uXXXX` 转义中文** —— 状态机只认原字符,转义写法不命中。2026-09-22 审查专项扫描(全仓 118 处):**显示值**已补齐(轨道前缀 Ijk/Exo 的音轨·视轨·字幕、Exo 声道标签 单声道/立体声/`%1$d 声道`),剩余 100 处均为**数据判据**(`ExoPlayer`/`IjkMediaPlayer` 语言映射表、`DanmakuApi` 电影·国语·粤语判据、`EpisodeMatcher` "第"、`SourceHelper` "豆瓣"、`ExoPlayer` "未知" 过滤),按 keep 处理、英语步前复核;
-- ⚠️ **扫描盲区 2:日志豁免正则** —— `i18n_hardcoded_scan.LOG_HINT` 原含过宽模式 `KL`/`TAG,`(任意含此串的行都豁免);2026-09-22 收紧为 `LOG\.|Log\.[dviwe]|printStackTrace|System\.out|DebugLog|logger\.|LogUtils`,严格模式对拍 **0 假阴性**。
+- ⚠️ **扫描盲区 2:日志豁免正则** —— `i18n_hardcoded_scan.LOG_HINT` 原含过宽模式 `KL`/`TAG,`(任意含此串的行都豁免);2026-09-22 收紧为 `AppLog\.|Log\.[dviwe]|printStackTrace|System\.out|DebugLog|logger\.|LogUtils`,严格模式对拍 **0 假阴性**。
 
 **B. 红线校验**
 
@@ -323,10 +323,10 @@ Android 13+ 的「系统设置 → 应用 → 语言」需要 `res/xml/locales_c
 1. **`attachBaseContext` 早于 `KV.init`**:语言判定依赖的 KV 必须在 `App.attachBaseContext` 内提前 `KV.init`(幂等,可重复)。
 2. **`values-b+zh+Hant` 是脚本限定不是地区限定**:港台用词差异只能靠 `values-zh-rTW` / `values-zh-rHK` 覆盖(优先级:地区 > 脚本 > 默认)。
 3. **`Trans.pass()` 语义是"不转换" = `!trans`**:改造别把方向弄反;`t2s` 给弹幕搜索的语义恒为"转简体",与 UI 语言无关。
-4. **不要翻译 R1–R5 的字面量**,也不要顺手把 `HawkConfig` 的键名/值改成英文(键名是持久化契约)。
+4. **不要翻译 R1–R5 的字面量**,也不要顺手把 `KVKeys` 的键名/值改成英文(键名是持久化契约)。
 5. **`stringResource` 只能在 Composable 内用**;VM / 回调 / Java 里用 `context.getString`。
 6. **占位符必须带位置**(`%1$s`),多语言重排参数才不会错位。
-7. 切语言**要重启进程**(2026-09-22 已确认反转口径);正确姿势(沿用参考实现)= **选中语言即 `LanguageManager.set` 写 KV(提前写,留落盘时间) → 确认后 `restartApp()` 立即 `startActivity(CLEAR_TOP|NEW_TASK)` + `killProcess`**;取消则 `set(原语言)` 回滚。⚠️ 四个反例:① 遍历 `AppManager` 快照 `recreate()`(丢页面临时状态、解析期文案不刷新,见 §4.3);② `AlarmManager` 登记后等触发(实测**黑屏 + 重启两次**);③ `CLEAR_TASK`(AMS 失去要恢复的 ActivityRecord);④ 把 `set` 放在确认回调里紧跟 `restartApp`(写与 kill 间隔≈0,可能丢设置);⑤ 确认回调里 `pending = null` 后**同帧** `restartApp`(弹窗残留最后一帧,须等 1~2 帧)。
+7. 切语言**要重启进程**(2026-09-22 已确认反转口径);正确姿势(沿用参考实现)= **选中语言即 `LanguageManager.set` 写 KV(提前写,留落盘时间) → 确认后 `restartApp()` 立即 `startActivity(CLEAR_TOP|NEW_TASK)` + `killProcess`**;取消则 `set(原语言)` 回滚。⚠️ 四个反例:① 遍历 `ActivityStack` 快照 `recreate()`(丢页面临时状态、解析期文案不刷新,见 §4.3);② `AlarmManager` 登记后等触发(实测**黑屏 + 重启两次**);③ `CLEAR_TASK`(AMS 失去要恢复的 ActivityRecord);④ 把 `set` 放在确认回调里紧跟 `restartApp`(写与 kill 间隔≈0,可能丢设置);⑤ 确认回调里 `pending = null` 后**同帧** `restartApp`(弹窗残留最后一帧,须等 1~2 帧)。
 8. **语言入口按步放开**(`LanguageManager.available()`):未交付的语言不得出现在设置页 —— 否则切到半成品语言(缺的条目回落简体)会误报成 bug。
 9. **资源里的撇号必须转义或改写**:Android 字符串中裸 `'` 会构建失败(`Apostrophe not preceded by \`)⇒ 英文文案优先改写(用 `cannot`、避免属格),必须使用时写 `\'`;双引号同理(`\"`,或按第 2 步做法改用弯引号 `“ ”`)。
 10. **语言名条目用 endonym(各自语言的写法)**:语言选择列表里写 `简体中文` / `繁體(台灣)` / `English`,不按界面语言译成 "Simplified Chinese"(与系统语言选择器一致);`i18n_align.py` 的 CJK 残留白名单正是这三个 key。
@@ -341,9 +341,9 @@ Android 13+ 的「系统设置 → 应用 → 语言」需要 `res/xml/locales_c
 >
 > **完成情况(2026-09-22)**:645 处已全部归零 —— 绝大多数外置为资源,少部分按 §1.3 红线/日志判据改为 `// i18n: keep`;卡口实测 **ui 0 处 + 非 ui 0 处**。
 
-**A.1 UI 层(43 文件 / 435 处)** —— `ui/page/`:`SettingsPage` 37、`ConfigManagePage` 35、`PlaySettingsPage` 20、`ThemeSettingsPage` 19、`PreferenceSettingsPage` 17、`HomePage` 15、`HistoryPage` 14、`MainScreen` 9、`PreloadSettingsPage` 8、`HomeGridLayout` 7、`CollectPage` 7、`HomeViewModel` 2、`VodCardAction` 1;`ui/activity/`:`LiveScreens` 21、`DetailScreens` 20、`SearchActivity` 13、`LivePlayActivity` 11、`DetailViewModel` 8、`SearchScreens` 7、`LiveEpgParser` 4、`PartitionListActivity` 3、`DetailActivity` 3、`MusicPlayerActivity` 2、`LivePlayViewModel` 2、`ConfigManageActivity` 1;`ui/components/`:`SearchSettingsSheet` 10、`VodCardMenu` 7、`ThemeColorPickerSheet` 5、`FilterSheet` 3、`VodCard` 2、`HeroCarousel` 2;`ui/music/`:`MusicPlayerScreen` 11、`MusicPlayerState` 3;`ui/theme/`:`ThemeConfig` 17、`Theme` 2;`ui/player/`:`PlayContainer` 16;`ui/player/`:`DanmuSheets` 20、`SubtitleSheets` 19、`CastSheet` 13、`PlayerBottomBar` 10、`PlayerOverlay` 4、`PlayerLayers` 4、`PlayerTopBar` 1。
+**A.1 UI 层(43 文件 / 435 处)** —— `ui/page/`:`SettingsPage` 37、`ConfigManagePage` 35、`PlaySettingsPage` 20、`ThemeSettingsPage` 19、`PreferenceSettingsPage` 17、`HomePage` 15、`HistoryPage` 14、`MainScreen` 9、`PreloadSettingsPage` 8、`HomeGridLayout` 7、`CollectPage` 7、`HomeViewModel` 2、`VodCardAction` 1;`ui/`:`LiveScreens` 21、`DetailScreen` 20、`SearchActivity` 13、`LivePlayActivity` 11、`DetailViewModel` 8、`SearchScreens` 7、`LiveEpgParser` 4、`PartitionListActivity` 3、`DetailActivity` 3、`MusicPlayerActivity` 2、`LivePlayViewModel` 2、`ConfigManageActivity` 1;`ui/components/`:`SearchSettingsSheet` 10、`VodCardMenu` 7、`ThemeColorPickerSheet` 5、`FilterSheet` 3、`VodCard` 2、`HeroCarousel` 2;`ui/music/`:`MusicPlayerScreen` 11、`MusicPlayerState` 3;`ui/theme/`:`ThemeConfig` 17、`Theme` 2;`ui/player/`:`PlayContainer` 16;`ui/player/`:`DanmuSheets` 20、`SubtitleSheets` 19、`CastSheet` 13、`PlayerBottomBar` 10、`PlayerOverlay` 4、`PlayerLayers` 4、`PlayerTopBar` 1。
 
-**A.2 非 UI 层(32 文件 / 213 处,逐条甄别)** —— `api/`:ApiConfig 33、SpiderLoader 5、DanmakuApi 4、ConfigParser 1;`player/`:PlaybackController 25、PlayUrlResolver 15、ComposeVideoController 19、PlaybackService 6、M3u8PurifyUseCase 2、PlayerUiState 2、IjkMediaPlayer 2、ExoPlayer 1;`util/`:PlayerHelper 17、Thunder 13、LocalConfigHelper 11、DefaultConfig 6、OkGoHelper 4、Proxy 2、FileUtils 2、KV 1、HistoryHelper 1、EpisodeTotals 1、parser/SuperParse 1、live/TxtSubscribe 1;`bean/`:LivePlayerManager 9;`sourcedata/`:SourceViewModel 15;`dlna/`:DLNACastManager 2;`crawler/`:RSAEncrypt 6、Trans 2、JsSpider 1;`python/java/`:PythonSpider 2、PyLog 1。
+**A.2 非 UI 层(32 文件 / 213 处,逐条甄别)** —— `api/`:ApiConfig 33、SpiderLoader 5、DanmakuApi 4、ConfigParser 1;`player/`:PlaybackController 25、PlayUrlResolver 15、InfoOsdText 19、PlaybackService 6、M3u8PurifyUseCase 2、PlayerUiState 2、IjkMediaPlayer 2、ExoPlayer 1;`util/`:PlayerCatalog/PlayerTextFormat 17、Thunder 13、LocalConfigHost 11、DefaultConfig 6、HttpClients 4、Proxy 2、FileUtils 2、KV 1、HistoryHelper 1、EpisodeTotals 1、parser/SuperParse 1、live/TxtSubscribe 1;`bean/`:LivePlayerManager 9;`sourcedata/`:SourceViewModel 15;`dlna/`:DLNACastManager 2;`crawler/`:RSAEncrypt 6、Trans 2、JsSpider 1;`python/java/`:PythonSpider 2、PyLog 1。
 
 > **2026-10-01 注记(结构拆分)**：以上是实施当时的逐文件快照。V5 把播放三件套拆出 5 个协作者（`player/PlaybackTimeouts`/`PlaybackPreload`/`PlaybackFetch`、`player/controller/GestureController`、`ui/player/TrackSelectorDelegate`），相关文案随之迁移（例：手势提示与音轨弹窗跟着走）；卡口以实测为准 —— 复跑 `.tools/i18n_gate.py` 为 **ui 0 处 + 非 ui 0 处**。
 
@@ -369,10 +369,10 @@ Get-ChildItem -Recurse app\src\main\java -Include *.kt,*.java |
 |---|---|---|
 | 2026-09-21 | 初版 | 可行性评估 + 实施方案;数据来源 = `tools/i18n_hardcoded_scan.py` 实测(645 处 / 453 条) |
 | 2026-09-21 | 实施节奏改为"按语言四步" | §3.1 增"实施步"列并重定义繁体结构(基础层 + 香港差异层)、§4.1 增语言白名单 `available()`、§5-D3/D4 改为港台资源结构与分步交付、§6 由 P0–P4 改为四步 + 进度表 + 每步固定动作、§7 增按步取用说明与入口验收、§8/§9 同步 |
-| 2026-09-22 | 第 1 步实施(进行中) | 框架落地(`LanguageManager` + 三处 `attachBaseContext` + `AppManager.snapshot()` + 语言入口,「跟随系统」不包裹);外置 33 文件 ≈465 处、`values/strings.xml` 344 条;§1.3 新增 R7–R13 红线;§4.4 增"无 Context 取文案"行(长生命周期组件走 `LanguageManager.localized`,直用 `App.getInstance().getString` 会停旧语言);§6 状态改"进行中";附录 B 增 4 个配套工具;双副本已同步核哈希 |
+| 2026-09-22 | 第 1 步实施(进行中) | 框架落地(`LanguageManager` + 三处 `attachBaseContext` + `ActivityStack.snapshot()` + 语言入口,「跟随系统」不包裹);外置 33 文件 ≈465 处、`values/strings.xml` 344 条;§1.3 新增 R7–R13 红线;§4.4 增"无 Context 取文案"行(长生命周期组件走 `LanguageManager.localized`,直用 `App.getInstance().getString` 会停旧语言);§6 状态改"进行中";附录 B 增 4 个配套工具;双副本已同步核哈希 |
 | 2026-09-22 | 审查修复(gate 盲区) | ① `\uXXXX` 转义显示值补外置:`IjkMediaPlayer` 音轨/字幕、`ExoPlayer` 音轨/视轨/字幕 + 单声道/立体声/`%1$d 声道`(新增 `player_channel_mono/stereo/count`)—— 转义数 118→100,剩余全为语言映射表等数据判据(keep);② `i18n_hardcoded_scan.LOG_HINT` 收紧(去掉过宽 `KL`/`TAG,`,严格对拍 0 假阴性);③ 复核:`assembleDebug` + 230 单测全绿、卡口仍全绿、`res/*.xml`(除 strings)与 `player/` fork 模块无 UI 文案、`localized()` 调用点全传 Application;④ §7-A 增两条"扫描盲区"登记 |
-| 2026-09-22 | 第 1 步文案外置收口(卡口归零) | ui 层 39→0、非 ui 层 138→0:`i18n_gate.py` = ui 0 / 非 ui 0;`values/strings.xml` **420 条**(声明=引用,无重名/未用/重复值/首尾空白);ui 31 处外置(含 contentDescription、`FilterSheet`/`HeroCarousel` 带参、`MusicPlayerState` 改 `@StringRes labelRes`、`HomeViewModel`/`LivePlayViewModel` 加 `str()`) + 非 ui 54 处外置(`PlayUrlResolver`/`Thunder`/`LocalConfigHelper`/`DanmakuApi`/`SpiderLoader`/`M3u8PurifyUseCase`/`DLNACastManager`/`IjkMediaPlayer`);keep 打标 47 处;`ConfigParser` 的"线路N"回归字面量 keep(数据默认名 + 单测锁定);`PlayerUiState` 片头尾默认值改空串;`OkGoHelper` DNS "关闭"保持索引锚点、显示侧在 `SettingsPage` 映射资源;⚠️ 补 `PlaybackController` 的 `import com.github.tvbox.osc.R` + 静态 `str()`(此前 Java 侧只换引用未定义 helper,Kotlin-only 编译绿灯掩盖);`assembleDebug` + 230 单测全绿 |
-| 2026-09-22 | 语言切换改为"重启后生效"(已确认;真机实测后修正) | §4.3 重写:确认框(内容「重启后生效」,右下确认 / 左下取消)+ 确认后 `LanguageManager.set` + `restartApp()`(新增 `util/AppRestart.kt`:**先 `startActivity(CLEAR_TOP|NEW_TASK)` 再 `killProcess`**,沿用参考实现),附"为什么不用立刻生效"的 4 条缺陷与两条实测反例(**AlarmManager 登记等触发 = 黑屏 + 重启两次**;`CLEAR_TASK` = AMS 失去 ActivityRecord);§7-C 验收改口径(含"取消不生效");§9-7 由"不要重启进程"反转为"要重启进程";新增资源 `settings_language_restart_message`;`LanguageRow` 移除 `recreate()` 遍历与 `AppManager` import;`localized()` 保留、`AppManager.snapshot()` 已移除 |
+| 2026-09-22 | 第 1 步文案外置收口(卡口归零) | ui 层 39→0、非 ui 层 138→0:`i18n_gate.py` = ui 0 / 非 ui 0;`values/strings.xml` **420 条**(声明=引用,无重名/未用/重复值/首尾空白);ui 31 处外置(含 contentDescription、`FilterSheet`/`HeroCarousel` 带参、`MusicPlayerState` 改 `@StringRes labelRes`、`HomeViewModel`/`LivePlayViewModel` 加 `str()`) + 非 ui 54 处外置(`PlayUrlResolver`/`Thunder`/`LocalConfigHelper`/`DanmakuApi`/`SpiderLoader`/`M3u8PurifyUseCase`/`DLNACastManager`/`IjkMediaPlayer`);keep 打标 47 处;`ConfigParser` 的"线路N"回归字面量 keep(数据默认名 + 单测锁定);`PlayerUiState` 片头尾默认值改空串;`HttpClients` DNS "关闭"保持索引锚点、显示侧在 `SettingsPage` 映射资源;⚠️ 补 `PlaybackController` 的 `import com.github.avbox.osc.R` + 静态 `str()`(此前 Java 侧只换引用未定义 helper,Kotlin-only 编译绿灯掩盖);`assembleDebug` + 230 单测全绿 |
+| 2026-09-22 | 语言切换改为"重启后生效"(已确认;真机实测后修正) | §4.3 重写:确认框(内容「重启后生效」,右下确认 / 左下取消)+ 确认后 `LanguageManager.set` + `restartApp()`(新增 `util/AppRestart.kt`:**先 `startActivity(CLEAR_TOP|NEW_TASK)` 再 `killProcess`**,沿用参考实现),附"为什么不用立刻生效"的 4 条缺陷与两条实测反例(**AlarmManager 登记等触发 = 黑屏 + 重启两次**;`CLEAR_TASK` = AMS 失去 ActivityRecord);§7-C 验收改口径(含"取消不生效");§9-7 由"不要重启进程"反转为"要重启进程";新增资源 `settings_language_restart_message`;`LanguageRow` 移除 `recreate()` 遍历与 `ActivityStack` import;`localized()` 保留、`ActivityStack.snapshot()` 已移除 |
 | 2026-09-22 | 文档口径对齐(实施后状态) | §0 摘要、§1.1 基础设施表、§1.2 规模表、§5 决策点(D1/D2 已按推荐实施)、§7 验收清单(标注 A 全绿/B 静态面通过/C·D 待走查)、附录 A(完成情况)、附录 B(关键数字:423 条 / 卡口 0 处 / 230 单测 / `\u` 转义 100 处)由"盘点时"口径更新为"实施后";§6 第 1 步状态保持"代码完成·待真机走查"。注:上一条"420 条"为审查前数字,审查修复新增 `player_channel_*` 3 条 ⇒ 现 **423 条** |
 | 2026-09-22 | 第 2 步(英语)资源与入口落地 | 新增 `values-en/strings.xml`(**424 条**):按 §3.3 术语表统一初翻,key 集合/占位符/空值经 `i18n_align.py en` 逐条对齐(PASS);`LanguageManager.delivered` 放开 `English`(设置页语言入口出现「English」,`languageLabelRes` 已含该分支);语言名条目保留各自语言自称(endonym,见 §9-10),英文允许同值多 key(见 §9-11);`assembleDebug` 绿、卡口仍 0。⚠️ 数字口径:第 1 步落地后又新增 `settings_language_restart_message` ⇒ `values/strings.xml` 实为 **424 条**(上一条修订记录的"423 条"为其时数字);**英语逐页走查(截断/挤压)待真机**(§7-D) |
 | 2026-09-22 | 新增 §3.3 术语表 + §9 坑 9–11 | 术语表(中/英对照 + 约定)供第 3/4 步沿用;§9 增:资源撇号需转义或改写、语言名用 endonym 且为其设 CJK 白名单、英文同值多 key 的检查口径(仅 `i18n_align.py` 不查重复值) |

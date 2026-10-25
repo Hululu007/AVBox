@@ -63,7 +63,7 @@
 
 - 全库零注释（2026-10-06 用户指令）：代码自解释，说明归 `skill/` 文档 → 「注释缺失」永远不是问题；**「存在解释性注释」才是问题**
 - 允许存在的注释只有三类：许可证块（第三方派生文件的 Copyright / "Permission is hereby granted" / SPDX）、机器可读指令（`// i18n: keep`、`// null-assert: keep`、`//noinspection`）、以及字符串/raw string 内部的文本（如 `Anime4kShaderTest` 的 shader 样例）
-- 异常禁止裸 `printStackTrace`，统一 `LOG.e(类名, 异常)` → 出现裸栈才算问题
+- 异常禁止裸 `printStackTrace`，统一 `AppLog.e(类名, 异常)` → 出现裸栈才算问题
 - 依赖版本一律走 `gradle/libs.versions.toml`；禁止硬编码 URL/配置参数
 - 默认最小化修改；除非，不改变项目架构
 
